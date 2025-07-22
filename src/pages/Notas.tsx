@@ -16,7 +16,7 @@ import {
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import Paginacao from '../components/Paginacao';
-import { Eye, Plus, Save, Check, Undo, BarChart, Award, Activity, TrendingDown, ArrowDownUp } from 'lucide-react';
+import { Save, Check, Undo, BarChart, Award, Activity, TrendingDown, ArrowDownUp, BookOpen } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircleExclamation, faFaceFrown, faSearch } from '@fortawesome/free-solid-svg-icons';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -255,44 +255,49 @@ export default function Notas(): JSX.Element {
   return (
     <AppLayout>
       <Container className="my-4">
-        <div className="bg-white border-bottom border-gray-200 mb-4">
-          <div className="container px-4 border-bottom">
-            <div className="d-flex align-items-center justify-content-between py-4">
-              <div className="d-flex align-items-center gap-3">
-                <div
-                  className="d-flex align-items-center justify-content-center rounded bg-primary text-white fw-bold"
-                  style={{ width: 48, height: 48, fontSize: 20 }}
-                >
-                  10
-                </div>
-                <div>
-                  <h2 className="fs-3 fw-bold text-dark mb-0">Notas</h2>
-                  <p className="text-muted mb-0" style={{ fontSize: 14 }}>
-                    MobClassApp - Portal do Professor
-                  </p>
-                </div>
-              </div>
+
+        <div className="border-gray-200 mb-3">
+          {/* Header */}
+          <div className="mb-4 px-1">
+            <div className="d-flex align-items-center gap-2 mb-1">
+              <BookOpen size={32} color="#2563eb" style={{ minWidth: 32, minHeight: 32 }} />
+              <h1
+                className="fw-bold mb-0"
+                style={{
+                  fontSize: '2rem',
+                  background: 'linear-gradient(135deg, #1e293b 0%, #2563eb 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text'
+                }}
+              >
+                Gestão de Notas Escolares
+              </h1>
             </div>
+            <p className="mb-0" style={{ color: '#3b4861', marginLeft: 44, fontSize: 16 }}>
+              Gerencie lançamentos, avaliações e resultados
+            </p>
           </div>
-          {/* Navigation Tabs */}
-          <div className="container px-4">
-            <div className="d-flex gap-3 py-3">
-              <Button
-                variant={activeTab === 'lancamento-notas' ? 'primary' : 'outline-primary'}
-                className="d-flex align-items-center gap-2"
+        </div>
+
+        {/* Navigation Tabs */}
+        <div className="container px-0">
+          <div className="d-flex py-3">
+            <div className="custom-tabs-container">
+              <button
+                className={`custom-tab ${activeTab === 'lancamento-notas' ? 'active' : ''}`}
                 onClick={() => setActiveTab('lancamento-notas')}
+                type="button"
               >
-                <Plus size={18} className='nothing-in-mobile' />
-                <span>Lançamento de Notas</span>
-              </Button>
-              <Button
-                variant={activeTab === 'visualizacao-resultados' ? 'primary' : 'outline-primary'}
-                className="d-flex align-items-center gap-2"
+                Lançamento de Notas
+              </button>
+              <button
+                className={`custom-tab ${activeTab === 'visualizacao-resultados' ? 'active' : ''}`}
                 onClick={() => setActiveTab('visualizacao-resultados')}
+                type="button"
               >
-                <Eye size={18} className='nothing-in-mobile' />
-                <span>Visualização de Resultados</span>
-              </Button>
+                Visualização de Resultados
+              </button>
             </div>
           </div>
         </div>
@@ -344,79 +349,155 @@ export default function Notas(): JSX.Element {
             ) : (
               <>
                 <style>{`.table-responsive {overflow-x: visible !important;}`}</style>
-                <Card className='shadow-sm p-3'>
-                  <Table responsive hover>
-                    <thead className="thead-sticky">
-                      <tr style={{ textAlign: 'center' }}>
-                        <th className='text-muted'>Aluno</th>
-                        <th className='text-muted'>Parcial</th>
-                        <th className='text-muted'>Global</th>
-                        <th className='text-muted'>Participação</th>
-                        <th className='text-muted'>Recuperação</th>
-                        <th className='text-muted'>Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(notasEdit)
-                        .filter(([uid]) => alunos.find(a => a.uid === uid)?.nome.toLowerCase().includes(busca.toLowerCase()))
-                        .map(([uid, nota]) => {
-                          const aluno = alunos.find(a => a.uid === uid)!;
-                          return (
-                            <tr key={uid} className='align-middle'>
-                              <td className='aluno-nome-frequencia ms-2' style={{ fontSize: '1rem', alignItems: 'center' }}>
-                                {alunosSalvos.includes(uid) && (
-                                  <Check size={18} color="#28a745" style={{ marginRight: 4 }} />
-                                )}
-                                {aluno.nome}
-                              </td>
-                              <td>
-                                <Form.Control
-                                  type="number"
-                                  value={nota.notaParcial}
-                                  onChange={e => handleChange(uid, 'notaParcial', e.target.value)}
-                                  style={{ width: '80px' }}
-                                  className={`mx-auto d-block${campoAlterado(uid, 'notaParcial') ? ' campo-alterado' : ''}`}
-                                />
-                              </td>
-                              <td>
-                                <Form.Control
-                                  type="number"
-                                  value={nota.notaGlobal}
-                                  onChange={e => handleChange(uid, 'notaGlobal', e.target.value)}
-                                  style={{ width: '80px' }}
-                                  className={`mx-auto d-block${campoAlterado(uid, 'notaGlobal') ? ' campo-alterado' : ''}`}
-                                />
-                              </td>
-                              <td>
-                                <Form.Control
-                                  type="number"
-                                  value={nota.notaParticipacao}
-                                  onChange={e => handleChange(uid, 'notaParticipacao', e.target.value)}
-                                  style={{ width: '80px' }}
-                                  className={`mx-auto d-block${campoAlterado(uid, 'notaParticipacao') ? ' campo-alterado' : ''}`}
-                                />
-                              </td>
-                              <td>
-                                <Form.Control
-                                  type="number"
-                                  value={nota.notaRecuperacao}
-                                  onChange={e => handleChange(uid, 'notaRecuperacao', e.target.value)}
-                                  style={{ width: '80px' }}
-                                  className={`mx-auto d-block${campoAlterado(uid, 'notaRecuperacao') ? ' campo-alterado' : ''}`}
-                                />
-                              </td>
+                
+                {/* Versão Desktop */}
+                <div className="notas-table-desktop d-none d-md-block">
+                  <Card className='shadow-sm p-3'>
+                    <Table responsive hover>
+                      <thead className="thead-sticky">
+                        <tr style={{ textAlign: 'center' }}>
+                          <th className='text-muted'>Aluno</th>
+                          <th className='text-muted'>Parcial</th>
+                          <th className='text-muted'>Global</th>
+                          <th className='text-muted'>Participação</th>
+                          <th className='text-muted'>Recuperação</th>
+                          <th className='text-muted'>Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(notasEdit)
+                          .filter(([uid]) => alunos.find(a => a.uid === uid)?.nome.toLowerCase().includes(busca.toLowerCase()))
+                          .map(([uid, nota]) => {
+                            const aluno = alunos.find(a => a.uid === uid)!;
+                            return (
+                              <tr key={uid} className='align-middle'>
+                                <td className='aluno-nome-frequencia ms-2' style={{ fontSize: '1rem', alignItems: 'center' }}>
+                                  {alunosSalvos.includes(uid) && (
+                                    <Check size={18} color="#28a745" style={{ marginRight: 4 }} />
+                                  )}
+                                  {aluno.nome}
+                                </td>
+                                <td>
+                                  <Form.Control
+                                    type="number"
+                                    value={nota.notaParcial}
+                                    onChange={e => handleChange(uid, 'notaParcial', e.target.value)}
+                                    style={{ width: '80px' }}
+                                    className={`mx-auto d-block${campoAlterado(uid, 'notaParcial') ? ' campo-alterado' : ''}`}
+                                  />
+                                </td>
+                                <td>
+                                  <Form.Control
+                                    type="number"
+                                    value={nota.notaGlobal}
+                                    onChange={e => handleChange(uid, 'notaGlobal', e.target.value)}
+                                    style={{ width: '80px' }}
+                                    className={`mx-auto d-block${campoAlterado(uid, 'notaGlobal') ? ' campo-alterado' : ''}`}
+                                  />
+                                </td>
+                                <td>
+                                  <Form.Control
+                                    type="number"
+                                    value={nota.notaParticipacao}
+                                    onChange={e => handleChange(uid, 'notaParticipacao', e.target.value)}
+                                    style={{ width: '80px' }}
+                                    className={`mx-auto d-block${campoAlterado(uid, 'notaParticipacao') ? ' campo-alterado' : ''}`}
+                                  />
+                                </td>
+                                <td>
+                                  <Form.Control
+                                    type="number"
+                                    value={nota.notaRecuperacao}
+                                    onChange={e => handleChange(uid, 'notaRecuperacao', e.target.value)}
+                                    style={{ width: '80px' }}
+                                    className={`mx-auto d-block${campoAlterado(uid, 'notaRecuperacao') ? ' campo-alterado' : ''}`}
+                                  />
+                                </td>
+                                <td>
+                                  <Button size="sm" onClick={() => handleSave(uid)}>
+                                    <Save size={16} />
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </Table>
+                  </Card>
+                </div>
 
-                              <td>
-                                <Button size="sm" onClick={() => handleSave(uid)}>
-                                  <Save size={16} />
-                                </Button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                    </tbody>
-                  </Table>
-                </Card>
+                {/* Versão Mobile */}
+                <div className="notas-mobile-cards d-block d-md-none">
+                  {Object.entries(notasEdit)
+                    .filter(([uid]) => alunos.find(a => a.uid === uid)?.nome.toLowerCase().includes(busca.toLowerCase()))
+                    .map(([uid, nota]) => {
+                      const aluno = alunos.find(a => a.uid === uid)!;
+                      return (
+                        <div key={uid} className="notas-aluno-card">
+                          <div className="notas-aluno-header">
+                            <div className="notas-aluno-nome">
+                              {alunosSalvos.includes(uid) && (
+                                <Check size={18} color="#28a745" />
+                              )}
+                              {aluno.nome}
+                            </div>
+                          </div>
+                          
+                          <div className="notas-aluno-body">
+                            <div className="notas-campo-mobile">
+                              <span className="notas-campo-label">Parcial:</span>
+                              <Form.Control
+                                type="number"
+                                value={nota.notaParcial}
+                                onChange={e => handleChange(uid, 'notaParcial', e.target.value)}
+                                className={`notas-campo-input${campoAlterado(uid, 'notaParcial') ? ' campo-alterado' : ''}`}
+                              />
+                            </div>
+                            
+                            <div className="notas-campo-mobile">
+                              <span className="notas-campo-label">Global:</span>
+                              <Form.Control
+                                type="number"
+                                value={nota.notaGlobal}
+                                onChange={e => handleChange(uid, 'notaGlobal', e.target.value)}
+                                className={`notas-campo-input${campoAlterado(uid, 'notaGlobal') ? ' campo-alterado' : ''}`}
+                              />
+                            </div>
+                            
+                            <div className="notas-campo-mobile">
+                              <span className="notas-campo-label">Participação:</span>
+                              <Form.Control
+                                type="number"
+                                value={nota.notaParticipacao}
+                                onChange={e => handleChange(uid, 'notaParticipacao', e.target.value)}
+                                className={`notas-campo-input${campoAlterado(uid, 'notaParticipacao') ? ' campo-alterado' : ''}`}
+                              />
+                            </div>
+                            
+                            <div className="notas-campo-mobile">
+                              <span className="notas-campo-label">Recuperação:</span>
+                              <Form.Control
+                                type="number"
+                                value={nota.notaRecuperacao}
+                                onChange={e => handleChange(uid, 'notaRecuperacao', e.target.value)}
+                                className={`notas-campo-input${campoAlterado(uid, 'notaRecuperacao') ? ' campo-alterado' : ''}`}
+                              />
+                            </div>
+                          </div>
+                          
+                          <Button 
+                            className="notas-save-button" 
+                            onClick={() => handleSave(uid)}
+                            variant="primary"
+                            size="sm"
+                          >
+                            <Save size={16} className="me-2" />
+                            Salvar Notas
+                          </Button>
+                        </div>
+                      );
+                    })}
+                </div>
                 {(activeTab === "lancamento-notas" && alunos.length > 0 && (
                   <Button
                     variant="primary"
@@ -567,8 +648,8 @@ export default function Notas(): JSX.Element {
 
               return (
                 <>
-                  <Row className="mb-4">
-                    <Col md={3}>
+                  <Row className="mb-4 notas-stats-mobile">
+                    <Col xs={6} md={3}>
                       <Card className="text-center shadow-sm mb-0">
                         <Card.Body>
                           <Card.Title className="fw-bold text-muted fs-6">Média Geral</Card.Title>
@@ -580,7 +661,7 @@ export default function Notas(): JSX.Element {
                       </Card>
                     </Col>
 
-                    <Col md={3}>
+                    <Col xs={6} md={3}>
                       <Card className="text-center shadow-sm mb-0">
                         <Card.Body>
                           <Card.Title className="fw-bold text-muted fs-6">Excelentes (≥ 9)</Card.Title>
@@ -592,7 +673,7 @@ export default function Notas(): JSX.Element {
                       </Card>
                     </Col>
 
-                    <Col md={3}>
+                    <Col xs={6} md={3}>
                       <Card className="text-center shadow-sm mb-0">
                         <Card.Body>
                           <Card.Title className="fw-bold text-muted fs-6">Regulares (6 a 8.9)</Card.Title>
@@ -604,7 +685,7 @@ export default function Notas(): JSX.Element {
                       </Card>
                     </Col>
 
-                    <Col md={3}>
+                    <Col xs={6} md={3}>
                       <Card className="text-center shadow-sm mb-0">
                         <Card.Body>
                           <Card.Title className="fw-bold text-muted fs-6">Baixas (&lt; 6)</Card.Title>
@@ -618,7 +699,7 @@ export default function Notas(): JSX.Element {
                   </Row>
 
                   {/* Cards com gráficos */}
-                  <Row>
+                  <Row className="notas-charts-mobile">
                     <Col md={6}>
                       <Card className="shadow-md mb-4">
                         <Card.Body>
@@ -672,7 +753,7 @@ export default function Notas(): JSX.Element {
                                 dataKey="nome"
                                 interval={0}
                                 tickFormatter={nome => nome.split(' ')[0]}
-                                tick={{ fontSize: 15 }}
+                                tick={{ fontSize: 12 }}
                               />
                               <YAxis domain={[0, 10]} tickFormatter={v => v} />
                               <ReTooltip formatter={(value: number) => value.toFixed(1)} />
@@ -689,10 +770,10 @@ export default function Notas(): JSX.Element {
                       <h3 className="mb-0">Resumo de Notas</h3>
                       <Dropdown onSelect={key => setOrdenacao(key as any)}>
                         <Dropdown.Toggle
-                          size="sm" // <-- Adicione este atributo
+                          size="sm"
                           variant="outline-secondary"
                           id="dropdown-ordenar"
-                          className="d-flex align-items-center gap-2 py-1 px-2" // <-- padding menor
+                          className="d-flex align-items-center gap-2 py-1 px-2"
                         >
                           <ArrowDownUp size={16} />
                           Ordenar
@@ -709,20 +790,111 @@ export default function Notas(): JSX.Element {
                       </Dropdown>
                     </div>
 
-                    <div className="d-none d-md-flex fw-bold text-muted px-2 py-2 border-bottom text-center medium">
-                      <div style={{ width: '20%' }}>Aluno</div>
-                      <div style={{ width: '10%' }}>Parcial</div>
-                      <div style={{ width: '10%' }}>Global</div>
-                      <div style={{ width: '12%' }}>Participação</div>
-                      <div style={{ width: '12%' }}>Recuperação</div>
-                      <div style={{ width: '11%' }}>Média Final</div>
-                      <div style={{ width: '14%' }}>Data</div>
-                      <div style={{ width: '11%' }}>Ações</div>
+                    {/* Versão Desktop */}
+                    <div className="notas-table-desktop d-none d-md-block">
+                      <div className="d-flex fw-bold text-muted px-2 py-2 border-bottom text-center medium">
+                        <div style={{ width: '20%' }}>Aluno</div>
+                        <div style={{ width: '10%' }}>Parcial</div>
+                        <div style={{ width: '10%' }}>Global</div>
+                        <div style={{ width: '12%' }}>Participação</div>
+                        <div style={{ width: '12%' }}>Recuperação</div>
+                        <div style={{ width: '11%' }}>Média Final</div>
+                        <div style={{ width: '14%' }}>Data</div>
+                        <div style={{ width: '11%' }}>Ações</div>
+                      </div>
+
+                      <div className="d-flex flex-column">
+                        {(() => {
+                          // Ordenação dos dados
+                          let dadosOrdenados = [...resultadosFiltrados];
+                          switch (ordenacao) {
+                            case 'nome':
+                              dadosOrdenados.sort((a, b) => a.nomeAluno.localeCompare(b.nomeAluno));
+                              break;
+                            case 'parcial':
+                              dadosOrdenados.sort((a, b) => (b.notaParcial ?? 0) - (a.notaParcial ?? 0));
+                              break;
+                            case 'global':
+                              dadosOrdenados.sort((a, b) => (b.notaGlobal ?? 0) - (a.notaGlobal ?? 0));
+                              break;
+                            case 'participacao':
+                              dadosOrdenados.sort((a, b) => (b.notaParticipacao ?? 0) - (a.notaParticipacao ?? 0));
+                              break;
+                            case 'recuperacao':
+                              dadosOrdenados.sort((a, b) => (b.notaRecuperacao ?? 0) - (a.notaRecuperacao ?? 0));
+                              break;
+                            case 'media':
+                              dadosOrdenados.sort((a, b) => calcularMediaFinal(b) - calcularMediaFinal(a));
+                              break;
+                            case 'data':
+                              dadosOrdenados.sort((a, b) => {
+                                const da = a.dataLancamento.split('/').reverse().join('-');
+                                const db = b.dataLancamento.split('/').reverse().join('-');
+                                return new Date(db).getTime() - new Date(da).getTime();
+                              });
+                              break;
+                          }
+                          dadosOrdenados = dadosOrdenados.slice((paginaAtual - 1) * itensPorPagina, paginaAtual * itensPorPagina);
+                          return dadosOrdenados.map(nota => {
+                            const mediaFinal = calcularMediaFinal(nota);
+                            return (
+                              <div
+                                key={nota.id}
+                                className="d-flex flex-wrap justify-content-between align-items-center px-2 py-3 border-bottom text-center align-middle medium"
+                              >
+                                <div style={{ width: '20%', fontWeight: 600 }}>{nota.nomeAluno}</div>
+                                <div style={{ width: '10%' }} className={`fw-bold ${getNotaColor(nota.notaParcial)}`}>{nota.notaParcial ?? '-'}</div>
+                                <div style={{ width: '10%' }} className={`fw-bold ${getNotaColor(nota.notaGlobal)}`}>{nota.notaGlobal ?? '-'}</div>
+                                <div style={{ width: '12%' }} className={`fw-bold ${getNotaColor(nota.notaParticipacao)}`}>{nota.notaParticipacao ?? '-'}</div>
+                                <div style={{ width: '12%' }} className={`fw-bold ${getNotaColor(nota.notaRecuperacao)}`}>{nota.notaRecuperacao ?? '-'}</div>
+                                <div style={{ width: '11%' }} className={`fw-bold ${getNotaColor(mediaFinal)}`}>{mediaFinal}</div>
+                                <div style={{ width: '14%' }} className="text-muted"><small>{nota.dataLancamento}</small></div>
+                                <div style={{ width: '11%' }}>
+                                  <Button
+                                    size="sm"
+                                    variant="link"
+                                    className="d-flex align-items-center gap-1 mx-auto"
+                                    style={{
+                                      color: 'black',
+                                      fontWeight: 'bold',
+                                      textDecoration: 'none',
+                                      border: 'none',
+                                      boxShadow: 'none',
+                                      padding: 0,
+                                      background: 'transparent',
+                                      cursor: 'pointer',
+                                    }}
+                                    onMouseOver={(e) => (e.currentTarget.style.color = '#333')}
+                                    onMouseOut={(e) => (e.currentTarget.style.color = 'black')}
+                                    onClick={() => {
+                                      const historicoNotas = notas
+                                        .filter(n =>
+                                          n.alunoUid === nota.alunoUid &&
+                                          n.materiaId === filtroMateria &&
+                                          n.turmaId === filtroTurma
+                                        )
+                                        .sort((a, b) => {
+                                          const ordem = ['1º', '2º', '3º', '4º'];
+                                          return ordem.indexOf(a.bimestre) - ordem.indexOf(b.bimestre);
+                                        });
+                                      setHistoricoAluno({ nome: nota.nomeAluno, notas: historicoNotas });
+                                      setShowHistorico(true);
+                                    }}
+                                  >
+                                    <FaClockRotateLeft /> Histórico
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
                     </div>
 
-                    <div className="d-flex flex-column">
+                    {/* Versão Mobile */}
+                    <div className="notas-mobile-cards d-block d-md-none">
                       {(() => {
-                        // Ordenação dos dados
+                        // Ordenação dos dados (mesma lógica)
                         let dadosOrdenados = [...resultadosFiltrados];
                         switch (ordenacao) {
                           case 'nome':
@@ -752,37 +924,54 @@ export default function Notas(): JSX.Element {
                             break;
                         }
                         dadosOrdenados = dadosOrdenados.slice((paginaAtual - 1) * itensPorPagina, paginaAtual * itensPorPagina);
+                        
                         return dadosOrdenados.map(nota => {
                           const mediaFinal = calcularMediaFinal(nota);
                           return (
-                            <div
-                              key={nota.id}
-                              className="d-flex flex-wrap justify-content-between align-items-center px-2 py-3 border-bottom text-center align-middle medium"
-                            >
-                              <div style={{ width: '20%', fontWeight: 600 }}>{nota.nomeAluno}</div>
-                              <div style={{ width: '10%' }} className={`fw-bold ${getNotaColor(nota.notaParcial)}`}>{nota.notaParcial ?? '-'}</div>
-                              <div style={{ width: '10%' }} className={`fw-bold ${getNotaColor(nota.notaGlobal)}`}>{nota.notaGlobal ?? '-'}</div>
-                              <div style={{ width: '12%' }} className={`fw-bold ${getNotaColor(nota.notaParticipacao)}`}>{nota.notaParticipacao ?? '-'}</div>
-                              <div style={{ width: '12%' }} className={`fw-bold ${getNotaColor(nota.notaRecuperacao)}`}>{nota.notaRecuperacao ?? '-'}</div>
-                              <div style={{ width: '11%' }} className={`fw-bold ${getNotaColor(mediaFinal)}`}>{mediaFinal}</div>
-                              <div style={{ width: '14%' }} className="text-muted"><small>{nota.dataLancamento}</small></div>
-                              <div style={{ width: '11%' }}>
+                            <div key={nota.id} className="notas-resultado-card">
+                              <div className="notas-resultado-header">
+                                <div className="notas-resultado-nome">{nota.nomeAluno}</div>
+                                <div className={`notas-resultado-media ${getNotaColor(mediaFinal)}`}>
+                                  {mediaFinal}
+                                </div>
+                              </div>
+                              
+                              <div className="notas-resultado-body">
+                                <div className="notas-resultado-row">
+                                  <span className="notas-resultado-label">Parcial:</span>
+                                  <span className={`notas-resultado-valor ${getNotaColor(nota.notaParcial)}`}>
+                                    {nota.notaParcial ?? '-'}
+                                  </span>
+                                </div>
+                                
+                                <div className="notas-resultado-row">
+                                  <span className="notas-resultado-label">Global:</span>
+                                  <span className={`notas-resultado-valor ${getNotaColor(nota.notaGlobal)}`}>
+                                    {nota.notaGlobal ?? '-'}
+                                  </span>
+                                </div>
+                                
+                                <div className="notas-resultado-row">
+                                  <span className="notas-resultado-label">Participação:</span>
+                                  <span className={`notas-resultado-valor ${getNotaColor(nota.notaParticipacao)}`}>
+                                    {nota.notaParticipacao ?? '-'}
+                                  </span>
+                                </div>
+                                
+                                <div className="notas-resultado-row">
+                                  <span className="notas-resultado-label">Recuperação:</span>
+                                  <span className={`notas-resultado-valor ${getNotaColor(nota.notaRecuperacao)}`}>
+                                    {nota.notaRecuperacao ?? '-'}
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              <div className="notas-resultado-footer">
+                                <span className="notas-resultado-data">{nota.dataLancamento}</span>
                                 <Button
                                   size="sm"
-                                  variant="link"
-                                  className="d-flex align-items-center gap-1 mx-auto"
-                                  style={{
-                                    color: 'black',
-                                    fontWeight: 'bold',
-                                    textDecoration: 'none',
-                                    border: 'none',
-                                    boxShadow: 'none',
-                                    padding: 0,
-                                    background: 'transparent',
-                                    cursor: 'pointer',
-                                  }}
-                                  onMouseOver={(e) => (e.currentTarget.style.color = '#333')}
-                                  onMouseOut={(e) => (e.currentTarget.style.color = 'black')}
+                                  variant="outline-primary"
+                                  className="notas-action-mobile d-flex align-items-center gap-1"
                                   onClick={() => {
                                     const historicoNotas = notas
                                       .filter(n =>
@@ -798,7 +987,8 @@ export default function Notas(): JSX.Element {
                                     setShowHistorico(true);
                                   }}
                                 >
-                                  <FaClockRotateLeft /> Histórico
+                                  <FaClockRotateLeft size={14} />
+                                  Histórico
                                 </Button>
                               </div>
                             </div>
@@ -816,19 +1006,21 @@ export default function Notas(): JSX.Element {
                   </div>
 
                   {/* Modal de Histórico */}
-                  <style>
-                    {` .modal-content {
-                    min-width: fit-content!important}
-                    `}
-                  </style>
-                  <Modal show={showHistorico} onHide={() => setShowHistorico(false)} centered>
+                  <Modal 
+                    show={showHistorico} 
+                    onHide={() => setShowHistorico(false)} 
+                    centered
+                    className="historico-modal"
+                    size="lg"
+                  >
                     <Modal.Header closeButton>
                       <Modal.Title>
                         Histórico de Notas - {historicoAluno?.nome}
                       </Modal.Title>
                     </Modal.Header>
                     <Modal.Body>
-                      <div style={{ overflowX: 'auto' }}>
+                      {/* Versão Desktop */}
+                      <div className="d-none d-md-block" style={{ overflowX: 'auto' }}>
                         {historicoAluno?.notas.length ? (
                           <Table
                             bordered
@@ -872,6 +1064,69 @@ export default function Notas(): JSX.Element {
                               })}
                             </tbody>
                           </Table>
+                        ) : (
+                          <div className="text-center text-muted py-4">
+                            <FontAwesomeIcon icon={faFaceFrown} size="2x" className="mb-3" />
+                            <div>Nenhuma nota encontrada para este aluno.</div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Versão Mobile */}
+                      <div className="d-block d-md-none">
+                        {historicoAluno?.notas.length ? (
+                          <div className="historico-mobile-cards">
+                            {['1º', '2º', '3º', '4º'].map(bim => {
+                              const n = historicoAluno.notas.find(nota => nota.bimestre === bim);
+                              const mediaFinal = n ? calcularMediaFinal(n) : '-';
+                              return (
+                                <div key={bim} className="historico-bimestre-card">
+                                  <div className="historico-bimestre-header">
+                                    <span className="historico-bimestre-titulo">{bim} Bimestre</span>
+                                    <span className={`historico-bimestre-media ${getNotaColor(typeof mediaFinal === 'number' ? mediaFinal : undefined)}`}>
+                                      Média: {typeof mediaFinal === 'number' ? mediaFinal : '-'}
+                                    </span>
+                                  </div>
+                                  
+                                  <div className="historico-bimestre-body">
+                                    <div className="historico-nota-row">
+                                      <span className="historico-nota-label">Parcial:</span>
+                                      <span className={`historico-nota-valor ${getNotaColor(n?.notaParcial)}`}>
+                                        {n?.notaParcial ?? '-'}
+                                      </span>
+                                    </div>
+                                    
+                                    <div className="historico-nota-row">
+                                      <span className="historico-nota-label">Global:</span>
+                                      <span className={`historico-nota-valor ${getNotaColor(n?.notaGlobal)}`}>
+                                        {n?.notaGlobal ?? '-'}
+                                      </span>
+                                    </div>
+                                    
+                                    <div className="historico-nota-row">
+                                      <span className="historico-nota-label">Participação:</span>
+                                      <span className={`historico-nota-valor ${getNotaColor(n?.notaParticipacao)}`}>
+                                        {n?.notaParticipacao ?? '-'}
+                                      </span>
+                                    </div>
+                                    
+                                    <div className="historico-nota-row">
+                                      <span className="historico-nota-label">Recuperação:</span>
+                                      <span className={`historico-nota-valor ${getNotaColor(n?.notaRecuperacao)}`}>
+                                        {n?.notaRecuperacao ?? '-'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  
+                                  {n?.dataLancamento && (
+                                    <div className="historico-bimestre-footer">
+                                      <small className="text-muted">Lançado em: {n.dataLancamento}</small>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         ) : (
                           <div className="text-center text-muted py-4">
                             <FontAwesomeIcon icon={faFaceFrown} size="2x" className="mb-3" />

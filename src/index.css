@@ -1,3 +1,47 @@
+/* Efeito suave para expandir/recolher mensagem do comunicado */
+.comunicado-mensagem-transicao {
+  max-height: 70px;
+  transition: max-height 0.4s cubic-bezier(0.4,0,0.2,1);
+}
+.comunicado-mensagem-transicao.expanded {
+  max-height: 800px;
+}
+/* Badge de status dos comunicados */
+.status-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 12px 2px 8px;
+  border-radius: 20px;
+  letter-spacing: 0.02em;
+  margin-left: 6px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  border: none;
+  gap: 1px;
+}
+.status-badge.enviado {
+  background: #22c55e !important;
+  color: #fff !important;
+  border: 1px solid #22c55e !important;
+}
+.status-badge.agendado {
+  background: #3b82f6;
+  color: #fff !important;
+  border: 1px solid #3b82f6 !important;
+}
+.status-badge.rascunho {
+  background: #6b7280 !important;
+  border: 1px solid #6b7280 !important;
+}
+/* Badge de categoria das matérias */
+.status-badge.exatas { background: #22c55e !important; color: #fff !important; border: 1px solid #22c55e !important; }
+.status-badge.humanas { background: #a259e6 !important; color: #fff !important; border: 1px solid #a259e6 !important; }
+.status-badge.linguagens { background: #ff9800 !important; color: #fff !important; border: 1px solid #ff9800 !important; }
+.status-badge.outras { background: #6b7280 !important; color: #fff !important; border: 1px solid #6b7280 !important; }
+.status-badge.total { background: #3b82f6 !important; color: #fff !important; border: 1px solid #3b82f6 !important; }
 /* Reset global */
 * {
   box-sizing: border-box;
@@ -14,6 +58,45 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+}
+
+/* Custom Navigation Tabs */
+.custom-tabs-container {
+  display: flex;
+  background: #e9ecef;
+  border-radius: 8px;
+  padding: 4px;
+  gap: 4px;
+  border: 1px solid #dee2e6;
+  width: 100%;
+}
+
+.custom-tab {
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #495057;
+  transition: all 0.2s ease;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 1;
+  text-align: center;
+}
+
+.custom-tab.active {
+  background: #fff;
+  color: #212529;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+
+.custom-tab:not(.active):hover {
+  background: rgba(255,255,255,0.7);
+  color: #343a40;
 }
 
 /* Layout principal da área de conteúdo */
@@ -101,6 +184,27 @@ button {
 .dashboard-card:hover,
 .card:hover {
   box-shadow: 0 0 18px rgba(0, 0, 0, 0.1);
+}
+
+/* Classes para cards de detalhes da turma */
+.border-left-primary {
+  border-left: 4px solid #2563eb !important;
+}
+
+.border-left-success {
+  border-left: 4px solid #10b981 !important;
+}
+
+/* Cards pequenos para listas */
+.card-sm {
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.card-sm:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
 }
 
 /* Títulos de seção */
@@ -311,6 +415,35 @@ button {
   width: 100% !important;
 }
 
+/* Estilização para datepicker com hora */
+.react-datepicker__time-container {
+  width: 85px;
+  border-left: 1px solid #e2e8f0;
+}
+
+.react-datepicker__time-box {
+  width: 85px;
+}
+
+.react-datepicker__time-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.react-datepicker__time-list-item {
+  padding: 5px 10px;
+  font-size: 14px;
+}
+
+.react-datepicker__time-list-item--selected {
+  background-color: #2563eb;
+  color: white;
+}
+
+.react-datepicker__time-list-item:hover {
+  background-color: #e2e8f0;
+}
+
 /* Notas */
 .thead-sticky th {
   position: sticky;
@@ -356,28 +489,1781 @@ button {
 }
 
 @media (max-width: 770px) {
+  .nothing-in-mobile {
+    display: none !important;
+  }
+
   .button-group-card-frequencia {
     flex-direction: column;
   }
 
   .info-cards-frequencia {
-    gap: 0 !important;
+    gap: 0.5rem !important;
   }
 
   .row {
     gap: 0.5rem;
   }
+
+  .columns-input-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .mb-custom-mobile-1 {
+    margin-bottom: 10px !important;
+  }
+
+  .mb-custom-mobile-0 {
+    margin-bottom: 0 !important;
+  }
 }
 
+/* ========== ESTILOS PARA AGENDA - MOBILE ========== */
+@media (max-width: 768px) {
+  /* Ocultar tabela tradicional no mobile */
+  .agenda-table-desktop {
+    display: none !important;
+  }
 
+  /* Estilo de cards para mobile */
+  .agenda-mobile-cards {
+    display: block !important;
+  }
 
+  /* === ESTILOS PARA CARDS DE TURNO (Grade por Turnos) - APENAS MOBILE === */
+  .turno-cards-container {
+    padding: 0.5rem;
+  }
 
+  .turno-card-header {
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
 
+  .turno-card-header h4 {
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+  }
 
+  /* Container dos dias em mobile */
+  .turno-dias-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
 
+  /* Cards de dia da semana em mobile */
+  .turno-dia-card {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    cursor: pointer; /* Torna o card clicável no mobile */
+    transition: all 0.3s ease;
+  }
 
+  .turno-dia-card:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
 
+  .turno-dia-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0; /* Removido margin quando colapsado */
+    padding-bottom: 0; /* Removido padding quando colapsado */
+    border-bottom: none; /* Removido border quando colapsado */
+    transition: all 0.3s ease;
+  }
 
+  /* Quando expandido, adiciona espaçamento */
+  .turno-dia-card.expanded .turno-dia-header {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #f1f3f4;
+  }
 
+  .turno-dia-titulo {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #212529;
+    cursor: pointer;
+    transition: color 0.2s ease;
+  }
 
+  .turno-dia-titulo:hover {
+    color: #021e4c;
+  }
 
+  /* Indicador visual para dias com aulas - APENAS MOBILE quando recolhido */
+  .turno-dia-card:not(.expanded) .turno-dia-titulo::after {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    background-color: #007bff;
+    border-radius: 50%;
+    margin-left: 8px;
+    opacity: 0.8;
+    animation: pulse 2s infinite;
+  }
+
+  /* Esconde o indicador se não há aulas - APENAS MOBILE */
+  .turno-dia-card.no-classes:not(.expanded) .turno-dia-titulo::after {
+    display: none;
+  }
+
+  /* Animação do indicador - APENAS MOBILE */
+  @keyframes pulse {
+    0% {
+      opacity: 0.7;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.7;
+    }
+  }
+
+  .turno-dia-toggle {
+    background: transparent !important;
+    border: none !important;
+    padding: 0.5rem !important;
+    color: #6c757d !important;
+    font-size: 1rem !important;
+    transition: all 0.2s ease !important;
+  }
+
+  .turno-dia-toggle:hover {
+    color: #495057 !important;
+    background-color: rgba(0, 0, 0, 0.05) !important;
+    border-radius: 6px !important;
+  }
+
+  /* Aulas dentro do dia - inicialmente ocultas APENAS NO MOBILE */
+  .turno-aulas-lista {
+    display: none; /* Oculto por padrão no mobile */
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    animation: slideDown 0.3s ease-out;
+  }
+
+  /* Quando expandido, mostra as aulas - APENAS MOBILE */
+  .turno-dia-card.expanded .turno-aulas-lista {
+    display: flex;
+  }
+
+  /* Animação de slide down - APENAS MOBILE */
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .turno-aula-card {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 0.875rem;
+    transition: all 0.2s ease;
+  }
+
+  .turno-aula-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+  }
+
+  .turno-aula-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+  }
+
+  .turno-aula-horario {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #212529;
+  }
+
+  .turno-aula-actions {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .turno-aula-btn {
+    padding: 0.375rem !important;
+    border: none !important;
+    background: transparent !important;
+    border-radius: 6px !important;
+    font-size: 0.875rem !important;
+    line-height: 1 !important;
+    transition: all 0.2s ease !important;
+  }
+
+  .turno-aula-btn.edit {
+    color: #0d6efd !important;
+  }
+
+  .turno-aula-btn.delete {
+    color: #dc3545 !important;
+  }
+
+  .turno-aula-btn:hover {
+    background-color: rgba(0, 0, 0, 0.05) !important;
+    transform: scale(1.1);
+  }
+
+  .turno-aula-body {
+    margin-bottom: 0.75rem;
+  }
+
+  .turno-aula-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .turno-aula-materia {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #212529;
+  }
+
+  .turno-aula-professor {
+    font-size: 0.85rem;
+    color: #6c757d;
+  }
+
+  .turno-aula-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 0.75rem;
+    border-top: 1px solid #e9ecef;
+  }
+
+  .turno-aula-badge {
+    background: #e3f2fd;
+    color: #1565c0;
+    padding: 0.25rem 0.75rem;
+    border-radius: 15px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    /* text-transform: uppercase; removido para manter o texto original */
+  }
+
+  .turno-aula-badge.manha {
+    background: #fff3e0;
+    color: #ef6c00;
+  }
+
+  .turno-aula-badge.tarde {
+    background: #ffebee;
+    color: #c62828;
+  }
+
+  .turno-aula-badge.noite {
+    background: #e8f5e8;
+    color: #2e7d32;
+  }
+
+  /* Card de adicionar aula em mobile */
+  .turno-add-card {
+    border: 2px dashed #d1d5db !important;
+    background: #f9fafb !important;
+    padding: 1.5rem !important;
+    text-align: center !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease !important;
+    cursor: pointer !important;
+  }
+
+  .turno-add-card:hover {
+    border-color: #60a5fa !important;
+    background: #eff6ff !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+  }
+
+  .turno-add-text {
+    color: #6b7280;
+    font-size: 0.875rem;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+  }
+
+  .turno-add-icon {
+    color: #9ca3af;
+    font-size: 1.25rem;
+    transition: color 0.2s ease;
+  }
+
+  .turno-add-card:hover .turno-add-icon {
+    color: #2563eb;
+  }
+
+  /* Ajustes para estados vazios em turno */
+  .turno-empty-state {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #6c757d;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+  }
+
+  .turno-empty-icon {
+    font-size: 2rem;
+    margin-bottom: 0.75rem;
+    opacity: 0.6;
+  }
+
+  .turno-empty-title {
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+    color: #495057;
+    font-weight: 600;
+  }
+
+  .turno-empty-text {
+    font-size: 0.875rem;
+    margin: 0;
+  }
+
+  /* === ESTILOS PARA LISTA DE AULAS (Cards Mobile) === */
+  .agenda-card-mobile {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease;
+  }
+
+  .agenda-card-mobile:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+  }
+
+  .agenda-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #f1f3f4;
+  }
+
+  .agenda-card-turno {
+    display: inline-block;
+    background: #e3f2fd;
+    color: #1565c0;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    /* text-transform: uppercase; removido para manter o texto original */
+  }
+
+  .agenda-card-turno.manha {
+    background: #fff3e0;
+    color: #ef6c00;
+  }
+
+  .agenda-card-turno.tarde {
+    background: #ffebee;
+    color: #c62828;
+  }
+
+  .agenda-card-turno.noite {
+    background: #e8f5e8;
+    color: #2e7d32;
+  }
+
+  .agenda-card-body {
+    margin-bottom: 0.75rem;
+  }
+
+  .agenda-card-row {
+    display: flex;
+    margin-bottom: 0.5rem;
+    align-items: center;
+  }
+
+  .agenda-card-label {
+    font-weight: 600;
+    color: #495057;
+    font-size: 0.85rem;
+    min-width: 80px;
+    margin-right: 0.75rem;
+  }
+
+  .agenda-card-value {
+    color: #212529;
+    font-size: 0.9rem;
+    flex: 1;
+  }
+
+  .agenda-card-value.highlight {
+    font-weight: 600;
+    color: #021e4c;
+  }
+
+  .agenda-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 0.75rem;
+    border-top: 1px solid #f1f3f4;
+  }
+
+  /* Ordenação mobile */
+  .agenda-header-mobile {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding: 0 0.5rem;
+  }
+
+  .agenda-header-mobile h3 {
+    font-size: 1.25rem;
+    margin: 0;
+    color: #212529;
+  }
+
+  .agenda-sort-mobile .dropdown-toggle {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    border-radius: 8px;
+  }
+
+  /* Cards responsivos */
+  .agenda-mobile-cards .agenda-card-mobile {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Ajustes para paginação mobile */
+  .agenda-pagination-mobile {
+    margin-top: 1.5rem;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* Estilos para estados vazios */
+  .agenda-empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #6c757d;
+  }
+
+  .agenda-empty-state .empty-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+  }
+
+  .agenda-empty-state h4 {
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+    color: #495057;
+  }
+
+  .agenda-empty-state p {
+    font-size: 0.9rem;
+    margin: 0;
+  }
+}
+
+/* Estilos para desktop - garantir que cards mobile não apareçam e comportamento original */
+@media (min-width: 769px) {
+  .agenda-mobile-cards {
+    display: none !important;
+  }
+
+  .agenda-table-desktop {
+    display: table !important;
+  }
+
+  /* No desktop, remove estilos específicos de mobile dos cards de turno */
+  .turno-dia-card .turno-dia-titulo::after {
+    display: none !important; /* Remove indicador no desktop */
+  }
+
+  /* Remove cursor pointer dos cards de dia no desktop */
+  .turno-dia-card {
+    cursor: default !important;
+  }
+
+  .turno-dia-card:hover {
+    box-shadow: none !important;
+  }
+
+  /* No desktop, garante que as aulas sempre sejam visíveis */
+  .turno-aulas-lista {
+    display: flex !important;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+
+  /* Remove animações específicas do mobile no desktop */
+  .turno-dia-card .turno-aulas-lista {
+    animation: none !important;
+  }
+
+  /* Garante que os cards da lista de aulas não apareçam no desktop */
+  .agenda-card-mobile {
+    display: none !important;
+  }
+}
+
+/* Ajustes adicionais para tablets em orientação portrait */
+@media (max-width: 768px) and (orientation: portrait) {
+  .agenda-card-mobile {
+    padding: 0.875rem;
+  }
+
+  .agenda-card-row {
+    margin-bottom: 0.625rem;
+  }
+
+  .agenda-card-label {
+    min-width: 75px;
+    font-size: 0.8rem;
+  }
+
+  .agenda-card-value {
+    font-size: 0.875rem;
+  }
+}
+
+/* Estilos para badges da tabela de agenda */
+.badge-turno {
+  background: transparent;
+  color: #111;
+  border: none !important;
+  border-radius: 12px;
+  font-size: 0.68rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.2px;
+  line-height: 1.1;
+  box-shadow: none;
+}
+
+/* Badge de turma na tabela (outline preto, texto preto) */
+.badge-turma {
+  background: transparent;
+  color: #111;
+  border: 1.2px solid #111;
+  padding: 0.13rem 0.48rem;
+  border-radius: 12px;
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  line-height: 1.1;
+  box-shadow: none;
+}
+
+/* Badge de turma nos cards em grade por turnos (menor) */
+.agenda-card-turma-badge {
+  background: transparent;
+  color: #111;
+  border: 1.2px solid #111;
+  padding: 0.10rem 0.38rem;
+  border-radius: 11px;
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+  line-height: 1.1;
+  box-shadow: none;
+}
+
+/* Dropdown sem caret */
+.dropdown-toggle-no-caret::after {
+  display: none !important;
+}
+
+.dropdown-toggle-no-caret {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #6c757d !important;
+  font-size: 1.2rem !important;
+  padding: 0.25rem 0.5rem !important;
+  transition: color 0.2s ease !important;
+}
+
+.dropdown-toggle-no-caret:hover {
+  color: #343a40 !important;
+  background: rgba(0,0,0,0.05) !important;
+  border-radius: 4px !important;
+}
+
+/* ========== ESTILOS PARA NOTAS - MOBILE ========== */
+@media (max-width: 768px) {
+  /* Ocultar tabelas desktop no mobile */
+  .notas-table-desktop {
+    display: none !important;
+  }
+
+  /* Exibir cards mobile */
+  .notas-mobile-cards {
+    display: block !important;
+  }
+
+  /* Cards de aluno para lançamento de notas mobile */
+  .notas-aluno-card {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease;
+  }
+
+  .notas-aluno-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+  }
+
+  .notas-aluno-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #f1f3f4;
+  }
+
+  .notas-aluno-nome {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #212529;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .notas-aluno-body {
+    margin-bottom: 0.75rem;
+  }
+
+  .notas-campo-mobile {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .notas-campo-label {
+    font-weight: 600;
+    color: #495057;
+    font-size: 0.9rem;
+    min-width: 100px;
+  }
+
+  .notas-campo-input {
+    width: 80px !important;
+    text-align: center;
+  }
+
+  .notas-save-button {
+    width: 100%;
+    margin-top: 0.5rem;
+    border-radius: 8px;
+  }
+
+  /* Cards de resultado mobile */
+  .notas-resultado-card {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease;
+  }
+
+  .notas-resultado-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+  }
+
+  .notas-resultado-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #f1f3f4;
+  }
+
+  .notas-resultado-nome {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #212529;
+  }
+
+  .notas-resultado-media {
+    font-weight: 700;
+    font-size: 1.1rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    background: #f8f9fa;
+  }
+
+  .notas-resultado-body {
+    margin-bottom: 0.75rem;
+  }
+
+  .notas-resultado-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .notas-resultado-label {
+    font-weight: 500;
+    color: #6c757d;
+    font-size: 0.85rem;
+  }
+
+  .notas-resultado-valor {
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+
+  .notas-resultado-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 0.75rem;
+    border-top: 1px solid #f1f3f4;
+  }
+
+  .notas-resultado-data {
+    color: #6c757d;
+    font-size: 0.8rem;
+  }
+
+  /* Ajustes para custom tabs no mobile */
+  .custom-tabs-container {
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .custom-tab {
+    white-space: nowrap;
+    min-width: auto;
+    flex: none;
+    padding: 8px 12px;
+  }
+
+  /* Cards de estatísticas em mobile */
+  .notas-stats-mobile {
+    margin-bottom: 1rem;
+  }
+
+  .notas-stats-mobile .row {
+    gap: 0.75rem;
+  }
+
+  .notas-stats-mobile .col-6 {
+    flex: 0 0 48%;
+    max-width: 48%;
+  }
+
+  /* Ajustes para gráficos em mobile */
+  .notas-charts-mobile .col-md-6 {
+    margin-bottom: 1rem;
+  }
+
+  /* Ajustes para modal de histórico em mobile */
+  .modal-dialog {
+    margin: 0.5rem;
+    max-width: calc(100% - 1rem);
+  }
+
+  .modal-body {
+    padding: 1rem 0.5rem;
+  }
+
+  /* Modal de histórico responsivo */
+  .historico-modal .modal-content {
+    max-width: 100%;
+    margin: 0.5rem;
+  }
+
+  .historico-modal .table {
+    font-size: 0.85rem;
+  }
+
+  .historico-modal .table th,
+  .historico-modal .table td {
+    padding: 0.5rem 0.25rem;
+    white-space: nowrap;
+  }
+
+  /* Ajustar larguras das colunas no modal mobile */
+  .historico-modal .table th:first-child,
+  .historico-modal .table td:first-child {
+    width: 15%;
+  }
+
+  .historico-modal .table th:nth-child(2),
+  .historico-modal .table td:nth-child(2),
+  .historico-modal .table th:nth-child(3),
+  .historico-modal .table td:nth-child(3),
+  .historico-modal .table th:nth-child(4),
+  .historico-modal .table td:nth-child(4),
+  .historico-modal .table th:nth-child(5),
+  .historico-modal .table td:nth-child(5),
+  .historico-modal .table th:nth-child(6),
+  .historico-modal .table td:nth-child(6) {
+    width: 14%;
+  }
+
+  .historico-modal .table th:last-child,
+  .historico-modal .table td:last-child {
+    width: 15%;
+  }
+
+  /* Ocultar colunas menos importantes em mobile */
+  .notas-hide-mobile {
+    display: none !important;
+  }
+}
+
+/* Estilos para o Modal de Histórico Mobile */
+.historico-modal .modal-dialog {
+  max-width: 90%;
+  margin: 1rem auto;
+}
+
+.historico-mobile-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.historico-bimestre-card {
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: box-shadow 0.2s ease;
+}
+
+.historico-bimestre-card:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.historico-bimestre-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.historico-bimestre-titulo {
+  font-weight: 600;
+  font-size: 1rem;
+  color: #495057;
+}
+
+.historico-bimestre-media {
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  background: #f8f9fa;
+}
+
+.historico-bimestre-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.historico-nota-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.25rem 0;
+}
+
+.historico-nota-label {
+  font-weight: 500;
+  color: #6c757d;
+  font-size: 0.9rem;
+}
+
+.historico-nota-valor {
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  min-width: 40px;
+  text-align: center;
+}
+
+.historico-bimestre-footer {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #f1f3f4;
+  text-align: center;
+}
+
+.historico-bimestre-footer small {
+  font-size: 0.8rem;
+  color: #6c757d;
+}
+
+/* Responsividade para modais em mobile */
+@media (max-width: 767.98px) {
+  .historico-modal .modal-dialog {
+    max-width: 95%;
+    margin: 0.5rem auto;
+  }
+  
+  .historico-modal .modal-body {
+    padding: 1rem 0.75rem;
+  }
+  
+  .historico-bimestre-card {
+    padding: 0.75rem;
+  }
+  
+  .historico-bimestre-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .historico-bimestre-media {
+    align-self: flex-end;
+  }
+  
+  .historico-nota-row {
+    padding: 0.3rem 0;
+  }
+}
+
+/* ========== ESTILOS PARA MATÉRIAS - MOBILE ========== */
+@media (max-width: 768px) {
+  /* Ocultar lista desktop no mobile */
+  .materias-list-desktop {
+    display: none !important;
+  }
+
+  /* Exibir cards mobile */
+  .materias-mobile-cards {
+    display: block !important;
+  }
+
+  /* Header mobile */
+  .materias-header-mobile {
+    padding: 0 0.5rem;
+  }
+
+  .materias-header-mobile h3 {
+    font-size: 1.25rem;
+    color: #212529;
+    font-weight: 600;
+  }
+
+  /* Cards de matéria para mobile */
+  .materias-card-mobile {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease;
+  }
+
+  .materias-card-mobile:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+  }
+
+  .materias-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #f1f3f4;
+  }
+
+  .materias-card-title {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #212529;
+    flex: 1;
+    line-height: 1.4;
+  }
+
+  .materias-card-info {
+    margin-bottom: 1rem;
+  }
+
+  .materias-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .materias-info-label {
+    font-weight: 500;
+    color: #6c757d;
+    font-size: 0.9rem;
+  }
+
+  .materias-info-value {
+    font-weight: 600;
+    color: #212529;
+    font-size: 0.9rem;
+  }
+
+  .materias-card-actions {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .materias-card-actions .btn {
+    border-radius: 8px;
+    font-size: 0.85rem;
+    padding: 0.5rem 0.75rem;
+    font-weight: 500;
+  }
+
+  /* Estado vazio mobile */
+  .materias-empty-state {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    padding: 2rem 1rem;
+    text-align: center;
+  }
+
+  .materias-empty-state h5 {
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+    color: #495057;
+    font-weight: 600;
+  }
+
+  .materias-empty-state p {
+    font-size: 0.9rem;
+    color: #6c757d;
+    margin: 0;
+  }
+}
+
+/* Ajustes para cards de estatísticas em mobile */
+@media (max-width: 576px) {
+  .row.mb-4.align-items-stretch .col-md-3 {
+    margin-bottom: 1rem !important;
+  }
+
+  .row.mb-4.align-items-stretch .col-md-3:last-child {
+    margin-bottom: 0 !important;
+  }
+
+  /* Ajustar tamanho dos cards de estatísticas */
+  .row.mb-4.align-items-stretch .card {
+    padding: 0.75rem !important;
+  }
+
+  .row.mb-4.align-items-stretch .card .px-3 {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+
+  /* Ajustar card de busca/filtro para mobile */
+  .card-body.d-flex.flex-column.flex-md-row {
+    gap: 1rem !important;
+  }
+
+  .card-body.d-flex.flex-column.flex-md-row .form-select {
+    min-width: 100% !important;
+  }
+}
+
+/* Estilos para desktop - garantir que cards mobile não apareçam */
+@media (min-width: 769px) {
+  .materias-mobile-cards {
+    display: none !important;
+  }
+
+  .materias-list-desktop {
+    display: block !important;
+  }
+}
+
+/* === CARDS MOBILE MATÉRIAS === */
+.materias-mobile-cards {
+  padding: 0;
+}
+
+.materias-header-mobile {
+  padding: 0 15px;
+}
+
+.materias-header-mobile h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.materias-grid-mobile {
+  padding: 0 15px;
+}
+
+.materias-card-mobile {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.materias-card-mobile:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.materias-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.materias-card-info {
+  flex: 1;
+}
+
+.materias-card-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1e293b;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.materias-card-codigo {
+  font-size: 0.875rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.materias-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.materias-action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 44px;
+}
+
+.materias-edit-btn {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.materias-edit-btn:hover {
+  background-color: #2563eb;
+}
+
+.materias-delete-btn {
+  background-color: #ef4444;
+  color: white;
+}
+
+.materias-delete-btn:hover {
+  background-color: #dc2626;
+}
+
+.materias-empty-state {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  padding: 40px 20px;
+  text-align: center;
+  margin: 0 15px;
+}
+
+.materias-empty-icon {
+  color: #9ca3af;
+  margin-bottom: 16px;
+}
+
+.materias-empty-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.materias-empty-text {
+  font-size: 0.875rem;
+  color: #6b7280;
+  line-height: 1.5;
+  margin-bottom: 0;
+}
+
+/* Responsividade para cards de estatísticas de matérias */
+@media (max-width: 768px) {
+  .materias-stats-mobile {
+    padding: 0 15px;
+  }
+  
+  .materias-stats-mobile .row {
+    margin: 0 -8px;
+  }
+  
+  .materias-stats-mobile .col-6 {
+    padding: 0 8px;
+    margin-bottom: 16px;
+  }
+  
+  .materias-stats-card {
+    min-height: 100px;
+    padding: 16px 12px;
+  }
+  
+  .materias-stats-card h6 {
+    font-size: 0.75rem;
+    margin-bottom: 8px;
+  }
+  
+  .materias-stats-card h4 {
+    font-size: 1.5rem;
+  }
+}
+
+/* Responsividade para filtros de matérias */
+@media (max-width: 768px) {
+  .materias-filters-mobile {
+    padding: 0 15px;
+    margin-bottom: 20px;
+  }
+  
+  .materias-filters-mobile .row {
+    margin: 0 -8px;
+  }
+  
+  .materias-filters-mobile .col-12,
+  .materias-filters-mobile .col-6 {
+    padding: 0 8px;
+    margin-bottom: 12px;
+  }
+  
+  .materias-filters-mobile .form-control,
+  .materias-filters-mobile .form-select {
+    font-size: 0.875rem;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+  }
+  
+  .materias-filters-mobile .btn {
+    padding: 12px 20px;
+    font-size: 0.875rem;
+    border-radius: 8px;
+    min-height: 48px;
+  }
+}
+
+/* Ajustes gerais para mobile */
+@media (max-width: 768px) {
+  .materias-list-desktop {
+    display: none !important;
+  }
+  
+  .materias-mobile-cards {
+    display: block !important;
+  }
+}
+
+/* === CARDS MOBILE TURMAS === */
+.turmas-mobile-cards {
+  padding: 0;
+}
+
+.turmas-header-mobile {
+  padding: 0 15px;
+}
+
+.turmas-header-mobile h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.turmas-grid-mobile {
+  padding: 0 15px;
+}
+
+.turmas-card-mobile {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.turmas-card-mobile:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.turmas-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.turmas-card-info {
+  flex: 1;
+}
+
+.turmas-card-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1e293b;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.turmas-card-ano {
+  font-size: 0.875rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.turmas-card-body {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.turmas-alunos-info {
+  display: flex;
+  align-items: center;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.turmas-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.turmas-action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 40px;
+}
+
+.turmas-detalhes-btn {
+  background-color: #6b7280;
+  color: white;
+}
+
+.turmas-detalhes-btn:hover {
+  background-color: #4b5563;
+}
+
+.turmas-edit-btn {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.turmas-edit-btn:hover {
+  background-color: #2563eb;
+}
+
+.turmas-delete-btn {
+  background-color: #ef4444;
+  color: white;
+}
+
+.turmas-delete-btn:hover {
+  background-color: #dc2626;
+}
+
+.turmas-empty-state {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  padding: 40px 20px;
+  text-align: center;
+  margin: 0 15px;
+}
+
+.turmas-empty-icon {
+  color: #9ca3af;
+  margin-bottom: 16px;
+}
+
+.turmas-empty-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.turmas-empty-text {
+  font-size: 0.875rem;
+  color: #6b7280;
+  line-height: 1.5;
+  margin-bottom: 0;
+}
+
+/* Responsividade para cards de estatísticas de turmas */
+@media (max-width: 768px) {
+  .turmas-stats-mobile {
+    padding: 0 15px;
+  }
+  
+  .turmas-stats-mobile .row {
+    margin: 0 -8px;
+  }
+  
+  .turmas-stats-mobile .col-md-4 {
+    padding: 0 8px;
+    margin-bottom: 16px;
+  }
+  
+  .turmas-stats-card {
+    min-height: 100px;
+    padding: 16px 12px;
+  }
+  
+  .turmas-stats-card h6 {
+    font-size: 0.75rem;
+    margin-bottom: 8px;
+  }
+  
+  .turmas-stats-card h3 {
+    font-size: 1.5rem;
+  }
+}
+
+/* Responsividade para filtros de turmas */
+@media (max-width: 768px) {
+  .turmas-filters-mobile {
+    padding: 0 15px;
+    margin-bottom: 20px;
+  }
+  
+  .turmas-filters-mobile .row {
+    margin: 0 -8px;
+  }
+  
+  .turmas-filters-mobile .col-md-3 {
+    padding: 0 8px;
+    margin-bottom: 12px;
+  }
+  
+  .turmas-filters-mobile .form-control,
+  .turmas-filters-mobile .form-select {
+    font-size: 0.875rem;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+  }
+}
+
+/* Ajustes gerais para mobile */
+@media (max-width: 768px) {
+  .turmas-list-desktop {
+    display: none !important;
+  }
+  
+  .turmas-mobile-cards {
+    display: block !important;
+  }
+  
+  /* Esconder tabelas desktop e mostrar cards mobile */
+  .table-responsive {
+    display: none !important;
+  }
+  
+  .agenda-cards-mobile,
+  .materias-cards-mobile,
+  .notas-cards-mobile {
+    display: block !important;
+  }
+}
+
+/* Cards mobile de Notas */
+.notas-cards-mobile {
+  display: none;
+}
+
+.card-nota-mobile {
+  border: 1px solid #e3e6f0;
+  border-radius: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.card-nota-mobile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Cards mobile de Turmas */
+.card-turma-mobile {
+  border: 1px solid #e3e6f0;
+  border-radius: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.card-turma-mobile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+.card-turma-mobile .badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.card-turma-mobile .btn {
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+}
+
+.card-turma-mobile .btn-outline-primary:hover {
+  background-color: #4e73df;
+  border-color: #4e73df;
+}
+
+.card-turma-mobile .btn-outline-secondary:hover {
+  background-color: #858796;
+  border-color: #858796;
+}
+
+.card-turma-mobile .btn-outline-danger:hover {
+  background-color: #e74a3b;
+  border-color: #e74a3b;
+}
+
+/* === CARDS MOBILE VÍNCULOS === */
+.vinculos-mobile-cards {
+  padding: 0;
+}
+
+.vinculos-header-mobile {
+  padding: 0 15px;
+}
+
+.vinculos-header-mobile h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.vinculos-grid-mobile {
+  padding: 0 15px;
+}
+
+.vinculos-card-mobile {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.vinculos-card-mobile:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.vinculos-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.vinculos-card-info {
+  flex: 1;
+}
+
+.vinculos-card-professor {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1e293b;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.vinculos-card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vinculos-detail-item {
+  font-size: 0.875rem;
+  color: #64748b;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vinculos-card-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.vinculos-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 40px;
+}
+
+.vinculos-delete-btn {
+  background-color: #ef4444;
+  color: white;
+}
+
+.vinculos-delete-btn:hover {
+  background-color: #dc2626;
+}
+
+.vinculos-empty-state {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  padding: 40px 20px;
+  text-align: center;
+  margin: 0 15px;
+}
+
+.vinculos-empty-icon {
+  color: #9ca3af;
+  margin-bottom: 16px;
+}
+
+.vinculos-empty-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.vinculos-empty-text {
+  font-size: 0.875rem;
+  color: #6b7280;
+  line-height: 1.5;
+  margin-bottom: 0;
+}
+
+/* Responsividade para cards de vínculos */
+@media (max-width: 768px) {
+  .vinculos-list-desktop {
+    display: none !important;
+  }
+  
+  .vinculos-mobile-cards {
+    display: block !important;
+  }
+}
+
+/* Estilos para desktop - garantir que cards mobile não apareçam */
+@media (min-width: 769px) {
+  .vinculos-mobile-cards {
+    display: none !important;
+  }
+
+  .vinculos-list-desktop {
+    display: block !important;
+  }
+}

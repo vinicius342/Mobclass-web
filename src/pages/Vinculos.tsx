@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import AppLayout from '../components/AppLayout';
 import {
-  Container, Table, Spinner, Row, Col, Button, Modal, Form, ToastContainer, Toast,
-  InputGroup, FormControl, Dropdown
+  Container, Table, Spinner, Button, Modal, Form, ToastContainer, Toast,
+  Dropdown, Card
 } from 'react-bootstrap';
+import { PlusCircle } from 'react-bootstrap-icons';
+import { Link2, Trash2 } from 'lucide-react';
 import Paginacao from '../components/Paginacao';
 import {
   collection, getDocs, addDoc, deleteDoc, doc
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Link2 } from 'lucide-react';
 
 interface Professor { id: string; nome: string; }
 interface Turma { id: string; nome: string; }
@@ -36,6 +37,8 @@ export default function Vinculos() {
 
   const [busca, setBusca] = useState('');
   const [filtroTurma, setFiltroTurma] = useState('');
+  const [filtroMateria, setFiltroMateria] = useState('');
+  const [filtroProfessor, setFiltroProfessor] = useState('');
   const [paginaAtual, setPaginaAtual] = useState(1);
   const itensPorPagina = 10;
 
@@ -107,6 +110,8 @@ export default function Vinculos() {
       const turma = turmas.find(t => t.id === v.turmaId)?.nome.toLowerCase() || '';
       return (
         (!filtroTurma || v.turmaId === filtroTurma) &&
+        (!filtroMateria || v.materiaId === filtroMateria) &&
+        (!filtroProfessor || v.professorId === filtroProfessor) &&
         (professor.includes(busca.toLowerCase()) || turma.includes(busca.toLowerCase()))
       );
     })
@@ -136,49 +141,100 @@ export default function Vinculos() {
   return (
     <AppLayout>
       <Container className="my-4">
-        <Row className="mb-3 justify-content-between">
-          <div className="bg-white border-bottom border-gray-200 mb-4">
-            <div className="container px-4">
-              <div className="d-flex align-items-center justify-content-between py-4">
-                <div className="d-flex align-items-center gap-3">
-                  <div
-                    className="d-flex align-items-center justify-content-center rounded bg-primary"
-                    style={{ width: 48, height: 48 }}
-                  >
-                    <Link2 size={24} color="#fff" />
-                  </div>
-                  <div>
-                    <h2 className="fs-3 fw-bold text-dark mb-0">Vínculos Professor-Matéria</h2>
-                    <p className="text-muted mb-0" style={{ fontSize: 14 }}>
-                      MobClassApp - Portal do Professor
-                    </p>
-                  </div>
-                </div>
-                <Col className="text-end">
-                  <Button onClick={() => setShowModal(true)}>Novo Vínculo</Button>
-                </Col>
+        <div className="border-gray-200 mb-3">
+          <div className="mb-4 px-1">
+            <div className="d-flex align-items-center justify-content-between mb-1">
+              <div className="d-flex align-items-center gap-2">
+                <Link2 size={32} color="#2563eb" style={{ minWidth: 32, minHeight: 32 }} />
+                <h1
+                  className="fw-bold mb-0"
+                  style={{
+                    fontSize: '2rem',
+                    background: 'linear-gradient(135deg, #1e293b 0%, #2563eb 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text'
+                  }}
+                >
+                  Vínculos
+                </h1>
+              </div>
+              <div className="mt-2 text-end">
+                <Button variant="primary" onClick={() => setShowModal(true)}>
+                  <PlusCircle className="me-2" size={18} /> Novo Vínculo
+                </Button>
               </div>
             </div>
+            <p className="mb-0" style={{ color: '#3b4861', marginLeft: 44, fontSize: 16 }}>
+              Gerencie os vínculos entre professores, turmas e disciplinas
+            </p>
           </div>
-        </Row>
+        </div>
 
-        <Row className="mb-3">
-          <Col md={4}>
-            <Form.Select value={filtroTurma} onChange={e => setFiltroTurma(e.target.value)}>
-              <option value="">Filtrar por turma</option>
-              {turmas.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
-            </Form.Select>
-          </Col>
-          <Col md={8}>
-            <InputGroup>
-              <FormControl
-                placeholder="Buscar por professor"
-                value={busca}
-                onChange={e => setBusca(e.target.value)}
-              />
-            </InputGroup>
-          </Col>
-        </Row>
+        {/* Cards de resumo acima dos filtros */}
+        <div className="row g-3">
+          {/* Card Total de Vínculos */}
+          <div className="col-md-6">
+            <Card className="shadow-sm card-sm border-left-primary">
+              <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{borderRadius: '12px 12px 0 0'}}>
+                <span className="fw-bold" style={{fontSize: '1.1rem', color: '#3b4861'}}>Total de Vínculos</span>
+                <Link2 size={20} className="text-primary" />
+              </div>
+              <Card.Body className="py-3">
+                <h3 className="mb-0 fw-bold" style={{color: '#2563eb'}}>{vinculosFiltrados.length}</h3>
+              </Card.Body>
+            </Card>
+          </div>
+          {/* Card Professores Ativos */}
+          <div className="col-md-6">
+            <Card className="shadow-sm card-sm border-left-success">
+              <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{borderRadius: '12px 12px 0 0'}}>
+                <span className="fw-bold" style={{fontSize: '1.1rem', color: '#3b4861'}}>Professores Ativos</span>
+                <span className="d-flex align-items-center gap-2">
+                  <PlusCircle size={20} className="text-success" />
+                </span>
+              </div>
+              <Card.Body className="py-3">
+                <h3 className="mb-0 fw-bold" style={{color: '#22c55e'}}>{[...new Set(vinculosFiltrados.map(v => v.professorId))].length}</h3>
+              </Card.Body>
+            </Card>
+          </div>
+        </div>
+
+        <Card className="mb-4">
+          <Card.Body>
+            <div className="row g-3">
+              <div className="col-md-4">
+                <Form.Select value={filtroTurma} onChange={e => setFiltroTurma(e.target.value)}>
+                  <option value="">Filtrar por turma</option>
+                  {turmas.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+                </Form.Select>
+              </div>
+              <div className="col-md-4">
+                <Form.Select value={filtroMateria} onChange={e => setFiltroMateria(e.target.value)}>
+                  <option value="">Filtrar por matéria</option>
+                  {materias.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                </Form.Select>
+              </div>
+              <div className="col-md-4">
+                <Form.Select value={filtroProfessor} onChange={e => setFiltroProfessor(e.target.value)}>
+                  <option value="">Filtrar por professor</option>
+                  {professores.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                </Form.Select>
+              </div>
+            </div>
+            <div className="row g-3 mt-1">
+              <div className="col-md-4">
+                <Form.Control
+                  type="text"
+                  placeholder="Buscar por professor ou turma..."
+                  value={busca}
+                  onChange={e => setBusca(e.target.value)}
+                />
+              </div>
+            </div>
+          </Card.Body>
+        </Card>
 
         {loading ? (
           <div className="text-center py-5">
@@ -186,56 +242,123 @@ export default function Vinculos() {
           </div>
         ) : (
           <>
-            <Table responsive bordered hover>
-              <thead className="table-light">
-                <tr>
-                  <th>Professor</th>
-                  <th>Matéria</th>
-                  <th>Turma</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {vinculosPaginados.map(v => {
-                  const professor = professores.find(p => p.id === v.professorId)?.nome || '-';
-                  const materia = materias.find(m => m.id === v.materiaId)?.nome || '-';
-                  const turma = turmas.find(t => t.id === v.turmaId)?.nome || '-';
-                  return (
-                    <tr key={v.id}>
-                      <td>{professor}</td>
-                      <td>{materia}</td>
-                      <td>{turma}</td>
-                      <td>
-                        <Dropdown align="end">
-                          <Dropdown.Toggle variant="light" size="sm">
-                            <i className="bi bi-three-dots-vertical"></i>
-                          </Dropdown.Toggle>
-                          <Dropdown.Menu>
-                            <Dropdown.Item onClick={() => handleExcluir(v.id)}>
-                              <i className="bi bi-trash me-2"></i> Excluir
-                            </Dropdown.Item>
-                          </Dropdown.Menu>
-                        </Dropdown>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {vinculosPaginados.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="text-center">
-                      Nenhum vínculo encontrado.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </Table>
-            <Paginacao
-              paginaAtual={paginaAtual}
-              totalPaginas={totalPaginas}
-              aoMudarPagina={setPaginaAtual}
-            />
+            {/* Versão Desktop */}
+            <div className="vinculos-list-desktop d-none d-md-block">
+              <Card className="mb-3">
+                <Card.Body>
+                  {/* Título da tabela dentro do Card */}
+                  <h3 className="px-2">Lista de Vínculos</h3>
+                  <Table responsive hover className="w-100">
+                    <thead className="thead-sticky">
+                      <tr style={{ textAlign: 'center' }}>
+                        <th className='text-muted'>Professor</th>
+                        <th className='text-muted'>Matéria</th>
+                        <th className='text-muted'>Turma</th>
+                        <th className='text-muted'>Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {vinculosPaginados.length > 0 ? vinculosPaginados.map(v => {
+                        const professor = professores.find(p => p.id === v.professorId)?.nome || '-';
+                        const materia = materias.find(m => m.id === v.materiaId)?.nome || '-';
+                        const turma = turmas.find(t => t.id === v.turmaId)?.nome || '-';
+                        return (
+                          <tr key={v.id} className='align-middle linha-agenda' style={{ textAlign: 'center' }}>
+                            <td><strong>{professor}</strong></td>
+                            <td><span >{materia}</span></td>
+                            <td><span>{turma}</span></td>
+                            <td>
+                              <Dropdown align="end">
+                                <Dropdown.Toggle variant="light" size="sm" style={{ border: 'none', background: 'transparent', boxShadow: 'none' }} className="dropdown-toggle-no-caret">
+                                  ⋯
+                                </Dropdown.Toggle>
+                                <Dropdown.Menu>
+                                  <Dropdown.Item onClick={() => handleExcluir(v.id)} className="d-flex align-items-center gap-2 text-danger">
+                                    <Trash2 size={16} /> Excluir
+                                  </Dropdown.Item>
+                                </Dropdown.Menu>
+                              </Dropdown>
+                            </td>
+                          </tr>
+                        );
+                      }) : (
+                        <tr>
+                          <td colSpan={4} className="text-center py-4">
+                            <div className="agenda-empty-state">
+                              <div className="empty-icon">🔗</div>
+                              <h5>Nenhum vínculo encontrado</h5>
+                              <p className="text-muted">Tente ajustar os filtros ou adicione um novo vínculo.</p>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </Table>
+                </Card.Body>
+              </Card>
+            </div>
+
+            {/* Versão Mobile */}
+            <div className="vinculos-mobile-cards d-block d-md-none">
+              <div className="vinculos-header-mobile mb-3">
+                <h3 className="mb-0">Lista de Vínculos</h3>
+              </div>
+              
+              {vinculosPaginados.length > 0 ? (
+                <div className="vinculos-grid-mobile">
+                  {vinculosPaginados.map(v => {
+                    const professor = professores.find(p => p.id === v.professorId)?.nome || '-';
+                    const materia = materias.find(m => m.id === v.materiaId)?.nome || '-';
+                    const turma = turmas.find(t => t.id === v.turmaId)?.nome || '-';
+                    return (
+                      <div key={v.id} className="vinculos-card-mobile">
+                        <div className="vinculos-card-header">
+                          <div className="vinculos-card-info">
+                            <div className="vinculos-card-professor">{professor}</div>
+                            <div className="vinculos-card-details">
+                              <span className="vinculos-detail-item">📚 {materia}</span>
+                              <span className="vinculos-detail-item">🏫 {turma}</span>
+                            </div>
+                          </div>
+                          <Link2 size={20} className="text-primary" />
+                        </div>
+                        
+                        <div className="vinculos-card-actions">
+                          <button 
+                            className="vinculos-action-btn vinculos-delete-btn"
+                            onClick={() => handleExcluir(v.id)}
+                          >
+                            <Trash2 size={16} />
+                            Excluir
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="vinculos-empty-state">
+                  <div className="vinculos-empty-icon">
+                    <Link2 size={48} />
+                  </div>
+                  <h5 className="vinculos-empty-title">Nenhum vínculo encontrado</h5>
+                  <p className="vinculos-empty-text">
+                    {busca || filtroTurma || materiaId || professorId
+                      ? 'Tente ajustar os filtros de busca.'
+                      : 'Comece adicionando seu primeiro vínculo.'
+                    }
+                  </p>
+                </div>
+              )}
+            </div>
           </>
         )}
+
+        <Paginacao
+          paginaAtual={paginaAtual}
+          totalPaginas={totalPaginas}
+          aoMudarPagina={setPaginaAtual}
+        />
 
         <Modal show={showModal} onHide={() => setShowModal(false)} centered>
           <Modal.Header closeButton>
