@@ -9,8 +9,11 @@ import {
 } from 'react-bootstrap';
 import {
   collection, getDocs, query, where,
-  writeBatch, doc, getDoc} from 'firebase/firestore';
-import { AlertTriangle, CalendarIcon, Check, CheckSquare, Eye, Info, Plus, Save, Undo, User, UserCheck, UserX, X } from "lucide-react";
+  writeBatch, doc, getDoc,
+  Query,
+  DocumentData
+} from 'firebase/firestore';
+import { AlertTriangle, CalendarIcon, Check, CheckSquare, Info, Save, Undo, User, UserCheck, UserX, X } from "lucide-react";
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { FaUserCheck, FaUsers, FaUserTimes } from 'react-icons/fa';
@@ -26,6 +29,8 @@ import { CheckCircle, XCircle } from 'react-bootstrap-icons';
 
 // 👇 força o tipo como 'any' para evitar conflito
 registerLocale("pt-BR", ptBR as any);
+
+
 
 interface Aluno {
   id: string;
@@ -350,107 +355,119 @@ export default function Frequencia(): JSX.Element {
     previousTab.current = activeTab;
   }, [activeTab]);
 
-// Trecho otimizado da funcao aplicarFiltrosRelatorio
-const aplicarFiltrosRelatorio = async () => {
-  setLoadingRelatorio(true);
-
-  if (!turmaId || !materiaId || !tipoPeriodo) {
-    setToast({
-      show: true,
-      message: 'Por favor, selecione todos os filtros necessários.',
-      variant: 'warning',
-    });
-    setLoadingRelatorio(false);
-    return;
-  }
-
-  const alunosSnap = await getDocs(
-    query(collection(db, 'alunos'), where('turmaId', '==', turmaId))
-  );
-  const listaAlunos: Aluno[] = alunosSnap.docs
-    .map(d => ({ id: d.id, ...(d.data() as any) }))
-    .sort((a, b) => a.nome.localeCompare(b.nome));
-  setAlunosRelatorio(listaAlunos);
-
-  let inicioStr = '';
-  let fimStr = '';
-
-  if (tipoPeriodo === 'mes' && periodoMes) {
-    const indexMes = [
-      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-    ].indexOf(periodoMes);
-    const now = new Date();
-    const start = new Date(now.getFullYear(), indexMes, 1);
-    const end = new Date(now.getFullYear(), indexMes + 1, 0);
-    inicioStr = start.toISOString().split('T')[0];
-    fimStr = end.toISOString().split('T')[0];
-  }
-
-  if (tipoPeriodo === 'personalizado' && dataPeriodo[0] && dataPeriodo[1]) {
-    inicioStr = dataPeriodo[0].toISOString().split('T')[0];
-    fimStr = dataPeriodo[1].toISOString().split('T')[0];
-  }
-
-  const snapshot = await getDocs(
-    query(
-      collection(db, 'frequencias'),
-      where('turmaId', '==', turmaId),
-      where('materiaId', '==', materiaId),
-      where('data', '>=', inicioStr),
-      where('data', '<=', fimStr)
-    )
-  );
-
-  let registros = snapshot.docs.map(doc => doc.data());
-
-  const total = registros.length;
-  const presencas = registros.filter(r => r.presenca).length;
-  const presencaPercentual = total > 0 ? Number(((presencas / total) * 100).toFixed(1)) : 0;
-  const ausentesPercentual = 100 - presencaPercentual;
-
-  setFrequenciaGrafico({
-    presenca: presencaPercentual,
-    ausencia: ausentesPercentual
-  });
-
-  const alunosResumo: Record<string, { nome: string, presencas: number, total: number }> = {};
-
-  async function getNomeAluno(alunoId: string): Promise<string> {
-    const alunoObj = alunos.find(a => a.id === alunoId);
-    if (alunoObj) return alunoObj.nome;
-    try {
-      const docSnap = await getDoc(doc(db, 'alunos', alunoId));
-      if (docSnap.exists()) return docSnap.data().nome || 'Desconhecido';
-    } catch {}
-    return 'Desconhecido';
-  }
-
-  for (const reg of registros) {
-    const alunoId = reg.alunoId;
-    let nome = alunos.find(a => a.id === alunoId)?.nome || await getNomeAluno(alunoId);
-    const primeiroNome = nome.split(' ')[0];
-    if (!alunosResumo[alunoId]) {
-      alunosResumo[alunoId] = { nome: primeiroNome, presencas: 0, total: 0 };
+  const aplicarFiltrosRelatorio = async () => {
+    setLoadingRelatorio(true);
+    if (!turmaId || !materiaId || !tipoPeriodo) {
+      setToast({
+        show: true,
+        message: 'Por favor, selecione todos os filtros necessários.',
+        variant: 'warning',
+      });
+      return;
     }
-    if (reg.presenca) alunosResumo[alunoId].presencas += 1;
-    alunosResumo[alunoId].total += 1;
+
+    // BUSCA OS ALUNOS DA TURMA PARA O RELATÓRIO
+    const alunosSnap = await getDocs(query(collection(db, 'alunos'), where('turmaId', '==', turmaId)));
+    const listaAlunos: Aluno[] = alunosSnap.docs
+      .map(d => ({ id: d.id, ...(d.data() as any) }))
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+    setAlunosRelatorio(listaAlunos);
+
+    let q: Query<DocumentData> = collection(db, 'frequencias');
+
+    // Filtro só por data (período)
+    if (tipoPeriodo === 'mes' && periodoMes) {
+      const indexMes = [
+        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+      ].indexOf(periodoMes);
+      const now = new Date();
+      const start = new Date(now.getFullYear(), indexMes, 1);
+      const end = new Date(now.getFullYear(), indexMes + 1, 0);
+      q = query(
+        q,
+        where('data', '>=', start.toISOString().split('T')[0]),
+        where('data', '<=', end.toISOString().split('T')[0])
+      );
+    }
+    if (tipoPeriodo === 'personalizado' && dataPeriodo[0] && dataPeriodo[1]) {
+      const inicioStr = dataPeriodo[0].toISOString().split('T')[0];
+      const fimStr = dataPeriodo[1].toISOString().split('T')[0];
+      q = query(
+        q,
+        where('data', '>=', inicioStr),
+        where('data', '<=', fimStr)
+      );
+    }
+
+    // Busca todos os registros do período
+    const snapshot = await getDocs(q);
+    let registros = snapshot.docs.map(doc => doc.data());
+
+    // Filtra por turma e matéria no frontend
+    registros = registros.filter(
+      reg => reg.turmaId === turmaId && reg.materiaId === materiaId
+    );
+
+    // --- Gráfico da turma ---
+    const total = registros.length;
+    const presencas = registros.filter(r => r.presenca).length;
+    const presencaPercentual = total > 0 ? Number(((presencas / total) * 100).toFixed(1)) : 0;
+    const ausentesPercentual = 100 - presencaPercentual;
+
+    setFrequenciaGrafico({
+      presenca: presencaPercentual,
+      ausencia: ausentesPercentual
+    });
+
+    // --- Gráfico dos melhores alunos ---
+    const alunosResumo: Record<string, { nome: string, presencas: number, total: number }> = {};
+
+    // Função auxiliar para buscar nome do aluno no Firestore se não estiver no array alunos
+    async function getNomeAluno(alunoId: string): Promise<string> {
+      const alunoObj = alunos.find(a => a.id === alunoId);
+      if (alunoObj) return alunoObj.nome;
+      // Busca no Firestore
+      try {
+        const docSnap = await getDoc(doc(db, 'alunos', alunoId));
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          return data.nome || 'Desconhecido';
+        }
+      } catch {
+        // ignore
+      }
+      return 'Desconhecido';
+    }
+
+    // Agrupa e busca nomes
+    for (const reg of registros) {
+      const alunoId = reg.alunoId;
+      let nome = alunos.find(a => a.id === alunoId)?.nome;
+      if (!nome) {
+        nome = await getNomeAluno(alunoId);
+      }
+      const primeiroNome = nome.split(' ')[0];
+      if (!alunosResumo[alunoId]) {
+        alunosResumo[alunoId] = { nome: primeiroNome, presencas: 0, total: 0 };
+      }
+      if (reg.presenca) alunosResumo[alunoId].presencas += 1;
+      alunosResumo[alunoId].total += 1;
+    }
+
+    const melhoresAlunos = Object.entries(alunosResumo)
+      .map(([alunoId, { nome, presencas, total }]) => ({
+        id: alunoId,
+        nome,
+        percentual: total > 0 ? Number(((presencas / total) * 100).toFixed(1)) : 0
+      }))
+      .sort((a, b) => b.percentual - a.percentual)
+      .slice(0, 5);
+
+    setMelhoresAlunosGrafico(melhoresAlunos);
+    setRegistrosRelatorio(registros);
+    setLoadingRelatorio(false);
   }
-
-  const melhoresAlunos = Object.entries(alunosResumo)
-    .map(([alunoId, { nome, presencas, total }]) => ({
-      id: alunoId,
-      nome,
-      percentual: total > 0 ? Number(((presencas / total) * 100).toFixed(1)) : 0
-    }))
-    .sort((a, b) => b.percentual - a.percentual)
-    .slice(0, 5);
-
-  setMelhoresAlunosGrafico(melhoresAlunos);
-  setRegistrosRelatorio(registros);
-  setLoadingRelatorio(false);
-};
-
 
   // Graficos do relatório
   const [frequenciaGrafico, setFrequenciaGrafico] = useState<{ presenca: number; ausencia: number } | null>(null);
@@ -463,105 +480,222 @@ const aplicarFiltrosRelatorio = async () => {
   return (
     <AppLayout>
       <Container className="my-4">
-        <div className="min-h-screen bg-gray-50">
-          <div className="bg-white border-bottom border-gray-200">
-            <div className="container px-4">
-              <div className="d-flex align-items-center justify-content-between py-4">
-                <div className="d-flex align-items-center gap-3">
-                  <div
-                    className="d-flex align-items-center justify-content-center rounded bg-primary"
-                    style={{ width: 48, height: 48 }}
-                  >
-                    <CheckSquare size={24} color="#fff" />
-                  </div>
-                  <div>
-                    <h2 className="fs-3 fw-bold text-dark mb-0">Gestão de Frequência</h2>
-                    <p className="text-muted mb-0" style={{ fontSize: 14 }}>
-                      MobClassApp - Portal do Professor
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          {/* Navigation Tabs */}
-          <div className="bg-white border-bottom border-gray-200">
-            <div className="container px-4">
-              <div className="d-flex gap-3 py-3">
-                <Button
-                  variant={activeTab === 'lancamento-frequencia' ? 'primary' : 'outline-primary'}
-                  className="d-flex align-items-center gap-2"
-                  onClick={() => setActiveTab('lancamento-frequencia')}
-                >
-                  <Plus size={18} className='nothing-in-mobile'/>
-                  <span>Lançamento de Frequência</span>
-                </Button>
-                <Button
-                  variant={activeTab === 'relatorios-frequencia' ? 'primary' : 'outline-primary'}
-                  className="d-flex align-items-center gap-2"
-                  onClick={() => setActiveTab('relatorios-frequencia')}
-                >
-                  <Eye size={18} className='nothing-in-mobile'/>
-                  <span>Relatórios de Frequência</span>
-                </Button>
-              </div>
-            </div>
-          </div>
 
-          {/* Main Content*/}
-          <div className="py-4 pb-0">
-            {activeTab === 'lancamento-frequencia' ? (
-              <Card className='shadow-sm p-3 mb-0'>
-                <Row className="mb-3 info-cards-frequencia">
-                  <Col md={4}>
+        <div className="border-gray-200 mb-3">
+          {/* Header */}
+          <div className="mb-4 px-1">
+            <div className="d-flex align-items-center gap-2 mb-1">
+              <CheckSquare size={32} color="#2563eb" style={{ minWidth: 32, minHeight: 32 }} />
+              <h1
+                className="fw-bold mb-0"
+                style={{
+                  fontSize: '2rem',
+                  background: 'linear-gradient(135deg, #1e293b 0%, #2563eb 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text'
+                }}
+              >
+                Gestão de Frequência Escolar
+              </h1>
+            </div>
+            <p className="mb-0" style={{ color: '#3b4861', marginLeft: 44, fontSize: 16 }}>
+              Gerencie presenças, ausências e relatórios
+            </p>
+          </div>
+        </div>
+
+        {/* Navigation Tabs */}
+        <div className="container px-0">
+          <div className="d-flex py-3">
+            <div className="custom-tabs-container">
+              <button
+                className={`custom-tab ${activeTab === 'lancamento-frequencia' ? 'active' : ''}`}
+                onClick={() => setActiveTab('lancamento-frequencia')}
+                type="button"
+              >
+                Lançamento de Frequência
+              </button>
+              <button
+                className={`custom-tab ${activeTab === 'relatorios-frequencia' ? 'active' : ''}`}
+                onClick={() => setActiveTab('relatorios-frequencia')}
+                type="button"
+              >
+                Relatórios de Frequência
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content*/}
+        <div className="pb-0">
+          {activeTab === 'lancamento-frequencia' ? (
+            <Card className='shadow-sm p-3 mb-0'>
+              <Row className="mb-3 info-cards-frequencia">
+                <Col md={4}>
+                  <Form.Select
+                    value={turmaId}
+                    onChange={e => {
+                      setTurmaId(e.target.value);
+                      setMateriaId('');
+                    }}
+                  >
+                    <option value="">Selecione a Turma</option>
+                    {turmas.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.nome}
+                      </option>
+                    ))}
+                  </Form.Select>
+                </Col>
+
+                <Col md={4}>
+                  <Form.Select
+                    value={materiaId}
+                    onChange={e => setMateriaId(e.target.value)}
+                    disabled={!turmaId}
+                  >
+                    <option value="">Selecione a Matéria</option>
+                    {isAdmin
+                      ? materias
+                        .filter(m => m && m.nome)
+                        .map(m => (
+                          <option key={m.id} value={m.id}>
+                            {m.nome}
+                          </option>
+                        ))
+                      : vinculos
+                        .filter(v => v.turmaId === turmaId)
+                        .map(v => {
+                          const materia = materias.find(m => m.id === v.materiaId);
+                          return materia ? (
+                            <option key={materia.id} value={materia.id}>
+                              {materia.nome}
+                            </option>
+                          ) : null;
+                        })}
+                  </Form.Select>
+                </Col>
+
+                <Col md={4}>
+                  <DatePicker
+                    selected={dataAula ? stringToLocalDate(dataAula) : null}
+                    onChange={handleDateChange}
+                    dateFormat="dd/MM/yyyy"
+                    locale="pt-BR"
+                    calendarClassName="custom-calendar-small"
+                    customInput={<CustomDateInput />}
+                    showPopperArrow={false}
+                    autoComplete="off"
+                    wrapperClassName="w-100"
+                  />
+                </Col>
+              </Row>
+              <Row className="mb-2 justify-content-end">
+                <Col className="d-flex gap-2 justify-content-end" md={7}>
+                  <Button
+                    variant="success"
+                    onClick={marcarTodosComoPresente}
+                    className="d-flex align-items-center gap-2"
+                  >
+                    <UserCheck size={18} />
+                    Todos Presentes
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={marcarTodosComoAusente}
+                    className="d-flex align-items-center gap-2"
+                  >
+                    <UserX size={18} />
+                    Todos Ausentes
+                  </Button>
+                  <Button
+                    onClick={desfazerAlteracao}
+                    disabled={history.length === 0}
+                    className="d-flex align-items-center gap-2 text-secondary bg-transparent border-0 p-0"
+                  >
+                    <Undo size={18} />
+                    Desfazer
+                  </Button>
+                </Col>
+              </Row>
+            </Card>
+          ) : (
+            <Card className='shadow-sm p-3'>
+              <Row className="mb-3 info-cards-frequencia">
+                <Col md={3}>
+                  <Form.Select
+                    value={turmaId}
+                    onChange={e => {
+                      setTurmaId(e.target.value);
+                      setMateriaId('');
+                    }}
+                  >
+                    <option value="">Selecione a Turma</option>
+                    {turmas.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.nome}
+                      </option>
+                    ))}
+                  </Form.Select>
+                </Col>
+
+                <Col md={3}>
+                  <Form.Select
+                    value={materiaId}
+                    onChange={e => setMateriaId(e.target.value)}
+                    disabled={!turmaId}
+                  >
+                    <option value="">Selecione a Matéria</option>
+                    {materias.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.nome}
+                      </option>
+                    ))}
+                  </Form.Select>
+                </Col>
+
+                <Col md={3}>
+                  <Form.Select
+                    value={tipoPeriodo}
+                    onChange={e => {
+                      const valor = e.target.value;
+                      setTipoPeriodo(valor);
+                      setDataAula(''); // limpa a seleção anterior ao trocar o tipo
+                    }}
+                  >
+                    <option value="">Selecione o Tipo de Período</option>
+                    <option value="mes">Mês</option>
+                    <option value="personalizado">Personalizado</option>
+                  </Form.Select>
+                </Col>
+                {tipoPeriodo === 'mes' && (
+                  <Col md={3}>
                     <Form.Select
-                      value={turmaId}
-                      onChange={e => {
-                        setTurmaId(e.target.value);
-                        setMateriaId('');
-                      }}
+                      value={periodoMes}
+                      onChange={e => setPeriodoMes(e.target.value)}
                     >
-                      <option value="">Selecione a Turma</option>
-                      {turmas.map(t => (
-                        <option key={t.id} value={t.id}>
-                          {t.nome}
+                      <option value="">Selecione o Mês</option>
+                      {[
+                        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+                      ].map((mes, index) => (
+                        <option key={index} value={mes}>
+                          {mes}
                         </option>
                       ))}
                     </Form.Select>
                   </Col>
-
-                  <Col md={4}>
-                    <Form.Select
-                      value={materiaId}
-                      onChange={e => setMateriaId(e.target.value)}
-                      disabled={!turmaId}
-                    >
-                      <option value="">Selecione a Matéria</option>
-                      {isAdmin
-                        ? materias
-                          .filter(m => m && m.nome)
-                          .map(m => (
-                            <option key={m.id} value={m.id}>
-                              {m.nome}
-                            </option>
-                          ))
-                        : vinculos
-                          .filter(v => v.turmaId === turmaId)
-                          .map(v => {
-                            const materia = materias.find(m => m.id === v.materiaId);
-                            return materia ? (
-                              <option key={materia.id} value={materia.id}>
-                                {materia.nome}
-                              </option>
-                            ) : null;
-                          })}
-                    </Form.Select>
-                  </Col>
-
-                  <Col md={4}>
+                )}
+                {tipoPeriodo === 'personalizado' && (
+                  <Col md={3}>
                     <DatePicker
-                      selected={dataAula ? stringToLocalDate(dataAula) : null}
-                      onChange={handleDateChange}
+                      selectsRange
+                      startDate={dataPeriodo[0]}
+                      endDate={dataPeriodo[1]}
+                      onChange={(update: [Date | null, Date | null]) => {
+                        setDataPeriodo(update);
+                      }}
                       dateFormat="dd/MM/yyyy"
                       locale="pt-BR"
                       calendarClassName="custom-calendar-small"
@@ -569,586 +703,470 @@ const aplicarFiltrosRelatorio = async () => {
                       showPopperArrow={false}
                       autoComplete="off"
                       wrapperClassName="w-100"
+                      isClearable
                     />
                   </Col>
-                </Row>
-                <Row className="mb-2 justify-content-end">
-                  <Col className="d-flex gap-3 justify-content-end" md={7}>
-                    <Button
-                      variant="success"
-                      onClick={marcarTodosComoPresente}
-                      className="d-flex align-items-center gap-2"
-                    >
-                      <UserCheck size={18} />
-                      Todos Presentes
-                    </Button>
-                    <Button
-                      variant="danger"
-                      onClick={marcarTodosComoAusente}
-                      className="d-flex align-items-center gap-2"
-                    >
-                      <UserX size={18} />
-                      Todos Ausentes
-                    </Button>
-                    <Button
-                      onClick={desfazerAlteracao}
-                      disabled={history.length === 0}
-                      className="d-flex align-items-center gap-2 text-secondary bg-transparent border-0 p-0"
-                    >
-                      <Undo size={18} />
-                      Desfazer
-                    </Button>
-                  </Col>
-                </Row>
-              </Card>
-            ) : (
-              <Card className='shadow-sm p-3'>
-                <Row className="mb-3 info-cards-frequencia">
-                  <Col md={3}>
-                    <Form.Select
-                      value={turmaId}
-                      onChange={e => {
-                        setTurmaId(e.target.value);
-                        setMateriaId('');
-                      }}
-                    >
-                      <option value="">Selecione a Turma</option>
-                      {turmas.map(t => (
-                        <option key={t.id} value={t.id}>
-                          {t.nome}
-                        </option>
-                      ))}
-                    </Form.Select>
-                  </Col>
+                )}
 
-                  <Col md={3}>
-                    <Form.Select
-                      value={materiaId}
-                      onChange={e => setMateriaId(e.target.value)}
-                      disabled={!turmaId}
-                    >
-                      <option value="">Selecione a Matéria</option>
-                      {materias.map(m => (
-                        <option key={m.id} value={m.id}>
-                          {m.nome}
-                        </option>
-                      ))}
-                    </Form.Select>
-                  </Col>
+              </Row>
 
-                  <Col md={3}>
-                    <Form.Select
-                      value={tipoPeriodo}
-                      onChange={e => {
-                        const valor = e.target.value;
-                        setTipoPeriodo(valor);
-                        setDataAula(''); // limpa a seleção anterior ao trocar o tipo
-                      }}
-                    >
-                      <option value="">Selecione o Tipo de Período</option>
-                      <option value="mes">Mês</option>
-                      <option value="personalizado">Personalizado</option>
-                    </Form.Select>
-                  </Col>
-                  {tipoPeriodo === 'mes' && (
-                    <Col md={3}>
-                      <Form.Select
-                        value={periodoMes}
-                        onChange={e => setPeriodoMes(e.target.value)}
-                      >
-                        <option value="">Selecione o Mês</option>
-                        {[
-                          'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-                          'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-                        ].map((mes, index) => (
-                          <option key={index} value={mes}>
-                            {mes}
-                          </option>
-                        ))}
-                      </Form.Select>
-                    </Col>
-                  )}
-                  {tipoPeriodo === 'personalizado' && (
-                    <Col md={3}>
-                      <DatePicker
-                        selectsRange
-                        startDate={dataPeriodo[0]}
-                        endDate={dataPeriodo[1]}
-                        onChange={(update: [Date | null, Date | null]) => {
-                          setDataPeriodo(update);
-                        }}
-                        dateFormat="dd/MM/yyyy"
-                        locale="pt-BR"
-                        calendarClassName="custom-calendar-small"
-                        customInput={<CustomDateInput />}
-                        showPopperArrow={false}
-                        autoComplete="off"
-                        wrapperClassName="w-100"
-                        isClearable
-                      />
-                    </Col>
-                  )}
+              <Row className="mb-2 justify-content-end">
+                <Col className="d-flex gap-3 justify-content-end" md={7}>
+                  <Button
+                    variant="primary"
+                    className="d-flex align-items-center gap-2"
+                    onClick={aplicarFiltrosRelatorio}
+                  >
+                    Aplicar Filtros
+                  </Button>
+                  <Button
+                    className="d-flex align-items-center gap-2 text-secondary bg-transparent border-0 p-0"
+                    style={{ color: 'black' }}
+                    onClick={limparFiltrosRelatorio}
+                  >
+                    Limpar Filtros
+                  </Button>
 
-                </Row>
-
-                <Row className="mb-2 justify-content-end">
-                  <Col className="d-flex gap-3 justify-content-end" md={7}>
-                    <Button
-                      variant="primary"
-                      className="d-flex align-items-center gap-2"
-                      onClick={aplicarFiltrosRelatorio}
-                    >
-                      Aplicar Filtros
-                    </Button>
-                    <Button
-                      className="d-flex align-items-center gap-2 text-secondary bg-transparent border-0 p-0"
-                      style={{ color: 'black' }}
-                      onClick={limparFiltrosRelatorio}
-                    >
-                      Limpar Filtros
-                    </Button>
-
-                  </Col>
-                </Row>
-              </Card>
-            )}
-            {activeTab === "relatorios-frequencia" && frequenciaGrafico && (
-              <Row className="info-cards-frequencia">
-                <Col md={5}>
-                  <Card className="shadow-md">
-                    <Card.Body>
-                      <h3 className="fs-5 fw-bold text-dark mb-0 mb-1">Frequência da Turma</h3>
-                      <ResponsiveContainer width="100%" height={250}>
-                        <PieChart>
-                          <Pie
-                            data={[
-                              { name: 'Presenças', value: frequenciaGrafico.presenca },
-                              { name: 'Ausências', value: frequenciaGrafico.ausencia }
-                            ]}
-                            dataKey="value"
-                            nameKey="name"
-                            cx="50%"
-                            cy="50%"
-                            outerRadius={80}
-                            label={({ value }) => `${value.toFixed(1)}%`}
-                          >
-                            <Cell key="presencas" fill="#22c55e" />
-                            <Cell key="ausencias" fill="#ef4444" />
-                          </Pie>
-                          <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
-                          <Legend />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </Card.Body>
-                  </Card>
-                </Col>
-                <Col md={7}>
-                  <Card className="shadow-md">
-                    <Card.Body>
-                      <h3 className="fs-5 fw-bold text-dark mb-0 mb-1">Top 5 Alunos - Presença (%)</h3>
-                      <ResponsiveContainer width="100%" height={250}>
-                        <BarChart data={melhoresAlunosGrafico}>
-                          <XAxis
-                            dataKey="nome"
-                            interval={0}
-                            tickFormatter={nome => nome.split(' ')[0]} // Mostra só o primeiro nome
-                          />
-                          <YAxis domain={[0, 100]} tickFormatter={v => `${v}%`} />
-                          <Tooltip formatter={(value: number) => `${value}%`} />
-                          <Bar dataKey="percentual" fill="#22c55e" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </Card.Body>
-                  </Card>
                 </Col>
               </Row>
-            )}
-          </div>
-
-          {/* Lista do relatorio */}
-          {activeTab === "relatorios-frequencia" && frequenciaGrafico && (
-            // <Row>
-            <Card className="shadow-sm">
-              <Card.Body>
-                <h3 className="mb-3 px-3">Resumo de Frequência</h3>
-                <div className="d-flex flex-column gap-2">
-                  <div className="d-flex justify-content-between px-3 py-2 border-bottom fw-bold text-muted">
-                    <div style={{ width: '25%', display: 'flex', justifyContent: 'center' }}>Aluno</div>
-                    <div style={{ width: '15%', display: 'flex', justifyContent: 'center' }}>Presenças</div>
-                    <div style={{ width: '15%', display: 'flex', justifyContent: 'center' }}>Faltas</div>
-                    <div style={{ width: '20%', display: 'flex', justifyContent: 'center' }} className="nothing-in-mobile">Frequência</div>
-                    <div style={{ width: '20%', display: 'flex', justifyContent: 'center' }}>Status</div>
-                  </div>
-                  {loadingRelatorio ? (
-                    <div className="d-flex justify-content-center align-items-center" style={{ height: '200px' }}>
-                      <Spinner animation="border" />
-                    </div>
-                  ) : (
-                    alunosRelatorio.map(a => {
-                      const registrosAluno = registrosRelatorio.filter(r => r.alunoId === a.id);
-                      const presencas = registrosAluno.filter(r => r.presenca === true).length;
-                      const faltas = registrosAluno.filter(r => r.presenca === false).length;
-                      const total = registrosAluno.length;
-                      const percentual = total > 0 ? ((presencas / total) * 100).toFixed(1) : '0.0';
-                      let status = null;
-
-                      if (parseFloat(percentual) >= 80) {
-                        status = (
-                          <span className="badge bg-success d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
-                            <CheckCircle size={16} /> OK
-                          </span>
-                        );
-                      } else if (parseFloat(percentual) >= 60) {
-                        status = (
-                          <span className="badge bg-warning text-dark d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
-                            <AlertTriangle size={16} /> Regular
-                          </span>
-                        );
-                      } else {
-                        status = (
-                          <span className="badge bg-danger d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
-                            <XCircle size={16} /> Crítico
-                          </span>
-                        );
-                      }
-
-
-                      return (
-                        <Card
-                          key={a.id}
-                          className="w-100 custom-card-frequencia mb-0"
-                        >
-                          <Card.Body className="d-flex justify-content-between align-items-center py-3 px-3">
-                            <div className="d-flex align-items-center" style={{ width: '25%' }}>
-                              <div className="user-icon-circle-frequencia">
-                                <User size={24} color="#fff" />
-                              </div>
-                              <span className="aluno-nome-frequencia ms-2" style={{ fontSize: '1rem' }}>{a.nome}</span>
-                            </div>
-                            <div style={{ width: '15%', textAlign: 'center' }}>
-                              <span className="text-success fw-bold">{presencas}</span>
-                            </div>
-                            <div style={{ width: '15%', textAlign: 'center' }}>
-                              <span className="text-danger fw-bold">{faltas}</span>
-                            </div>
-                            <div style={{ width: '20%', display: 'flex', alignItems: 'center', gap: '8px' }} className='nothing-in-mobile'>
-                              <div
-                                className="progress"
-                                style={{
-                                  width: '120px', // largura fixa
-                                  height: '20px',
-                                  borderRadius: '999px',
-                                  backgroundColor: '#e9ecef',
-                                }}
-                              >
-                                <div
-                                  className="progress-bar"
-                                  role="progressbar"
-                                  style={{
-                                    width: `${percentual}%`,
-                                    backgroundColor: '#021E4C',
-                                    borderRadius: '999px',
-                                  }}
-                                  aria-valuenow={parseFloat(percentual)}
-                                  aria-valuemin={0}
-                                  aria-valuemax={100}
-                                ></div>
-                              </div>
-                              <span
-                                style={{
-                                  fontWeight: 'bold',
-                                  minWidth: '40px',
-                                  textAlign: 'right',
-                                  fontSize: '0.9rem',
-                                }}
-                              >
-                                {percentual}%
-                              </span>
-                            </div>
-                            <div style={{ width: '20%', textAlign: 'center', justifyContent: 'center', display: 'flex' }}>{status}</div>
-                          </Card.Body>
-                        </Card>
-                      );
-                    })
-                  )}
-                </div>
-              </Card.Body>
             </Card>
-            // </Row>
           )}
-
-          {activeTab === "lancamento-frequencia" && alunos.length > 0 && (
-            <>
-              <Row className='pt-4 info-cards-frequencia'>
-                <Col md={4}>
-                  <Card className="shadow-sm p-3 text-center">
-                    <div className="fs-4 text-success">
-                      <FaUserCheck className="me-2" />
-                      {totalPresentes}
-                    </div>
-                    <div className="fw-semibold fs-6">
-                      <span className="text-success">Presentes</span>
-                      <span className="text-muted"> ({porcentagemPresentes}%)</span>
-                    </div>
-                  </Card>
-                </Col>
-                <Col md={4}>
-                  <Card className="shadow-sm p-3 text-center">
-                    <div className="fs-4 text-danger">
-                      <FaUserTimes className="me-2" />
-                      {totalAusentes}
-                    </div>
-                    <div className="fw-semibold fs-6">
-                      <span className="text-danger">Ausentes</span>
-                      <span className="text-muted"> ({porcentagemAusentes}%)</span>
-                    </div>
-                  </Card>
-                </Col>
-                <Col md={4}>
-                  <Card className="shadow-sm p-3 text-center">
-                    <div className="fs-4 text-secondary">
-                      <FaUsers className="me-2" />
-                      {totalAlunos}
-                    </div>
-                    <div className="fw-semibold fs-6 text-secondary">Total de Alunos</div>
-                  </Card>
-                </Col>
-              </Row>
-              <Card className='shadow-sm p-3'>
-                <Col md={12} className="d-flex justify-content-end gap-3">
-                  <Form.Control
-                    type="search"
-                    placeholder="Buscar aluno..."
-                    value={buscaNome}
-                    onChange={e => setBuscaNome(e.target.value)}
-                    autoComplete="off"
-                  />
-                  <Button
-                    variant={filtroAlunos === "todos" ? "primary" : "outline-primary"}
-                    onClick={() => filtrarAlunos('todos')}
-                    className="d-flex align-items-center gap-2"
-                  >
-                    Todos
-                  </Button>
-
-                  <Button
-                    variant={filtroAlunos === "presentes" ? "primary" : "outline-primary"}
-                    onClick={() => filtrarAlunos('presentes')}
-                    className="d-flex align-items-center gap-2"
-                  >
-                    Presentes
-                  </Button>
-
-                  <Button
-                    variant={filtroAlunos === "ausentes" ? "primary" : "outline-primary"}
-                    onClick={() => filtrarAlunos('ausentes')}
-                    className="d-flex align-items-center gap-2"
-                  >
-                    Ausentes
-                  </Button>
-
-                </Col>
-              </Card>
-            </>
+          {activeTab === "relatorios-frequencia" && frequenciaGrafico && (
+            <Row className="info-cards-frequencia">
+              <Col md={5}>
+                <Card className="shadow-md">
+                  <Card.Body>
+                    <h3 className="fs-5 fw-bold text-dark mb-0 mb-1">Frequência da Turma</h3>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'Presenças', value: frequenciaGrafico.presenca },
+                            { name: 'Ausências', value: frequenciaGrafico.ausencia }
+                          ]}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={80}
+                          label={({ value }) => `${value.toFixed(1)}%`}
+                        >
+                          <Cell key="presencas" fill="#22c55e" />
+                          <Cell key="ausencias" fill="#ef4444" />
+                        </Pie>
+                        <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </Card.Body>
+                </Card>
+              </Col>
+              <Col md={7}>
+                <Card className="shadow-md">
+                  <Card.Body>
+                    <h3 className="fs-5 fw-bold text-dark mb-0 mb-1">Top 5 Alunos - Presença (%)</h3>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <BarChart data={melhoresAlunosGrafico}>
+                        <XAxis
+                          dataKey="nome"
+                          interval={0}
+                          tickFormatter={nome => nome.split(' ')[0]} // Mostra só o primeiro nome
+                        />
+                        <YAxis domain={[0, 100]} tickFormatter={v => `${v}%`} />
+                        <Tooltip formatter={(value: number) => `${value}%`} />
+                        <Bar dataKey="percentual" fill="#22c55e" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Card.Body>
+                </Card>
+              </Col>
+            </Row>
           )}
+        </div>
 
-          {loading ? (
-            <div className="d-flex justify-content-center align-items-center vh-50">
-              <Spinner animation="border" />
-            </div>
-          ) : (
-            activeTab === "lancamento-frequencia" && alunos.length > 0 && (
-              <Card className="shadow-sm">
-                <Card.Body>
-                  <h3 className="mb-3 px-3">Lista de Alunos</h3>
-                  <div className="d-flex flex-column gap-0">
-                    {alunosFiltrados.map(a => (
+        {/* Lista do relatorio */}
+        {activeTab === "relatorios-frequencia" && frequenciaGrafico && (
+          // <Row>
+          <Card className="shadow-sm">
+            <Card.Body>
+              <h3 className="mb-3 px-3">Resumo de Frequência</h3>
+              <div className="d-flex flex-column gap-2">
+                <div className="d-flex justify-content-between px-3 py-2 border-bottom fw-bold text-muted">
+                  <div style={{ width: '25%', display: 'flex', justifyContent: 'center' }}>Aluno</div>
+                  <div style={{ width: '15%', display: 'flex', justifyContent: 'center' }}>Presenças</div>
+                  <div style={{ width: '15%', display: 'flex', justifyContent: 'center' }}>Faltas</div>
+                  <div style={{ width: '20%', display: 'flex', justifyContent: 'center' }} className="nothing-in-mobile">Frequência</div>
+                  <div style={{ width: '20%', display: 'flex', justifyContent: 'center' }}>Status</div>
+                </div>
+                {loadingRelatorio ? (
+                  <div className="d-flex justify-content-center align-items-center" style={{ height: '200px' }}>
+                    <Spinner animation="border" />
+                  </div>
+                ) : (
+                  alunosRelatorio.map(a => {
+                    const registrosAluno = registrosRelatorio.filter(r => r.alunoId === a.id);
+                    const presencas = registrosAluno.filter(r => r.presenca === true).length;
+                    const faltas = registrosAluno.filter(r => r.presenca === false).length;
+                    const total = registrosAluno.length;
+                    const percentual = total > 0 ? ((presencas / total) * 100).toFixed(1) : '0.0';
+                    let status = null;
+
+                    if (parseFloat(percentual) >= 80) {
+                      status = (
+                        <span className="badge bg-success d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
+                          <CheckCircle size={16} /> OK
+                        </span>
+                      );
+                    } else if (parseFloat(percentual) >= 60) {
+                      status = (
+                        <span className="badge bg-warning text-dark d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
+                          <AlertTriangle size={16} /> Regular
+                        </span>
+                      );
+                    } else {
+                      status = (
+                        <span className="badge bg-danger d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
+                          <XCircle size={16} /> Crítico
+                        </span>
+                      );
+                    }
+
+
+                    return (
                       <Card
                         key={a.id}
                         className="w-100 custom-card-frequencia mb-0"
                       >
                         <Card.Body className="d-flex justify-content-between align-items-center py-3 px-3">
-                          <div className="d-flex align-items-center">
+                          <div className="d-flex align-items-center" style={{ width: '25%' }}>
                             <div className="user-icon-circle-frequencia">
                               <User size={24} color="#fff" />
                             </div>
-                            <span className="aluno-nome-frequencia">{a.nome}</span>
+                            <span className="aluno-nome-frequencia ms-2" style={{ fontSize: '1rem' }}>{a.nome}</span>
                           </div>
-                          <div className="d-flex gap-2 button-group-card-frequencia">
-
-                            <Button
-                              variant={attendance[a.id] ? "success" : "outline-success"}
-                              size="lg"
-                              className="btn-presenca-frequencia d-flex align-items-center gap-2"
-                              onClick={() => {
-                                marcarPresenca(a.id, true);
-                                if (justificativas[a.id]) {
-                                  setJustificativas(prev => {
-                                    const novo = { ...prev };
-                                    delete novo[a.id];
-                                    return novo;
-                                  });
-                                  setToast({
-                                    show: true,
-                                    message: 'Justificativa removida!',
-                                    variant: 'danger'
-                                  });
-                                }
-                              }}
-                            >
-                              <Check size={20} />
-                              Presente
-                            </Button>
-
-                            <Button
-                              variant={attendance[a.id] === false && !justificativas[a.id] ? "danger" : "outline-danger"}
-                              size="lg"
-                              className="btn-presenca-frequencia d-flex align-items-center gap-2"
-                              onClick={() => {
-                                marcarPresenca(a.id, false);
-                                if (justificativas[a.id]) {
-                                  setJustificativas(prev => {
-                                    const novo = { ...prev };
-                                    delete novo[a.id];
-                                    return novo;
-                                  });
-                                  setToast({
-                                    show: true,
-                                    message: 'Justificativa removida!',
-                                    variant: 'danger'
-                                  });
-                                }
-                              }}
-                            >
-                              <X size={20} />
-                              Ausente
-                            </Button>
-                            <Button
-                              variant={justificativas[a.id] ? "warning" : "outline-warning"}
-                              size="lg"
-                              className={`btn-presenca-frequencia d-flex align-items-center gap-2 justifyificada-button${justificativas[a.id] ? " selected" : ""}`}
-                              onClick={() => {
-                                setAlunoJustId(a.id);
-                                setJustificativaTexto(justificativas[a.id] || '');
-                                setShowJustModal(true);
-                              }}
-                            >
-                              <Info size={20} />
-                              Justificado
-                            </Button>
-
+                          <div style={{ width: '15%', textAlign: 'center' }}>
+                            <span className="text-success fw-bold">{presencas}</span>
                           </div>
+                          <div style={{ width: '15%', textAlign: 'center' }}>
+                            <span className="text-danger fw-bold">{faltas}</span>
+                          </div>
+                          <div style={{ width: '20%', display: 'flex', alignItems: 'center', gap: '8px' }} className='nothing-in-mobile'>
+                            <div
+                              className="progress"
+                              style={{
+                                width: '120px', // largura fixa
+                                height: '20px',
+                                borderRadius: '999px',
+                                backgroundColor: '#e9ecef',
+                              }}
+                            >
+                              <div
+                                className="progress-bar"
+                                role="progressbar"
+                                style={{
+                                  width: `${percentual}%`,
+                                  backgroundColor: '#021E4C',
+                                  borderRadius: '999px',
+                                }}
+                                aria-valuenow={parseFloat(percentual)}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                              ></div>
+                            </div>
+                            <span
+                              style={{
+                                fontWeight: 'bold',
+                                minWidth: '40px',
+                                textAlign: 'right',
+                                fontSize: '0.9rem',
+                              }}
+                            >
+                              {percentual}%
+                            </span>
+                          </div>
+                          <div style={{ width: '20%', textAlign: 'center', justifyContent: 'center', display: 'flex' }}>{status}</div>
                         </Card.Body>
                       </Card>
-                    ))}
+                    );
+                  })
+                )}
+              </div>
+            </Card.Body>
+          </Card>
+          // </Row>
+        )}
+
+        {activeTab === "lancamento-frequencia" && alunos.length > 0 && (
+          <>
+            <Row className='pt-4 info-cards-frequencia'>
+              <Col md={4}>
+                <Card className="shadow-sm p-3 text-center">
+                  <div className="fs-4 text-success">
+                    <FaUserCheck className="me-2" />
+                    {totalPresentes}
                   </div>
-                </Card.Body>
-              </Card>
-            )
+                  <div className="fw-semibold fs-6">
+                    <span className="text-success">Presentes</span>
+                    <span className="text-muted"> ({porcentagemPresentes}%)</span>
+                  </div>
+                </Card>
+              </Col>
+              <Col md={4}>
+                <Card className="shadow-sm p-3 text-center">
+                  <div className="fs-4 text-danger">
+                    <FaUserTimes className="me-2" />
+                    {totalAusentes}
+                  </div>
+                  <div className="fw-semibold fs-6">
+                    <span className="text-danger">Ausentes</span>
+                    <span className="text-muted"> ({porcentagemAusentes}%)</span>
+                  </div>
+                </Card>
+              </Col>
+              <Col md={4}>
+                <Card className="shadow-sm p-3 text-center">
+                  <div className="fs-4 text-secondary">
+                    <FaUsers className="me-2" />
+                    {totalAlunos}
+                  </div>
+                  <div className="fw-semibold fs-6 text-secondary">Total de Alunos</div>
+                </Card>
+              </Col>
+            </Row>
+            <Card className='shadow-sm p-3'>
+              <Col md={12} className="d-flex justify-content-end gap-3">
+                <Form.Control
+                  type="search"
+                  placeholder="Buscar aluno..."
+                  value={buscaNome}
+                  onChange={e => setBuscaNome(e.target.value)}
+                  autoComplete="off"
+                />
+                <Button
+                  variant={filtroAlunos === "todos" ? "primary" : "outline-primary"}
+                  onClick={() => filtrarAlunos('todos')}
+                  className="d-flex align-items-center gap-2"
+                >
+                  Todos
+                </Button>
+
+                <Button
+                  variant={filtroAlunos === "presentes" ? "primary" : "outline-primary"}
+                  onClick={() => filtrarAlunos('presentes')}
+                  className="d-flex align-items-center gap-2"
+                >
+                  Presentes
+                </Button>
+
+                <Button
+                  variant={filtroAlunos === "ausentes" ? "primary" : "outline-primary"}
+                  onClick={() => filtrarAlunos('ausentes')}
+                  className="d-flex align-items-center gap-2"
+                >
+                  Ausentes
+                </Button>
+
+              </Col>
+            </Card>
+          </>
+        )}
+
+        {loading ? (
+          <div className="d-flex justify-content-center align-items-center vh-50">
+            <Spinner animation="border" />
+          </div>
+        ) : (
+          activeTab === "lancamento-frequencia" && alunos.length > 0 && (
+            <Card className="shadow-sm">
+              <Card.Body>
+                <h3 className="mb-3 px-3">Lista de Alunos</h3>
+                <div className="d-flex flex-column gap-0">
+                  {alunosFiltrados.map(a => (
+                    <Card
+                      key={a.id}
+                      className="w-100 custom-card-frequencia mb-0"
+                    >
+                      <Card.Body className="d-flex justify-content-between align-items-center py-3 px-3">
+                        <div className="d-flex align-items-center">
+                          <div className="user-icon-circle-frequencia">
+                            <User size={24} color="#fff" />
+                          </div>
+                          <span className="aluno-nome-frequencia">{a.nome}</span>
+                        </div>
+                        <div className="d-flex gap-2 button-group-card-frequencia">
+
+                          <Button
+                            variant={attendance[a.id] ? "success" : "outline-success"}
+                            size="lg"
+                            className="btn-presenca-frequencia d-flex align-items-center gap-2"
+                            onClick={() => {
+                              marcarPresenca(a.id, true);
+                              if (justificativas[a.id]) {
+                                setJustificativas(prev => {
+                                  const novo = { ...prev };
+                                  delete novo[a.id];
+                                  return novo;
+                                });
+                                setToast({
+                                  show: true,
+                                  message: 'Justificativa removida!',
+                                  variant: 'danger'
+                                });
+                              }
+                            }}
+                          >
+                            <Check size={20} />
+                            Presente
+                          </Button>
+
+                          <Button
+                            variant={attendance[a.id] === false && !justificativas[a.id] ? "danger" : "outline-danger"}
+                            size="lg"
+                            className="btn-presenca-frequencia d-flex align-items-center gap-2"
+                            onClick={() => {
+                              marcarPresenca(a.id, false);
+                              if (justificativas[a.id]) {
+                                setJustificativas(prev => {
+                                  const novo = { ...prev };
+                                  delete novo[a.id];
+                                  return novo;
+                                });
+                                setToast({
+                                  show: true,
+                                  message: 'Justificativa removida!',
+                                  variant: 'danger'
+                                });
+                              }
+                            }}
+                          >
+                            <X size={20} />
+                            Ausente
+                          </Button>
+                          <Button
+                            variant={justificativas[a.id] ? "warning" : "outline-warning"}
+                            size="lg"
+                            className={`btn-presenca-frequencia d-flex align-items-center gap-2 justifyificada-button${justificativas[a.id] ? " selected" : ""}`}
+                            onClick={() => {
+                              setAlunoJustId(a.id);
+                              setJustificativaTexto(justificativas[a.id] || '');
+                              setShowJustModal(true);
+                            }}
+                          >
+                            <Info size={20} />
+                            Justificado
+                          </Button>
+
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  ))}
+                </div>
+              </Card.Body>
+            </Card>
           )
-          }
-          {(activeTab === "lancamento-frequencia" && alunos.length > 0 && (
+        )
+        }
+        {(activeTab === "lancamento-frequencia" && alunos.length > 0 && (
+          <Button
+            variant="primary"
+            onClick={() => setShowModal(true)}
+            disabled={
+              saving ||
+              loading ||
+              !alunos.length ||
+              Object.keys(attendance).length === 0
+            }
+            className="d-flex justify-content-center align-items-center mx-auto"
+          >
+            {saving ? (
+              <Spinner animation="border" size="sm" />
+            ) : (
+              <>
+                <Save size={20} />
+                <span className="ms-2">Salvar Frequência</span>
+              </>
+            )}
+          </Button>
+        ))}
+
+
+        {/* Modal Confirmacao */}
+        <Modal show={showModal} onHide={() => setShowModal(false)} centered>
+          <Modal.Header closeButton>
+            <Modal.Title>Confirmar Frequência</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            Você marcou <strong>{totalPresentes}</strong> presentes e <strong>{totalAusentes}</strong> ausentes. Deseja confirmar?
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowModal(false)}>
+              Cancelar
+            </Button>
             <Button
               variant="primary"
-              onClick={() => setShowModal(true)}
-              disabled={
-                saving ||
-                loading ||
-                !alunos.length ||
-                Object.keys(attendance).length === 0
-              }
-              className="d-flex justify-content-center align-items-center mx-auto"
+              onClick={() => {
+                setShowModal(false);
+                handleSalvar(); // aqui você chama sua função de salvar
+              }}
             >
-              {saving ? (
-                <Spinner animation="border" size="sm" />
-              ) : (
-                <>
-                  <Save size={20} />
-                  <span className="ms-2">Salvar Frequência</span>
-                </>
-              )}
+              Confirmar
             </Button>
-          ))}
+          </Modal.Footer>
+        </Modal>
 
-
-          {/* Modal Confirmacao */}
-          <Modal show={showModal} onHide={() => setShowModal(false)} centered>
-            <Modal.Header closeButton>
-              <Modal.Title>Confirmar Frequência</Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-              Você marcou <strong>{totalPresentes}</strong> presentes e <strong>{totalAusentes}</strong> ausentes. Deseja confirmar?
-            </Modal.Body>
-            <Modal.Footer>
-              <Button variant="secondary" onClick={() => setShowModal(false)}>
-                Cancelar
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setShowModal(false);
-                  handleSalvar(); // aqui você chama sua função de salvar
-                }}
-              >
-                Confirmar
-              </Button>
-            </Modal.Footer>
-          </Modal>
-
-          {/* Modal Justificativa */}
-          <Modal show={showJustModal} onHide={() => setShowJustModal(false)} centered>
-            <Modal.Header closeButton>
-              <Modal.Title>Justificativa de Ausência</Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-              <Form>
-                <Form.Group controlId="justificativa">
-                  <Form.Label>Motivo</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={3}
-                    placeholder="Ex: Atestado médico"
-                    value={justificativaTexto}
-                    onChange={(e) => setJustificativaTexto(e.target.value)}
-                  />
-                </Form.Group>
-              </Form>
-            </Modal.Body>
-            <Modal.Footer>
-              <Button variant="secondary" onClick={() => setShowJustModal(false)}>
-                Cancelar
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  if (alunoJustId) {
-                    setJustificativas(prev => ({
-                      ...prev,
-                      [alunoJustId]: justificativaTexto
-                    }));
-                    // Marca como ausente ao salvar justificativa
-                    marcarPresenca(alunoJustId, false);
-                  }
-                  setShowJustModal(false);
-                }}
-              >
-                Salvar Justificativa
-              </Button>
-            </Modal.Footer>
-          </Modal>
-
-          <ToastContainer position="bottom-end" className="p-3">
-            <Toast
-              show={toast.show}
-              bg={toast.variant}
-              onClose={() => setToast(prev => ({ ...prev, show: false }))}
-              delay={3000}
-              autohide
+        {/* Modal Justificativa */}
+        <Modal show={showJustModal} onHide={() => setShowJustModal(false)} centered>
+          <Modal.Header closeButton>
+            <Modal.Title>Justificativa de Ausência</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <Form>
+              <Form.Group controlId="justificativa">
+                <Form.Label>Motivo</Form.Label>
+                <Form.Control
+                  as="textarea"
+                  rows={3}
+                  placeholder="Ex: Atestado médico"
+                  value={justificativaTexto}
+                  onChange={(e) => setJustificativaTexto(e.target.value)}
+                />
+              </Form.Group>
+            </Form>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowJustModal(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                if (alunoJustId) {
+                  setJustificativas(prev => ({
+                    ...prev,
+                    [alunoJustId]: justificativaTexto
+                  }));
+                  // Marca como ausente ao salvar justificativa
+                  marcarPresenca(alunoJustId, false);
+                }
+                setShowJustModal(false);
+              }}
             >
-              <Toast.Body className="text-white">{toast.message}</Toast.Body>
-            </Toast>
-          </ToastContainer>
-        </div>
+              Salvar Justificativa
+            </Button>
+          </Modal.Footer>
+        </Modal>
+
+        <ToastContainer position="bottom-end" className="p-3">
+          <Toast
+            show={toast.show}
+            bg={toast.variant}
+            onClose={() => setToast(prev => ({ ...prev, show: false }))}
+            delay={3000}
+            autohide
+          >
+            <Toast.Body className="text-white">{toast.message}</Toast.Body>
+          </Toast>
+        </ToastContainer>
       </Container>
     </AppLayout>
   );

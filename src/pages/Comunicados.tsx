@@ -1,17 +1,30 @@
 // src/pages/Comunicados.tsx - Atualizado para permitir professores criarem comunicados e usar vínculos
 import { useEffect, useState } from 'react';
+import React from 'react';
 import AppLayout from '../components/AppLayout';
 import {
-  Container, Table, Button, Modal, Form, ToastContainer, Toast, Row, Col, InputGroup, FormControl,
-  Dropdown
+  Container, Button, Modal, Form, ToastContainer, Toast, Row, Col, FormControl,
+  Card, Badge,
+  // ProgressBar
 } from 'react-bootstrap';
+import { PlusCircle, CheckCircle, Clock, FileEarmark, Calendar } from 'react-bootstrap-icons';
+import { X } from 'lucide-react';
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy, Timestamp, getDoc
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import Paginacao from '../components/Paginacao';
-import { Megaphone } from 'react-bootstrap-icons';
+import { Megaphone, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+
+// Imports para DatePicker
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import { ptBR } from "date-fns/locale";
+import { registerLocale } from "react-datepicker";
+
+// Registrar locale português
+registerLocale("pt-BR", ptBR as any);
 
 interface Comunicado {
   id: string;
@@ -20,6 +33,8 @@ interface Comunicado {
   turmaId: string;
   turmaNome: string;
   data: Timestamp;
+  status: 'enviado' | 'agendado' | 'rascunho';
+  dataAgendamento?: Timestamp;
 }
 interface Turma {
   id: string;
@@ -35,6 +50,46 @@ export default function Comunicados() {
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
 
+  // Componente CustomDateInput para usar com DatePicker
+  type CustomDateInputProps = {
+    value?: string;
+    onClick?: () => void;
+  };
+  
+  const CustomDateInput = React.forwardRef<HTMLInputElement, CustomDateInputProps>(
+    ({ value, onClick }, ref) => {
+      return (
+        <div
+          onClick={onClick}
+          ref={ref as React.Ref<HTMLDivElement>}
+          className="position-relative"
+          style={{ width: "100%" }}
+        >
+          <input
+            type="text"
+            value={value}
+            readOnly
+            className="form-control"
+            placeholder="Selecione data e hora"
+            autoComplete="off"
+            style={{ width: "100%", paddingRight: "2.5rem" }}
+          />
+          <Calendar
+            size={18}
+            className="position-absolute"
+            style={{
+              top: "50%",
+              right: "10px",
+              transform: "translateY(-50%)",
+              pointerEvents: "none",
+              color: "#6c757d"
+            }}
+          />
+        </div>
+      );
+    }
+  );
+
   const [comunicados, setComunicados] = useState<Comunicado[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [, setVinculos] = useState<Vinculo[]>([]);
@@ -43,11 +98,18 @@ export default function Comunicados() {
   const [mensagem, setMensagem] = useState('');
   const [turmaId, setTurmaId] = useState('');
   const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [status, setStatus] = useState<'enviado' | 'agendado' | 'rascunho'>('enviado');
+  const [dataAgendamento, setDataAgendamento] = useState<Date | null>(null);
   const [toast, setToast] = useState({ show: false, message: '', variant: 'success' as 'success' | 'danger' });
 
   const [busca, setBusca] = useState('');
+  const [filtroTurma, setFiltroTurma] = useState('');
+  const [filtroAssunto, setFiltroAssunto] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState('');
   const [paginaAtual, setPaginaAtual] = useState(1);
-  const itensPorPagina = 3;
+  const [expandedMessages, setExpandedMessages] = useState<Record<string, boolean>>({});
+  const itensPorPagina = 6;
+  const maxCaracteres = 150;
 
   useEffect(() => {
     fetchData();
@@ -84,20 +146,37 @@ export default function Comunicados() {
       : query(collection(db, 'comunicados'), where('turmaId', 'in', listaTurmas.map(t => t.id)), orderBy('data', 'desc'));
 
     const snap = await getDocs(comunicadosQuery);
-    const lista = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Comunicado[];
+    const lista = snap.docs.map(d => ({ 
+      id: d.id, 
+      ...(d.data() as any),
+      status: d.data().status || 'enviado'
+    })) as Comunicado[];
     setComunicados(lista);
   };
 
   const handleSalvar = async () => {
     if (!assunto || !mensagem) return;
+    
+    // Validar data de agendamento se status for agendado
+    if (status === 'agendado' && !dataAgendamento) {
+      setToast({ show: true, message: 'Data de agendamento é obrigatória para comunicados agendados.', variant: 'danger' });
+      return;
+    }
+
     const turmaSelecionada = turmas.find(t => t.id === turmaId);
-    const payload = {
+    const payload: any = {
       assunto,
       mensagem,
       turmaId,
       turmaNome: turmaSelecionada?.nome || '',
       data: Timestamp.now(),
+      status,
     };
+
+    // Adicionar data de agendamento se status for agendado
+    if (status === 'agendado' && dataAgendamento) {
+      payload.dataAgendamento = Timestamp.fromDate(dataAgendamento);
+    }
 
     try {
       if (editandoId) {
@@ -105,7 +184,7 @@ export default function Comunicados() {
         setToast({ show: true, message: 'Comunicado atualizado com sucesso!', variant: 'success' });
       } else {
         await addDoc(collection(db, 'comunicados'), payload);
-        setToast({ show: true, message: 'Comunicado enviado com sucesso!', variant: 'success' });
+        setToast({ show: true, message: 'Comunicado salvo com sucesso!', variant: 'success' });
       }
       setShowModal(false);
       limparFormulario();
@@ -122,6 +201,13 @@ export default function Comunicados() {
     setAssunto(comunicado.assunto);
     setMensagem(comunicado.mensagem);
     setTurmaId(comunicado.turmaId);
+    setStatus(comunicado.status);
+    
+    // Definir data de agendamento se existir
+    if (comunicado.dataAgendamento) {
+      setDataAgendamento(comunicado.dataAgendamento.toDate());
+    }
+    
     setShowModal(true);
   };
 
@@ -141,16 +227,42 @@ export default function Comunicados() {
     setAssunto('');
     setMensagem('');
     setTurmaId('');
+    setStatus('enviado');
+    setDataAgendamento(null);
     setEditandoId(null);
   };
 
-  const turmasDisponiveis = turmas;
+  const limparFiltros = () => {
+    setFiltroTurma('');
+    setFiltroAssunto('');
+    setFiltroStatus('');
+    setBusca('');
+    setPaginaAtual(1);
+  };
 
-  const comunicadosFiltrados = comunicados.filter(c =>
-    c.assunto.toLowerCase().includes(busca.toLowerCase()) ||
-    c.mensagem.toLowerCase().includes(busca.toLowerCase()) ||
-    (c.turmaNome || '').toLowerCase().includes(busca.toLowerCase())
-  );
+  const toggleMessage = (id: string) => {
+    setExpandedMessages(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const truncateText = (text: string, maxLength: number) => {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
+  };
+
+  const turmasDisponiveis = turmas;
+  const assuntosDisponiveis = [...new Set(comunicados.map(c => c.assunto))].sort();
+
+  const comunicadosFiltrados = comunicados.filter(c => {
+    const matchBusca = c.assunto.toLowerCase().includes(busca.toLowerCase()) ||
+      c.mensagem.toLowerCase().includes(busca.toLowerCase()) ||
+      (c.turmaNome || '').toLowerCase().includes(busca.toLowerCase());
+    
+    const matchTurma = filtroTurma === '' || c.turmaId === filtroTurma;
+    const matchAssunto = filtroAssunto === '' || c.assunto === filtroAssunto;
+    const matchStatus = filtroStatus === '' || c.status === filtroStatus;
+    
+    return matchBusca && matchTurma && matchAssunto && matchStatus;
+  });
 
   const totalPaginas = Math.ceil(comunicadosFiltrados.length / itensPorPagina);
   const comunicadosPaginados = comunicadosFiltrados.slice((paginaAtual - 1) * itensPorPagina, paginaAtual * itensPorPagina);
@@ -158,95 +270,304 @@ export default function Comunicados() {
   return (
     <AppLayout>
       <Container className="my-4">
-        <Row className="mb-3 justify-content-between">
-          <div className="bg-white border-bottom border-gray-200 mb-4">
-            <div className="container px-4">
-              <div className="d-flex align-items-center justify-content-between py-4">
-                <div className="d-flex align-items-center gap-3">
-                  <div
-                    className="d-flex align-items-center justify-content-center rounded bg-primary"
-                    style={{ width: 48, height: 48 }}
-                  >
-                    <Megaphone size={24} color="#fff" />
-                  </div>
-                  <div>
-                    <h2 className="fs-3 fw-bold text-dark mb-0">Comunicados</h2>
-                    <p className="text-muted mb-0" style={{ fontSize: 14 }}>
-                      MobClassApp - Portal do Professor
-                    </p>
-                  </div>
-                </div>
-              </div>
+        <div className="border-gray-200 mb-3">
+          <div className="mb-4 px-1">
+            <div className="d-flex align-items-center gap-2 mb-1">
+              <Megaphone size={32} color="#2563eb" style={{ minWidth: 32, minHeight: 32 }} />
+              <h1
+                className="fw-bold mb-0"
+                style={{
+                  fontSize: '2rem',
+                  background: 'linear-gradient(135deg, #1e293b 0%, #2563eb 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text'
+                }}
+              >
+                Comunicados
+              </h1>
             </div>
+            <p className="mb-0" style={{ color: '#3b4861', marginLeft: 44, fontSize: 16 }}>
+              Envie e gerencie comunicados para as turmas
+            </p>
           </div>
-          <Col md={6}>
-            <InputGroup>
-              <FormControl
-                placeholder="Buscar por assunto, mensagem ou turma"
-                value={busca}
-                onChange={e => { setBusca(e.target.value); setPaginaAtual(1); }}
-              />
-              {isAdmin && (
-                <Button onClick={() => { limparFormulario(); setShowModal(true); }}>
-                  Novo Comunicado
-                </Button>
-              )}
-            </InputGroup>
+        </div>
+
+        {/* Botão de Novo Comunicado no canto direito */}
+        <div className="d-flex justify-content-end mb-3">
+          {isAdmin && (
+            <Button variant="primary" onClick={() => { limparFormulario(); setShowModal(true); }}>
+              <PlusCircle className="me-2" size={18} />
+              Novo Comunicado
+            </Button>
+          )}
+        </div>
+
+        {/* Campo de busca full-width */}
+        <Row className="mb-3">
+          <Col>
+            <FormControl
+              placeholder="Buscar por assunto, mensagem ou turma"
+              value={busca}
+              onChange={e => { setBusca(e.target.value); setPaginaAtual(1); }}
+              style={{ borderRadius: '8px', padding: '12px 16px' }}
+            />
           </Col>
         </Row>
 
-        <Table responsive bordered hover>
-          <thead className="table-light">
-            <tr>
-              <th>Assunto</th>
-              <th>Mensagem</th>
-              <th>Turma</th>
-              <th>Data</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {comunicadosPaginados.map(c => (
-              <tr key={c.id}>
-                <td>{c.assunto}</td>
-                <td style={{ whiteSpace: 'pre-line' }}>{c.mensagem}</td>
-                <td>{c.turmaNome || turmas.find(t => t.id === c.turmaId)?.nome || '-'}</td>
-                <td>{c.data?.toDate().toLocaleString('pt-BR')}</td>
-                <td>
-                  <Dropdown align="end">
-                    <Dropdown.Toggle variant="light" size="sm">
-                      <i className="bi bi-three-dots-vertical"></i>
-                    </Dropdown.Toggle>
-                    <Dropdown.Menu>
-                      <Dropdown.Item onClick={() => handleEditar(c)}>
-                        <i className="bi bi-pencil me-2"></i> Editar
-                      </Dropdown.Item>
-                      {isAdmin && (
-                        <Dropdown.Item onClick={() => handleExcluir(c.id)}>
-                          <i className="bi bi-trash me-2"></i> Excluir
-                        </Dropdown.Item>
+        {/* Filtros dentro de Card */}
+        <Card className="mb-4 shadow-sm">
+          <Card.Body>
+            <Row className="align-items-center">
+              <Col md={3}>
+                <Form.Group>
+                  <Form.Select
+                    value={filtroTurma}
+                    onChange={e => { setFiltroTurma(e.target.value); setPaginaAtual(1); }}
+                    style={{ fontSize: '14px' }}
+                  >
+                    <option value="" disabled hidden>Filtrar por turma</option>
+                    <option value="">Todas</option>
+                    {turmasDisponiveis.map(t => (
+                      <option key={t.id} value={t.id}>{t.nome}</option>
+                    ))}
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+
+              <Col md={3}>
+                <Form.Group>
+                  <Form.Select
+                    value={filtroAssunto}
+                    onChange={e => { setFiltroAssunto(e.target.value); setPaginaAtual(1); }}
+                    style={{ fontSize: '14px' }}
+                  >
+                    <option value="" disabled hidden>Filtrar por assunto</option>
+                    <option value="">Todos</option>
+                    {assuntosDisponiveis.map(assunto => (
+                      <option key={assunto} value={assunto}>{assunto}</option>
+                    ))}
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+
+              <Col md={3}>
+                <Form.Group>
+                  <Form.Select
+                    value={filtroStatus}
+                    onChange={e => { setFiltroStatus(e.target.value); setPaginaAtual(1); }}
+                    style={{ fontSize: '14px' }}
+                  >
+                    <option value="" disabled hidden>Filtrar por status</option>
+                    <option value="">Todos</option>
+                    <option value="ativo">Ativo</option>
+                    <option value="inativo">Inativo</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+
+              <Col md={3} className="d-flex justify-content-center align-items-center">
+                <Button variant="link" onClick={limparFiltros} className="text-muted p-0 d-flex align-items-center justify-content-center" style={{ fontSize: '14px', textDecoration: 'none' }}>
+                  <X className="me-2" size={18} />
+                  Limpar filtros
+                </Button>
+              </Col>
+            </Row>
+          </Card.Body>
+        </Card>
+
+        {/* Cards dos Comunicados verticalmente agrupados */}
+        <div className="d-flex flex-column gap-4">
+          {comunicadosPaginados.map(c => (
+            <Card key={c.id} className="w-100 mb-0" style={{ borderRadius: '20px', transition: 'all 0.2s ease' }}>
+              <Card.Body className="p-3">
+                {/* Header do Card com Título e Status */}
+                <div className="d-flex justify-content-between align-items-start mb-2">
+                  <div className="flex-grow-1 d-flex align-items-center gap-2">
+                    <h3 className="fs-5 fw-bold text-dark mb-0 mb-1">
+                      {c.assunto}
+                    </h3>
+                    <Badge
+                      className={`status-badge ${c.status}`}
+                    >
+                      {/* Ícone + texto do status */}
+                      {c.status === 'enviado' || (c.status !== 'agendado' && c.status !== 'rascunho') ? (
+                        <>
+                          <CheckCircle size={16} style={{ marginRight: 4, verticalAlign: 'middle' }} /> Enviado
+                        </>
+                      ) : c.status === 'agendado' ? (
+                        <>
+                          <Clock size={16} style={{ marginRight: 4, verticalAlign: 'middle' }} /> Agendado
+                        </>
+                      ) : (
+                        <>
+                          <FileEarmark size={16} style={{ marginRight: 4, verticalAlign: 'middle' }} /> Rascunho
+                        </>
                       )}
-                    </Dropdown.Menu>
-                  </Dropdown>
-                </td>
-              </tr>
-            ))}
-            {comunicadosPaginados.length === 0 && (
-              <tr>
-                <td colSpan={5} className="text-center">Nenhum comunicado encontrado.</td>
-              </tr>
-            )}
-          </tbody>
-        </Table>
+                    </Badge>
+                  </div>
+                  <div className="d-flex gap-2 align-items-center justify-content-center" style={{ alignSelf: 'center' }}>
+                    <Button
+                      variant="link"
+                      className="p-0 text-primary d-flex align-items-center px-2"
+                      style={{ fontSize: '1rem' }}
+                      onClick={() => handleEditar(c)}
+                      title="Editar"
+                    >
+                      <Edit size={18} />
+                    </Button>
+                    {isAdmin && (
+                      <Button
+                        variant="link"
+                        className="p-0 text-danger d-flex align-items-center px-2"
+                        style={{ fontSize: '1rem' }}
+                        onClick={() => handleExcluir(c.id)}
+                        title="Excluir"
+                      >
+                        <Trash2 size={18} />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {/* Turma e Data abaixo do título, lado a lado */}
+                <div className="d-flex align-items-center gap-3 mb-2" style={{ marginLeft: '2px' }}>
+                  <p style={{ color: '#6c757d', fontWeight: 'bold', fontSize: '0.8rem', marginBottom: 0 }}>
+                    Turma: {(c.turmaNome === '-' || c.turmaId === '') ? 'Todas as turmas' : (c.turmaNome || turmas.find(t => t.id === c.turmaId)?.nome || '-')}
+                  </p>
+                  <small style={{ color: '#6c757d', fontSize: '0.8rem' }}>
+                    {c.status === 'agendado' && c.dataAgendamento 
+                      ? `Agendado para: ${c.dataAgendamento.toDate().toLocaleDateString('pt-BR', { 
+                          day: '2-digit', 
+                          month: '2-digit', 
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}`
+                      : `Criado em: ${c.data?.toDate().toLocaleDateString('pt-BR')}`
+                    }
+                  </small>
+                </div>
+                {/*
+                Barra de Progresso de Leitura
+                <div className="mb-3">
+                  <div className="d-flex align-items-center mb-1" style={{ width: '70%', minHeight: '24px' }}>
+                    <div className="d-flex align-items-center w-100">
+                      // Definição de percent e barColor fora do bloco para uso no style da porcentagem
+                      {(() => {
+                        return null;
+                      })()}
+                      {(() => {
+                        // Definir percent e barColor para uso abaixo
+                        // ...existing code...
+                        return null;
+                      })()}
+                      {(() => {
+                        // ...existing code...
+                        return null;
+                      })()}
+                      // Cálculo da cor e percent para barra e porcentagem
+                      {(() => {
+                        const percent = ((c.leituras || 0) / (c.totalAlunos || 1)) * 100;
+                        let barColor = '#22c55e'; // verde enviado
+                        if (c.status === 'agendado') barColor = '#3b82f6'; // azul agendado
+                        if (c.status === 'rascunho') barColor = '#facc15'; // amarelo rascunho
+                        const barStyle = {
+                          height: '8px',
+                          borderRadius: '7px',
+                          width: '100%',
+                          backgroundColor: '#e9ecef',
+                          '--bs-progress-bar-bg': barColor,
+                        } as React.CSSProperties;
+                        return (
+                          <>
+                            <ProgressBar
+                              now={percent}
+                              style={barStyle}
+                              variant={undefined}
+                            />
+                            <span
+                              style={{
+                                marginLeft: 12,
+                                fontSize: '0.8rem',
+                                color: barColor,
+                                fontWeight: 600,
+                                whiteSpace: 'nowrap',
+                                display: 'flex',
+                                alignItems: 'center',
+                                height: '100%'
+                              }}
+                            >
+                              {Math.round(percent)}% leram
+                            </span>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+                */}
+                {/* Mensagem com Expandir/Recolher com efeito suave */}
+                <div className="mb-3">
+                  <div
+                    className={`comunicado-mensagem-transicao${expandedMessages[c.id] ? ' expanded' : ''}`}
+                    style={{ fontSize: '0.9rem', color: '#495057', lineHeight: '1.5', overflow: 'hidden', transition: 'max-height 0.4s cubic-bezier(0.4,0,0.2,1)' }}
+                  >
+                    <div style={{ paddingRight: 2 }}>
+                      {expandedMessages[c.id] ? c.mensagem : truncateText(c.mensagem, maxCaracteres)}
+                    </div>
+                  </div>
+                  {c.mensagem.length > maxCaracteres && (
+                    <div style={{ textAlign: 'left', marginTop: 4 }}>
+                      <Button 
+                        variant="link" 
+                        size="sm" 
+                        className="p-0" 
+                        onClick={() => toggleMessage(c.id)}
+                        style={{ fontSize: '0.85rem', textDecoration: 'none', marginLeft: 0, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      >
+                        {expandedMessages[c.id] ? (
+                          <>
+                            <ChevronUp size={16} style={{ marginRight: 2 }} /> Ler menos
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown size={16} style={{ marginRight: 2 }} /> Ler mais
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </Card.Body>
+            </Card>
+          ))}
+        </div>
 
-        <Paginacao
-          paginaAtual={paginaAtual}
-          totalPaginas={totalPaginas}
-          aoMudarPagina={setPaginaAtual}
-        />
+        {/* Mensagem quando não há comunicados */}
+        {comunicadosPaginados.length === 0 && (
+          <Card className="text-center py-5" style={{ borderRadius: '12px', border: '2px dashed #dee2e6' }}>
+            <Card.Body>
+              <Megaphone size={48} color="#6c757d" className="mb-3" />
+              <h5 style={{ color: '#6c757d' }}>Nenhum comunicado encontrado</h5>
+              <p style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
+                {busca || filtroTurma || filtroAssunto || filtroStatus ? 'Tente ajustar os filtros' : 'Seja o primeiro a criar um comunicado'}
+              </p>
+            </Card.Body>
+          </Card>
+        )}
 
+        {/* Paginação */}
+        {totalPaginas > 1 && (
+          <Paginacao
+            paginaAtual={paginaAtual}
+            totalPaginas={totalPaginas}
+            aoMudarPagina={setPaginaAtual}
+          />
+        )}
+
+        {/* Modal de Criar/Editar */}
         <Modal show={showModal} onHide={() => setShowModal(false)} centered>
-          <Modal.Header closeButton>
+          <Modal.Header closeButton style={{ borderBottom: 'none' }}>
             <Modal.Title>{editandoId ? 'Editar Comunicado' : 'Novo Comunicado'}</Modal.Title>
           </Modal.Header>
           <Modal.Body>
@@ -262,20 +583,57 @@ export default function Comunicados() {
               </Form.Group>
               <Form.Group className="mb-3">
                 <Form.Label>Assunto</Form.Label>
-                <Form.Control id="input-assunto" value={assunto} onChange={e => setAssunto(e.target.value)} />
+                <Form.Control id="input-assunto" value={assunto} onChange={e => setAssunto(e.target.value)} placeholder="Digite o assunto do comunicado" />
               </Form.Group>
               <Form.Group className="mb-3">
+                <Form.Label>Status</Form.Label>
+                <Form.Select value={status} onChange={e => setStatus(e.target.value as 'enviado' | 'agendado' | 'rascunho')}>
+                  <option value="enviado">Enviado</option>
+                  <option value="agendado">Agendado</option>
+                  <option value="rascunho">Rascunho</option>
+                </Form.Select>
+              </Form.Group>
+              
+              {/* Campo de Data de Agendamento - só aparece se status for agendado */}
+              {status === 'agendado' && (
+                <Form.Group className="mb-3">
+                  <Form.Label>Data e Hora do Agendamento</Form.Label>
+                  <DatePicker
+                    selected={dataAgendamento}
+                    onChange={(date: Date | null) => setDataAgendamento(date)}
+                    showTimeSelect
+                    timeFormat="HH:mm"
+                    timeIntervals={15}
+                    dateFormat="dd/MM/yyyy HH:mm"
+                    locale="pt-BR"
+                    calendarClassName="custom-calendar-small"
+                    customInput={<CustomDateInput />}
+                    showPopperArrow={false}
+                    autoComplete="off"
+                    wrapperClassName="w-100"
+                    minDate={new Date()}
+                    timeCaption="Hora"
+                    placeholderText="Selecione data e hora"
+                  />
+                  <Form.Text className="text-muted">
+                    Selecione quando o comunicado deve ser enviado
+                  </Form.Text>
+                </Form.Group>
+              )}
+              
+              <Form.Group className="mb-3">
                 <Form.Label>Mensagem</Form.Label>
-                <Form.Control as="textarea" rows={8} value={mensagem} onChange={e => setMensagem(e.target.value)} />
+                <Form.Control as="textarea" rows={8} value={mensagem} onChange={e => setMensagem(e.target.value)} placeholder="Digite a mensagem do comunicado" />
               </Form.Group>
             </Form>
           </Modal.Body>
-          <Modal.Footer>
+          <Modal.Footer style={{ borderTop: 'none' }}>
             <Button variant="secondary" onClick={() => setShowModal(false)}>Cancelar</Button>
             <Button variant="primary" onClick={handleSalvar}>{editandoId ? 'Atualizar' : 'Salvar'}</Button>
           </Modal.Footer>
         </Modal>
 
+        {/* Toast de Notificações */}
         <ToastContainer position="bottom-end" className="p-3">
           <Toast
             bg={toast.variant}
