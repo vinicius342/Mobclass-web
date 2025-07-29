@@ -1,22 +1,21 @@
 import { useEffect, useState } from 'react';
 import {
-  Container, Row, Col, Card, Button, Modal, Form, Table
+  Container, Row, Col, Card, Button, Modal, Form, Table, Dropdown, ButtonGroup
 } from 'react-bootstrap';
 import {
   collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, getDoc
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import AppLayout from '../components/AppLayout';
-// TODO: Resolver depois
-// import { PlusCircle } from 'react-bootstrap-icons';
 import { useAuth } from '../contexts/AuthContext';
 import Paginacao from '../components/Paginacao';
 
 
 // Ícones para o cabeçalho e abas
-import { GraduationCap, Plus, Eye, Pencil, Trash2, ArrowLeft } from "lucide-react";
+import { GraduationCap, Plus, Eye, Pencil, Trash2, ArrowLeft, Edit } from "lucide-react";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faX, faCircleExclamation, faCheck, faComment } from '@fortawesome/free-solid-svg-icons';
+import { CheckCircle, XCircle, ExclamationCircle } from 'react-bootstrap-icons';
 
 //PDF
 import jsPDF from 'jspdf';
@@ -115,14 +114,14 @@ export default function Tarefas() {
 
     autoTable(doc, {
       startY: 20,
-      head: [['Aluno', 'Status', 'Data Conclusão', 'Anexo']],
+      head: [['Status', 'Aluno', 'Data Conclusao', 'Anexo']],
       body: alunosFiltrados
         .sort((a, b) => a.nome.localeCompare(b.nome))
         .map(aluno => {
           const entrega = entregas.find(e => e.alunoId === aluno.id && e.tarefaId === atividadeSelecionada.id);
           return [
-            aluno.nome,
             entrega?.status ?? 'Não entregue',
+            aluno.nome,
             entrega?.dataConclusao ?? '-',
             entrega?.anexoUrl ? 'Sim' : 'Não'
           ];
@@ -173,27 +172,27 @@ export default function Tarefas() {
   }, [userData]);
 
   const handleSaveObs = async () => {
-  if (!editingId) return;
+    if (!editingId) return;
 
-  try {
-    // Atualizar no Firebase
-    await updateDoc(doc(db, "entregas", editingId), {
-      observacoes: currentObs,
-    });
+    try {
+      // Atualizar no Firebase
+      await updateDoc(doc(db, "entregas", editingId), {
+        observacoes: currentObs,
+      });
 
-    // Atualizar estado local da lista de entregas
-    setEntregas(prev => prev.map(item => 
-      item.id === editingId ? { ...item, observacoes: currentObs } : item
-    ));
+      // Atualizar estado local da lista de entregas
+      setEntregas(prev => prev.map(item =>
+        item.id === editingId ? { ...item, observacoes: currentObs } : item
+      ));
 
-    setShowObsModal(false);
-    setEditingId(null);
-    setCurrentObs('');
-  } catch (error) {
-    console.error("Erro ao salvar observação:", error);
-    // Você pode mostrar um alerta aqui para o usuário
-  }
-};
+      setShowObsModal(false);
+      setEditingId(null);
+      setCurrentObs('');
+    } catch (error) {
+      console.error("Erro ao salvar observação:", error);
+      // Você pode mostrar um alerta aqui para o usuário
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -379,82 +378,93 @@ export default function Tarefas() {
       <Container className="my-4">
         <div className="min-h-screen bg-gray-50">
           {/* Header */}
-          <div className="bg-white border-bottom border-gray-200">
-            <div className="container px-4">
-              <div className="d-flex align-items-center justify-content-between py-4">
-                <div className="d-flex align-items-center gap-3">
-                  <div className="d-flex align-items-center justify-content-center rounded bg-primary" style={{ width: 48, height: 48 }}>
-                    <GraduationCap size={24} color="#fff" />
-                  </div>
-                  <div>
-                    <h2 className="fs-3 fw-bold text-dark mb-0">Gerenciamento de Tarefas</h2>
-                    <p className="text-muted mb-0" style={{ fontSize: 14 }}>MobClassApp - Portal do Professor</p>
-                  </div>
-                </div>
+          <div className="border-gray-200 mb-3">
+            <div className="mb-4 px-1">
+              <div className="d-flex align-items-center gap-2 mb-1">
+                <GraduationCap size={32} color="#2563eb" style={{ minWidth: 32, minHeight: 32 }} />
+                <h1
+                  className="fw-bold mb-0"
+                  style={{
+                    fontSize: '2rem',
+                    background: 'linear-gradient(135deg, #1e293b 0%, #2563eb 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text'
+                  }}
+                >
+                  Gerenciamento de Tarefas
+                </h1>
               </div>
+              <p className="mb-0" style={{ color: '#3b4861', marginLeft: 44, fontSize: 16 }}>
+                MobClassApp - Portal do Professor
+              </p>
             </div>
           </div>
 
           {/* Navigation Tabs */}
-          <div className="bg-white border-bottom border-gray-200">
-            <div className="container px-4">
-              <div className="d-flex gap-3 py-3">
-                <Button
-                  variant={activeTab === 'cadastro' ? 'primary' : 'outline-primary'}
-                  className="d-flex align-items-center gap-2"
+          <div className="container px-0">
+            <div className="d-flex py-3">
+              <div className="custom-tabs-container w-100">
+                <button
+                  className={`custom-tab ${activeTab === 'cadastro' ? 'active' : ''}`}
                   onClick={() => setActiveTab('cadastro')}
+                  type="button"
+                  style={{ flex: 1 }}
                 >
-                  <Plus size={18} />
-                  <span>Cadastro de Atividade</span>
-                </Button>
-                <Button
-                  variant={activeTab === 'acompanhamento' ? 'primary' : 'outline-primary'}
-                  className="d-flex align-items-center gap-2"
+                  Cadastro de Atividade
+                </button>
+                <button
+                  className={`custom-tab ${activeTab === 'acompanhamento' ? 'active' : ''}`}
                   onClick={() => setActiveTab('acompanhamento')}
+                  type="button"
+                  style={{ flex: 1 }}
                 >
-                  <Eye size={18} />
-                  <span>Acompanhamento</span>
-                </Button>
+                  Acompanhamento
+                </button>
               </div>
             </div>
           </div>
 
           {/* Main Content */}
-          <div className="container py-4">
+          <div className="container py-0 px-0">
             {activeTab === 'acompanhamento' && (
               <>
-                <Row className="mb-3">
-                  <Col md={6}>
-                    <Form.Select
-                      value={filtroTurma}
-                      onChange={e => {
-                        setFiltroTurma(e.target.value);
-                        setFiltroMateria('');
-                        setAtividadeSelecionada(null);
-                      }}
-                    >
-                      <option value="">Selecione a turma</option>
-                      {[...turmas].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
-                        <option key={t.id} value={t.id}>{t.nome}</option>
-                      ))}
-                    </Form.Select>
-                  </Col>
-                  <Col md={6}>
-                    <Form.Select
-                      value={filtroMateria}
-                      onChange={e => {
-                        setFiltroMateria(e.target.value);
-                        setAtividadeSelecionada(null);
-                      }}
-                      disabled={!filtroTurma}
-                    >
-                      <option value="">Selecione a matéria</option>
-                      {materias.map(m => (
-                        <option key={m.id} value={m.id}>{m.nome}</option>
-                      ))}
-                    </Form.Select>
-                  </Col>
-                </Row>
+                <Card className="mb-3">
+                  <Card.Body>
+                    <Row>
+                      <Col md={6}>
+                        <Form.Select
+                          value={filtroTurma}
+                          onChange={e => {
+                            setFiltroTurma(e.target.value);
+                            setFiltroMateria('');
+                            setAtividadeSelecionada(null);
+                          }}
+                        >
+                          <option value="">Selecione a turma</option>
+                          {[...turmas].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
+                            <option key={t.id} value={t.id}>{t.nome}</option>
+                          ))}
+                        </Form.Select>
+                      </Col>
+                      <Col md={6}>
+                        <Form.Select
+                          value={filtroMateria}
+                          onChange={e => {
+                            setFiltroMateria(e.target.value);
+                            setAtividadeSelecionada(null);
+                          }}
+                          disabled={!filtroTurma}
+                        >
+                          <option value="">Selecione a matéria</option>
+                          {materias.map(m => (
+                            <option key={m.id} value={m.id}>{m.nome}</option>
+                          ))}
+                        </Form.Select>
+                      </Col>
+                    </Row>
+                  </Card.Body>
+                </Card>
 
                 {!atividadeSelecionada ? (
                   (!filtroTurma || !filtroMateria) ? (
@@ -467,101 +477,180 @@ export default function Tarefas() {
                       </Card.Body>
                     </Card>
                   ) : (
-                    <Card className="shadow-sm">
-                      <Card.Body>
-                        <Table bordered hover responsive>
-                          <thead className="table-light">
-                            <tr>
-                              <th className="text-center">Status</th>
-                              <th className="text-center">Título</th>
-                              <th className="text-center">Descrição</th>
-                              <th className="text-center">Data Entrega</th>
-                              <th className="text-center">Ações</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {tarefasFiltradas.length === 0 ? (
-                              <tr>
-                                <td colSpan={5} className="text-center text-muted" style={{ borderBottom: '1px solid #dee2e6', background: '#fff' }}>
-                                  Nenhuma atividade encontrada para esta turma e matéria.
-                                </td>
-                              </tr>
-                            ) : (
-                              tarefasFiltradas.map(tarefa => (
-                                <tr
+                    <>
+                      {/* Desktop */}
+                      <div className="d-none d-md-block">
+                        <Card className="shadow-sm">
+                          <Card.Body>
+                            <div className="d-flex justify-content-between align-items-center mb-3 px-3">
+                              <h3 className="mb-0">Lista de Tarefas</h3>
+                              {tarefasFiltradas.length > 0 && !atividadeSelecionada && (
+                                <span className="text-muted" style={{ fontSize: 14 }}>
+                                  Clique em uma atividade para acompanhar as entregas dos alunos
+                                </span>
+                              )}
+                            </div>
+                            {/* Cabeçalho da lista */}
+                            <div className="d-flex justify-content-between px-3 py-2 border-bottom fw-bold text-muted" style={{ fontSize: '1rem', fontWeight: 600 }}>
+                              <div style={{ width: '35%' }}>Título</div>
+                              <div style={{ width: '30%' }}>Descrição</div>
+                              <div style={{ width: '15%', textAlign: 'center' }}>Data Entrega</div>
+                              <div style={{ width: '10%', textAlign: 'center' }}>Status</div>
+                              <div style={{ width: '10%', textAlign: 'end', paddingRight: 10 }}>Ações</div>
+                            </div>
+                            {/* Lista de atividades */}
+                            <div>
+                              {tarefasFiltradas.length > 0 ? tarefasFiltradas.map(tarefa => (
+                                <Card
                                   key={tarefa.id}
-                                  style={{
-                                    cursor: 'pointer',
-                                    borderBottom: '1px solid #dee2e6',
-                                    background: '#fff'
-                                  }}
+                                  className="custom-card-frequencia"
+                                  style={{ borderBottom: '1px solid #f1f3f4', cursor: 'pointer', background: '#fff', borderRadius: 0}}
                                   onClick={() => setAtividadeSelecionada(tarefa)}
                                 >
-                                  <td className="text-center" style={{ border: 'none', borderBottom: '1px solid #dee2e6', background: '#fff' }}>
+                                  <Card.Body className="d-flex justify-content-between align-items-center py-3 px-3">
+                                    <div style={{ width: '35%' }}>
+                                      <span style={{ fontSize: '1rem', fontWeight: 500 }}>{tarefa.titulo || tarefa.descricao}</span>
+                                    </div>
+                                    <div style={{ width: '30%' }}>
+                                      <span style={{ color: '#6b7280' }}>{tarefa.descricao}</span>
+                                    </div>
+                                    <div style={{ width: '15%', textAlign: 'center' }}>
+                                      {formatarDataBR(tarefa.dataEntrega)}
+                                    </div>
+                                    <div style={{ width: '10%', textAlign: 'center' }}>
+                                      {(() => {
+                                        const hoje = new Date();
+                                        const dataEntrega = tarefa.dataEntrega ? new Date(tarefa.dataEntrega) : null;
+                                        if (dataEntrega) {
+                                          if (dataEntrega.getTime() < new Date(hoje.setHours(0, 0, 0, 0)).getTime()) {
+                                            return <span className="status-badge enviado">Concluída</span>;
+                                          } else {
+                                            return <span className="status-badge agendado">Em andamento</span>;
+                                          }
+                                        }
+                                        return <span className="status-badge rascunho">Sem data</span>;
+                                      })()}
+                                    </div>
+                                    <div style={{ width: '10%', textAlign: 'end', paddingRight: 18 }} onClick={e => e.stopPropagation()}>
+                                      <Dropdown align="end">
+                                        <Dropdown.Toggle
+                                          variant="light"
+                                          size="sm"
+                                          style={{ border: 'none', background: 'transparent', boxShadow: 'none' }}
+                                          className="dropdown-toggle-no-caret"
+                                          id={`dropdown-acao-tarefa-${tarefa.id}`}
+                                        >
+                                          ⋯
+                                        </Dropdown.Toggle>
+                                        <Dropdown.Menu>
+                                          <Dropdown.Item
+                                            onClick={() => setAtividadeSelecionada(tarefa)}
+                                            className="d-flex align-items-center gap-2"
+                                          >
+                                            <Eye size={16} /> Acompanhar
+                                          </Dropdown.Item>
+                                          <Dropdown.Item
+                                            onClick={() => editarTarefa(tarefa.id)}
+                                            className="d-flex align-items-center gap-2 text-primary"
+                                          >
+                                            <Edit size={16} /> Editar
+                                          </Dropdown.Item>
+                                          <Dropdown.Item
+                                            onClick={() => {
+                                              setTarefaParaExcluir(tarefa);
+                                              setShowDeleteModal(true);
+                                            }}
+                                            className="d-flex align-items-center gap-2 text-danger"
+                                          >
+                                            <Trash2 size={16} /> Excluir
+                                          </Dropdown.Item>
+                                        </Dropdown.Menu>
+                                      </Dropdown>
+                                    </div>
+                                  </Card.Body>
+                                </Card>
+                              )) : (
+                                <div className="text-center text-muted py-5">
+                                  <FontAwesomeIcon icon={faCircleExclamation} size="2x" className="mb-3" />
+                                  <div>Nenhuma atividade encontrada para esta turma e matéria.</div>
+                                </div>
+                              )}
+                            </div>
+                          </Card.Body>
+                        </Card>
+                      </div>
+                      {/* Mobile */}
+                      <div className="d-block d-md-none materias-mobile-cards">
+                        <div className="materias-header-mobile mb-3">
+                          <h3 className="mb-0">Tarefas</h3>
+                        </div>
+                        {tarefasFiltradas.length > 0 ? (
+                          <div className="materias-grid-mobile">
+                            {tarefasFiltradas.map(tarefa => (
+                              <div key={tarefa.id} className="materias-card-mobile" style={{ marginBottom: 16 }}>
+                                <div className="materias-card-header">
+                                  <div className="materias-card-info">
+                                    <div className="materias-card-title">{tarefa.titulo || tarefa.descricao}</div>
+                                    <div className="materias-card-codigo">{tarefa.descricao}</div>
+                                  </div>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 22 }}>
                                     {(() => {
                                       const hoje = new Date();
                                       const dataEntrega = tarefa.dataEntrega ? new Date(tarefa.dataEntrega) : null;
-
                                       if (dataEntrega) {
                                         if (dataEntrega.getTime() < new Date(hoje.setHours(0, 0, 0, 0)).getTime()) {
-                                          return <span style={{ color: "#28a745", fontWeight: 500 }}>Concluída</span>;
+                                          return <span className="status-badge enviado">Concluída</span>;
                                         } else {
-                                          return <span style={{ color: "#0d6efd", fontWeight: 500 }}>Em andamento</span>;
+                                          return <span className="status-badge agendado">Em andamento</span>;
                                         }
                                       }
-
-                                      return <span className="text-muted">Sem data</span>;
+                                      return <span className="status-badge rascunho">Sem data</span>;
                                     })()}
-                                  </td>
-                                  <td className="text-center" style={{ border: 'none', borderBottom: '1px solid #dee2e6', background: '#fff' }}>{tarefa.titulo || tarefa.descricao}</td>
-                                  <td className="text-center" style={{ border: 'none', borderBottom: '1px solid #dee2e6', background: '#fff' }}>{tarefa.descricao}</td>
-                                  <td className="text-center" style={{ border: 'none', borderBottom: '1px solid #dee2e6', background: '#fff' }}>
-                                    {formatarDataBR(tarefa.dataEntrega)}
-                                  </td>
-                                  <td
-                                    className="text-center"
-                                    onClick={e => e.stopPropagation()}
-                                    style={{
-                                      border: 'none',
-                                      borderBottom: '1px solid #dee2e6',
-                                      background: '#fff',
-                                      textAlign: 'center',
-                                      verticalAlign: 'middle',
-                                      minWidth: '80px'
+                                  </span>
+                                </div>
+                                <div className="materias-card-actions">
+                                  <button
+                                    className="materias-action-btn materias-edit-btn"
+                                    onClick={() => setAtividadeSelecionada(tarefa)}
+                                  >
+                                    <Eye size={18} /> Acompanhar
+                                  </button>
+                                  <button
+                                    className="materias-action-btn"
+                                    style={{ background: '#f3f4f6', color: '#2563eb' }}
+                                    onClick={() => editarTarefa(tarefa.id)}
+                                  >
+                                    <Edit size={18} /> Editar
+                                  </button>
+                                  <button
+                                    className="materias-action-btn materias-delete-btn"
+                                    onClick={() => {
+                                      setTarefaParaExcluir(tarefa);
+                                      setShowDeleteModal(true);
                                     }}
                                   >
-                                    <Button
-                                      size="sm"
-                                      variant="link"
-                                      onClick={() => editarTarefa(tarefa.id)}
-                                      style={{ padding: 0, marginRight: 20 }}
-                                    >
-                                      <Pencil size={18} color="#0d6efd" />
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="link"
-                                      onClick={e => {
-                                        e.stopPropagation();
-                                        setTarefaParaExcluir(tarefa);
-                                        setShowDeleteModal(true);
-                                      }}
-                                      style={{ padding: 0 }}
-                                    >
-                                      <Trash2 size={18} color="#dc3545" />
-                                    </Button>
-                                  </td>
-                                </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </Table>
-                      </Card.Body>
-                    </Card>
+                                    <Trash2 size={18} /> Excluir
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="materias-empty-state">
+                            <div className="materias-empty-icon">
+                              <FontAwesomeIcon icon={faX} size="2x" />
+                            </div>
+                            <h5 className="materias-empty-title">Nenhuma tarefa encontrada</h5>
+                            <p className="materias-empty-text">Nenhuma atividade para esta turma/matéria.</p>
+                          </div>
+                        )}
+                      </div>
+                    </>
                   )
                 ) : (
                   <>
-                    <Row className="align-items-center mb-3">
+                    {/* Botões desktop acima da lista de alunos */}
+                    <Row className="align-items-center mb-3 d-none d-md-flex">
                       <Col xs="auto">
                         <Button
                           variant="outline-primary"
@@ -583,20 +672,21 @@ export default function Tarefas() {
                     </Row>
 
                     {/* Aqui sua tabela existente dos alunos que fizeram a atividade */}
-                    <Card className="shadow-sm">
-                      <Card.Body>
-                        <Table responsive bordered hover>
-                          <thead className="table-light">
-                            <tr>
-                              <th>Status</th>
-                              <th>Aluno</th>
-                              <th>Data Conclusão</th>
-                              <th>Anexo</th>
-                              <th>Observações</th>
-                              <th>Ações</th>
-                            </tr>
-                          </thead>
-                          <tbody>
+
+                    {/* Lista de alunos como cards, padrão Materias.tsx */}
+                    <div className="alunos-list-desktop d-none d-md-block">
+                      <Card>
+                        <Card.Body>
+                          <h3 className="mb-3 px-3">Lista de Alunos</h3>
+                          <div className="d-flex justify-content-between px-3 py-2 border-bottom fw-bold text-muted" style={{ fontSize: '1rem', fontWeight: 600 }}>
+                            <div style={{ width: '8%', textAlign: 'center' }}>Status</div>
+                            <div style={{ width: '32%' }}>Nome</div>
+                            <div style={{ width: '16%', textAlign: 'center' }}>Data Conclusão</div>
+                            <div style={{ width: '12%', textAlign: 'center' }}>Anexo</div>
+                            <div style={{ width: '12%', textAlign: 'center' }}>Observações</div>
+                            <div style={{ width: '16%', textAlign: 'center' }}>Entregue?</div>
+                          </div>
+                          <div>
                             {alunosFiltrados
                               .sort((a, b) => a.nome.localeCompare(b.nome))
                               .slice((paginaAtual - 1) * tarefasPorPagina, paginaAtual * tarefasPorPagina)
@@ -606,78 +696,207 @@ export default function Tarefas() {
                                   e.tarefaId === atividadeSelecionada.id
                                 );
                                 return (
-                                  <tr key={aluno.id}>
-                                    <td className="text-center">
-                                      {/* Status icons */}
-                                      {entrega?.status === 'concluida' ? (
-                                        <FontAwesomeIcon icon={faCheck} style={{ color: "#2fae2d" }} />
-                                      ) : entrega?.status === 'pendente' ? (
-                                        <FontAwesomeIcon icon={faCircleExclamation} style={{ color: "#FFD43B" }} />
-                                      ) : (
-                                        <FontAwesomeIcon icon={faX} style={{ color: "#dc3545" }} />
-                                      )}
-                                    </td>
-                                    <td
-                                      style={{
-                                        maxWidth: 300,
-                                        overflowX: 'auto',
-                                        whiteSpace: 'nowrap'
-                                      }}
-                                    >
-                                      {aluno.nome}
-                                    </td>
-                                    <td className="text-center">{entrega?.dataConclusao ?? '-'}</td>
-                                    <td>
-                                      {entrega?.anexoUrl ? (
-                                        <a href={entrega.anexoUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6" }}>
-                                          Ver Anexo
-                                        </a>
-                                      ) : (
-                                        <span style={{ color: "rgb(33 37 41 / 75%)" }}>Sem anexo</span>
-                                      )}
-                                    </td>
-                                    <td className="text-center">
-                                      <FontAwesomeIcon
-                                        icon={faComment}
-                                        size="lg"
-                                        style={{
-                                          color:
-                                            entrega?.observacoes && entrega.observacoes.trim() !== ""
-                                              ? "#FFC107" // amarelo escuro
-                                              : "#212529",
-                                          cursor: "pointer"
-                                        }}
-                                        onClick={() => {
-                                          openObsModal(entrega ? entrega.id : "", entrega?.observacoes || "");
-                                        }}
-                                      />
-                                    </td>
-                                    <td className="d-flex flex-column gap-2" style={{ whiteSpace: 'nowrap' }}>
-                                      <div className="d-flex gap-2">
-                                        <Button variant="success" size="sm" onClick={() => atualizarEntrega(aluno.id, 'concluida')}>Confirmar</Button>
-                                        <Button variant="danger" size="sm" onClick={() => atualizarEntrega(aluno.id, 'nao_entregue')}>Não Entregue</Button>
+                                  <Card key={aluno.id} className="custom-card-frequencia" style={{ borderBottom: '1px solid #f1f3f4' }}>
+                                    <Card.Body className="d-flex justify-content-between align-items-center py-3 px-3">
+                                      <div style={{ width: '8%', textAlign: 'center' }}>
+                                        {entrega?.status === 'concluida' ? (
+                                          <CheckCircle color="#22c55e" size={20} title="Entregue" />
+                                        ) : entrega?.status === 'nao_entregue' ? (
+                                          <XCircle color="#dc3545" size={20} title="Não entregue" />
+                                        ) : (
+                                          <ExclamationCircle color="#6c757d" size={20} title="Pendente" />
+                                        )}
                                       </div>
-                                    </td>
-                                  </tr>
+                                      <div style={{ width: '32%' }}>
+                                        <span className="aluno-nome-frequencia" style={{ fontSize: '1rem' }}>{aluno.nome}</span>
+                                      </div>
+                                      <div style={{ width: '16%', textAlign: 'center' }}>{entrega?.dataConclusao ?? '-'}</div>
+                                      <div style={{ width: '12%', textAlign: 'center' }}>
+                                        {entrega?.anexoUrl ? (
+                                          <a href={entrega.anexoUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6" }}>
+                                            Ver Anexo
+                                          </a>
+                                        ) : (
+                                          <span style={{ color: "rgb(33 37 41 / 75%)" }}>Sem anexo</span>
+                                        )}
+                                      </div>
+                                      <div style={{ width: '12%', textAlign: 'center' }}>
+                                        <FontAwesomeIcon
+                                          icon={faComment}
+                                          size="lg"
+                                          style={{
+                                            color:
+                                              entrega?.observacoes && entrega.observacoes.trim() !== ""
+                                                ? "#FFC107"
+                                                : "#212529",
+                                            cursor: "pointer"
+                                          }}
+                                          onClick={() => {
+                                            openObsModal(entrega ? entrega.id : "", entrega?.observacoes || "");
+                                          }}
+                                        />
+                                      </div>
+                                      <div style={{ width: '16%', textAlign: 'center' }}>
+                                        <ButtonGroup className="aluno-btn-group">
+                                          <Button
+                                            variant="outline-success"
+                                            size="sm"
+                                            className={`aluno-btn-action${entrega?.status === 'concluida' ? ' active-btn-success' : ''}`}
+                                            style={{ borderRight: 'none' }}
+                                            title="Confirmar entrega"
+                                            active={entrega?.status === 'concluida'}
+                                            onClick={() => atualizarEntrega(aluno.id, 'concluida')}
+                                          >
+                                            <FontAwesomeIcon icon={faCheck} /> <span className="d-none d-md-inline">Sim</span>
+                                          </Button>
+                                          <Button
+                                            variant="outline-danger"
+                                            size="sm"
+                                            className={`aluno-btn-action${entrega?.status === 'nao_entregue' ? ' active-btn-danger' : ''}`}
+                                            title="Marcar como não entregue"
+                                            style={{ borderLeft: 'none' }}
+                                            active={entrega?.status === 'nao_entregue'}
+                                            onClick={() => atualizarEntrega(aluno.id, 'nao_entregue')}
+                                          >
+                                            <FontAwesomeIcon icon={faX} /> <span className="d-none d-md-inline">Não</span>
+                                          </Button>
+                                        </ButtonGroup>
+                                      </div>
+                                    </Card.Body>
+                                  </Card>
                                 );
                               })}
-                          </tbody>
-                        </Table>
+                          </div>
+                        </Card.Body>
+                      </Card>
+                      <Paginacao
+                        paginaAtual={paginaAtual}
+                        totalPaginas={Math.ceil(alunosFiltrados.length / tarefasPorPagina)}
+                        aoMudarPagina={setPaginaAtual}
+                      />
+                    </div>
+
+                    {/* Versão Mobile */}
+                    <div className="alunos-mobile-cards d-block d-md-none">
+                      <div className="materias-header-mobile mb-3 d-flex flex-column gap-2">
+                        <h3 className="mb-0">Alunos</h3>
+                        <div className="d-flex gap-2 flex-wrap">
+                          <button
+                            className="materias-action-btn materias-edit-btn"
+                            style={{ minWidth: 0, flex: 1 }}
+                            onClick={() => setAtividadeSelecionada(null)}
+                          >
+                            <ArrowLeft size={18} /> Voltar
+                          </button>
+                          <button
+                            className="materias-action-btn"
+                            style={{ background: '#f3f4f6', color: '#2563eb', minWidth: 0, flex: 1 }}
+                            onClick={exportarPDF}
+                          >
+                            <FontAwesomeIcon icon={faCheck} /> PDF
+                          </button>
+                          <button
+                            className="materias-action-btn"
+                            style={{ background: '#e0f7e9', color: '#22c55e', minWidth: 0, flex: 1 }}
+                            onClick={exportarExcel}
+                          >
+                            <FontAwesomeIcon icon={faCheck} /> Excel
+                          </button>
+                        </div>
+                      </div>
+                      {alunosFiltrados.length > 0 ? (
+                        <div className="materias-grid-mobile">
+                          {alunosFiltrados
+                            .sort((a, b) => a.nome.localeCompare(b.nome))
+                            .slice((paginaAtual - 1) * tarefasPorPagina, paginaAtual * tarefasPorPagina)
+                            .map(aluno => {
+                              const entrega = entregas.find(e =>
+                                e.alunoId === aluno.id &&
+                                e.tarefaId === atividadeSelecionada.id
+                              );
+                              return (
+                                <div key={aluno.id} className="materias-card-mobile" style={{ marginBottom: 16 }}>
+                                  <div className="materias-card-header">
+                                    <div className="materias-card-info">
+                                      <div className="materias-card-title">{aluno.nome}</div>
+                                    </div>
+                                    <span
+                                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22 }}
+                                      title={
+                                        entrega?.status === 'concluida'
+                                          ? 'Entregue'
+                                          : entrega?.status === 'nao_entregue'
+                                          ? 'Não entregue'
+                                          : 'Pendente'
+                                      }
+                                    >
+                                      {entrega?.status === 'concluida' ? (
+                                        <CheckCircle color="#22c55e" size={20} title="Entregue" />
+                                      ) : entrega?.status === 'nao_entregue' ? (
+                                        <XCircle color="#dc3545" size={20} title="Não entregue" />
+                                      ) : (
+                                        <ExclamationCircle color="#6c757d" size={20} title="Pendente" />
+                                      )}
+                                    </span>
+                                  </div>
+                                  <div className="materias-card-actions materias-card-actions-mobile">
+                                    <div className="aluno-btn-group-mobile" style={{ display: 'flex', width: '100%' }}>
+                                      <button
+                                        className="materias-action-btn materias-edit-btn aluno-btn-mobile-left"
+                                        style={{ flex: 1, borderRadius: '8px 0 0 8px', borderRight: '1px solid #fff', margin: 0 }}
+                                        onClick={() => atualizarEntrega(aluno.id, 'concluida')}
+                                      >
+                                        <FontAwesomeIcon icon={faCheck} /> Confirmar
+                                      </button>
+                                      <button
+                                        className="materias-action-btn materias-delete-btn aluno-btn-mobile-right"
+                                        style={{ flex: 1, borderRadius: '0 8px 8px 0', borderLeft: '1px solid #fff', margin: 0 }}
+                                        onClick={() => atualizarEntrega(aluno.id, 'nao_entregue')}
+                                      >
+                                        <FontAwesomeIcon icon={faX} /> Não Entregue
+                                      </button>
+                                    </div>
+                                    <button
+                                      className="materias-action-btn aluno-btn-mobile-obs"
+                                      style={{ background: '#f3f4f6', color: '#212529', width: '100%', marginTop: 8, borderRadius: 8 }}
+                                      onClick={() => openObsModal(entrega ? entrega.id : '', entrega?.observacoes || '')}
+                                    >
+                                      <FontAwesomeIcon icon={faComment} /> Obs
+                                    </button>
+                                    {entrega?.anexoUrl && (
+                                      <a
+                                        href={entrega.anexoUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="materias-action-btn aluno-btn-mobile-anexo"
+                                        style={{ background: '#e0e7ef', color: '#2563eb', width: '100%', marginTop: 8, borderRadius: 8 }}
+                                      >
+                                        Anexo
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      ) : (
+                        <div className="materias-empty-state">
+                          <div className="materias-empty-icon">
+                            <FontAwesomeIcon icon={faX} size="2x" />
+                          </div>
+                          <h5 className="materias-empty-title">Nenhum aluno encontrado</h5>
+                          <p className="materias-empty-text">Nenhum aluno para esta turma/matéria.</p>
+                        </div>
+                      )}
+                      <div className="mt-3 d-flex justify-content-center">
                         <Paginacao
                           paginaAtual={paginaAtual}
                           totalPaginas={Math.ceil(alunosFiltrados.length / tarefasPorPagina)}
                           aoMudarPagina={setPaginaAtual}
                         />
-                      </Card.Body>
-                    </Card>
+                      </div>
+                    </div>
                   </>
-                )}
-
-                {/* Aviso abaixo da tabela de atividades */}
-                {!atividadeSelecionada && tarefasFiltradas.length > 0 && (
-                  <div className="text-center text-muted my-3">
-                    Clique em uma atividade para acompanhar as entregas dos alunos
-                  </div>
                 )}
               </>
             )}

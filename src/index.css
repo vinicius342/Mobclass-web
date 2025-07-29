@@ -337,7 +337,7 @@ button {
 }
 
 .custom-card-frequencia:hover {
-  background-color: #f0f0f0;
+  background-color: #f0f0f0 !important;
 }
 
 .user-icon-circle-frequencia {
@@ -1561,6 +1561,7 @@ button {
   .materias-card-actions {
     display: flex;
     gap: 0.75rem;
+    flex-direction: column;
   }
 
   .materias-card-actions .btn {
@@ -2266,4 +2267,110 @@ button {
   .vinculos-list-desktop {
     display: block !important;
   }
+}
+
+/* Ajustes para ButtonGroup dos botões de ação dos alunos */
+.aluno-btn-group .aluno-btn-action {
+  min-width: 36px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  border-radius: 6px !important;
+  transition: background 0.15s, color 0.15s, border 0.15s;
+}
+.aluno-btn-group .aluno-btn-action:focus {
+  box-shadow: 0 0 0 2px #2563eb33;
+}
+.aluno-btn-group .btn-outline-success {
+  border-color: #22c55e;
+  color: #22c55e;
+  background: #f6fff8;
+}
+.aluno-btn-group .btn-outline-success:hover {
+  background: #22c55e;
+  color: #fff;
+}
+.aluno-btn-group .btn-outline-danger {
+  border-color: #dc3545;
+  color: #dc3545;
+  background: #fff6f6;
+}
+.aluno-btn-group .btn-outline-danger:hover {
+  background: #dc3545;
+  color: #fff;
+}
+
+/* Botões de ação dos alunos (desktop) - efeito selected */
+.active-btn-success {
+  background: #22c55e !important;
+  color: #fff !important;
+  border-color: #22c55e !important;
+  box-shadow: 0 2px 8px 0 rgba(34,197,94,0.08);
+}
+.active-btn-danger {
+  background: #dc3545 !important;
+  color: #fff !important;
+  border-color: #dc3545 !important;
+  box-shadow: 0 2px 8px 0 rgba(220,53,69,0.08);
+}
+
+/* Remove border-radius entre botões do grupo (desktop) */
+.aluno-btn-group .aluno-btn-action:first-child {
+  border-radius: 6px 0 0 6px !important;
+}
+.aluno-btn-group .aluno-btn-action:last-child {
+  border-radius: 0 6px 6px 0 !important;
+}
+.aluno-btn-group .aluno-btn-action {
+  border-radius: 0 !important;
+}
+
+/* Hover nos cards de atividades/alunos */
+.custom-card-frequencia:hover {
+  background: #f3f6fa !important;
+  box-shadow: 0 2px 8px 0 rgba(37,99,235,0.06);
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+/* Responsividade para cards mobile */
+@media (max-width: 767.98px) {
+  .materias-card-mobile, .alunos-mobile-cards .materias-card-mobile {
+    border-radius: 12px !important;
+    box-shadow: 0 2px 8px 0 rgba(37,99,235,0.06);
+    background: #fff;
+    margin-bottom: 16px;
+  }
+  .aluno-btn-group-mobile .materias-action-btn {
+    border-radius: 0 !important;
+  }
+  .aluno-btn-group-mobile .aluno-btn-mobile-left {
+    border-radius: 8px 0 0 8px !important;
+  }
+  .aluno-btn-group-mobile .aluno-btn-mobile-right {
+    border-radius: 0 8px 8px 0 !important;
+  }
+}
+
+/* Outline para botões mobile */
+.aluno-btn-group-mobile .materias-edit-btn {
+  border: 1.5px solid #22c55e !important;
+  color: #22c55e !important;
+  background: #fff !important;
+}
+.aluno-btn-group-mobile .materias-delete-btn {
+  border: 1.5px solid #dc3545 !important;
+  color: #dc3545 !important;
+  background: #fff !important;
+}
+.aluno-btn-group-mobile .materias-edit-btn.selected,
+.aluno-btn-group-mobile .materias-edit-btn:active {
+  background: #22c55e !important;
+  color: #fff !important;
+}
+.aluno-btn-group-mobile .materias-delete-btn.selected,
+.aluno-btn-group-mobile .materias-delete-btn:active {
+  background: #dc3545 !important;
+  color: #fff !important;
 }
