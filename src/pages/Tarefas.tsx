@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Container, Row, Col, Card, Button, Modal, Form, Table, Dropdown, ButtonGroup
+  Container, Row, Col, Card, Button, Modal, Form, Dropdown, ButtonGroup
 } from 'react-bootstrap';
 import {
   collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, getDoc
@@ -12,7 +12,7 @@ import Paginacao from '../components/Paginacao';
 
 
 // Ícones para o cabeçalho e abas
-import { GraduationCap, Plus, Eye, Pencil, Trash2, ArrowLeft, Edit } from "lucide-react";
+import { GraduationCap, Plus, Eye, Trash2, ArrowLeft, Edit, ArrowDownUp } from "lucide-react";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faX, faCircleExclamation, faCheck, faComment } from '@fortawesome/free-solid-svg-icons';
 import { CheckCircle, XCircle, ExclamationCircle } from 'react-bootstrap-icons';
@@ -105,6 +105,9 @@ export default function Tarefas() {
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [tarefaParaExcluir, setTarefaParaExcluir] = useState<Tarefa | null>(null);
+
+  // Estado para ordenação
+  const [ordenacao, setOrdenacao] = useState<'titulo' | 'data' | 'status' | 'materia'>('data');
 
   const exportarPDF = () => {
     if (!atividadeSelecionada) return;
@@ -484,11 +487,30 @@ export default function Tarefas() {
                           <Card.Body>
                             <div className="d-flex justify-content-between align-items-center mb-3 px-3">
                               <h3 className="mb-0">Lista de Tarefas</h3>
-                              {tarefasFiltradas.length > 0 && !atividadeSelecionada && (
-                                <span className="text-muted" style={{ fontSize: 14 }}>
-                                  Clique em uma atividade para acompanhar as entregas dos alunos
-                                </span>
-                              )}
+                              <div className="d-flex align-items-center gap-2">
+                                {tarefasFiltradas.length > 0 && !atividadeSelecionada && (
+                                  <span className="text-muted px-2" style={{ fontSize: 14 }}>
+                                    Clique em uma atividade para acompanhar as entregas dos alunos
+                                  </span>
+                                )}
+                                {tarefasFiltradas.length > 0 && (
+                                  <Dropdown onSelect={key => setOrdenacao(key as any)}>
+                                    <Dropdown.Toggle
+                                      size="sm"
+                                      variant="outline-secondary"
+                                      id="dropdown-ordenar-tarefas"
+                                      className="d-flex align-items-center gap-2 py-1 px-2"
+                                    >
+                                      <ArrowDownUp size={16} />
+                                      Ordenar
+                                    </Dropdown.Toggle>
+                                    <Dropdown.Menu>
+                                      <Dropdown.Item eventKey="titulo" active={ordenacao === 'titulo'}>Título</Dropdown.Item>
+                                      <Dropdown.Item eventKey="data" active={ordenacao === 'data'}>Data de Entrega</Dropdown.Item>
+                                    </Dropdown.Menu>
+                                  </Dropdown>
+                                )}
+                              </div>
                             </div>
                             {/* Cabeçalho da lista */}
                             <div className="d-flex justify-content-between px-3 py-2 border-bottom fw-bold text-muted" style={{ fontSize: '1rem', fontWeight: 600 }}>
@@ -500,7 +522,36 @@ export default function Tarefas() {
                             </div>
                             {/* Lista de atividades */}
                             <div>
-                              {tarefasFiltradas.length > 0 ? tarefasFiltradas.map(tarefa => (
+                              {tarefasFiltradas.length > 0 ? (
+                                tarefasFiltradas
+                                  .slice() // cria uma cópia para não mutar o array original
+                                  .sort((a, b) => {
+                                    const materiaA = materias.find(m => m.id === a.materiaId)?.nome || '';
+                                    const materiaB = materias.find(m => m.id === b.materiaId)?.nome || '';
+                                    
+                                    const getStatus = (tarefa: Tarefa) => {
+                                      const hoje = new Date();
+                                      const dataEntrega = tarefa.dataEntrega ? new Date(tarefa.dataEntrega) : null;
+                                      if (dataEntrega) {
+                                        if (dataEntrega.getTime() < new Date(hoje.setHours(0, 0, 0, 0)).getTime()) {
+                                          return 'concluida';
+                                        } else {
+                                          return 'andamento';
+                                        }
+                                      }
+                                      return 'sem_data';
+                                    };
+
+                                    switch (ordenacao) {
+                                      case 'titulo':
+                                        return (a.titulo || a.descricao).localeCompare(b.titulo || b.descricao);
+                                      case 'data':
+                                        return new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime(); // decrescente
+                                      default:
+                                        return 0;
+                                    }
+                                  })
+                                  .map(tarefa => (
                                 <Card
                                   key={tarefa.id}
                                   className="custom-card-frequencia"
@@ -569,7 +620,7 @@ export default function Tarefas() {
                                     </div>
                                   </Card.Body>
                                 </Card>
-                              )) : (
+                              ))) : (
                                 <div className="text-center text-muted py-5">
                                   <FontAwesomeIcon icon={faCircleExclamation} size="2x" className="mb-3" />
                                   <div>Nenhuma atividade encontrada para esta turma e matéria.</div>
@@ -582,11 +633,58 @@ export default function Tarefas() {
                       {/* Mobile */}
                       <div className="d-block d-md-none materias-mobile-cards">
                         <div className="materias-header-mobile mb-3">
-                          <h3 className="mb-0">Tarefas</h3>
+                          <div className="d-flex align-items-center justify-content-between">
+                            <h3 className="mb-0">Tarefas</h3>
+                            {tarefasFiltradas.length > 0 && (
+                              <Dropdown onSelect={key => setOrdenacao(key as any)}>
+                                <Dropdown.Toggle
+                                  size="sm"
+                                  variant="outline-secondary"
+                                  id="dropdown-ordenar-tarefas-mobile"
+                                  className="d-flex align-items-center gap-1 py-1 px-2"
+                                >
+                                  <ArrowDownUp size={14} />
+                                  <span className="d-none d-sm-inline">Ordenar</span>
+                                </Dropdown.Toggle>
+                                <Dropdown.Menu>
+                                  <Dropdown.Item eventKey="titulo" active={ordenacao === 'titulo'}>Título</Dropdown.Item>
+                                  <Dropdown.Item eventKey="data" active={ordenacao === 'data'}>Data de Entrega</Dropdown.Item>
+                                </Dropdown.Menu>
+                              </Dropdown>
+                            )}
+                          </div>
                         </div>
                         {tarefasFiltradas.length > 0 ? (
                           <div className="materias-grid-mobile">
-                            {tarefasFiltradas.map(tarefa => (
+                            {tarefasFiltradas
+                              .slice() // cria uma cópia para não mutar o array original
+                              .sort((a, b) => {
+                                const materiaA = materias.find(m => m.id === a.materiaId)?.nome || '';
+                                const materiaB = materias.find(m => m.id === b.materiaId)?.nome || '';
+                                
+                                const getStatus = (tarefa: Tarefa) => {
+                                  const hoje = new Date();
+                                  const dataEntrega = tarefa.dataEntrega ? new Date(tarefa.dataEntrega) : null;
+                                  if (dataEntrega) {
+                                    if (dataEntrega.getTime() < new Date(hoje.setHours(0, 0, 0, 0)).getTime()) {
+                                      return 'concluida';
+                                    } else {
+                                      return 'andamento';
+                                    }
+                                  }
+                                  return 'sem_data';
+                                };
+
+                                switch (ordenacao) {
+                                  case 'titulo':
+                                    return (a.titulo || a.descricao).localeCompare(b.titulo || b.descricao);
+                                  case 'data':
+                                    return new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime(); // decrescente
+                                  default:
+                                    return 0;
+                                }
+                              })
+                              .map(tarefa => (
                               <div key={tarefa.id} className="materias-card-mobile" style={{ marginBottom: 16 }}>
                                 <div className="materias-card-header">
                                   <div className="materias-card-info">
@@ -633,7 +731,7 @@ export default function Tarefas() {
                                   </button>
                                 </div>
                               </div>
-                            ))}
+                            ))})
                           </div>
                         ) : (
                           <div className="materias-empty-state">

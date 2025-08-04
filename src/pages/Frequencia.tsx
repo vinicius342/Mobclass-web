@@ -376,6 +376,13 @@ export default function Frequencia(): JSX.Element {
     let q: Query<DocumentData> = collection(db, 'frequencias');
 
     // Filtro só por data (período)
+    if (tipoPeriodo === 'hoje') {
+      const hoje = new Date().toISOString().split('T')[0];
+      q = query(
+        q,
+        where('data', '==', hoje)
+      );
+    }
     if (tipoPeriodo === 'mes' && periodoMes) {
       const indexMes = [
         'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -665,6 +672,7 @@ export default function Frequencia(): JSX.Element {
                     }}
                   >
                     <option value="">Selecione o Tipo de Período</option>
+                    <option value="hoje">Hoje</option>
                     <option value="mes">Mês</option>
                     <option value="personalizado">Personalizado</option>
                   </Form.Select>
