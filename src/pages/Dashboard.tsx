@@ -1,4 +1,4 @@
-import { useEffect, useState, JSX } from 'react';
+import { useEffect, useState, JSX, useMemo } from 'react';
 import AppLayout from '../components/AppLayout';
 import {
   Container, Row, Col, Card, Spinner, Form
@@ -47,11 +47,14 @@ export default function Dashboard(): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [grupoTurmasAutoSelecionado, setGrupoTurmasAutoSelecionado] = useState<boolean>(false);
 
-  // Divide as turmas em grupos de 5
-  const gruposTurmas: { id: string; nome: string }[][] = [];
-  for (let i = 0; i < turmasLista.length; i += 5) {
-    gruposTurmas.push(turmasLista.slice(i, i + 5));
-  }
+  // Divide as turmas em grupos de 5 - agora memoizado para evitar loop
+  const gruposTurmas = useMemo(() => {
+    const grupos: { id: string; nome: string }[][] = [];
+    for (let i = 0; i < turmasLista.length; i += 5) {
+      grupos.push(turmasLista.slice(i, i + 5));
+    }
+    return grupos;
+  }, [turmasLista]);
 
   useEffect(() => {
     if (!isAdmin) return setLoading(false);
