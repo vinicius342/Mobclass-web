@@ -1,3 +1,19 @@
+/* Estilo para célula de e-mail na tabela de usuários */
+.email-cell {
+  font-size: 0.95em;
+  color: #495057 !important;
+}
+
+/* Badge de status dos usuários */
+.usuario-status-badge.ativo {
+  background: #d1fae5 !important; 
+  color: #166534 !important;
+}
+
+.usuario-status-badge.inativo {
+  background-color: #6c757d !important;
+}
+
 /* Efeito suave para expandir/recolher mensagem do comunicado */
 .comunicado-mensagem-transicao {
   max-height: 70px;
@@ -2373,4 +2389,227 @@ button {
 .aluno-btn-group-mobile .materias-delete-btn:active {
   background: #dc3545 !important;
   color: #fff !important;
+}
+
+/* ========== ESTILOS PARA USUARIOS - TRANSFERIDOS DO USUARIOS.CSS ========== */
+
+/* Versão Desktop */
+.usuarios-list-desktop {
+  margin-bottom: 1rem;
+}
+
+.usuarios-table-desktop .table {
+  margin-bottom: 0;
+}
+
+.usuarios-table-desktop .table th {
+  /* border-bottom: 2px solid #dee2e6; */
+  font-weight: 600;
+  color: #6c757d;
+  font-size: 0.875rem;
+}
+
+.usuarios-table-desktop .table td {
+  vertical-align: middle;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.usuarios-table-desktop .linha-agenda:hover {
+  background-color: #f8f9fa;
+}
+
+/* Versão Mobile */
+.usuarios-mobile-cards {
+  padding: 0;
+}
+
+.usuarios-header-mobile h3 {
+  color: #1e293b;
+  font-weight: 700;
+  font-size: 1.5rem;
+}
+
+.usuarios-grid-mobile {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.usuarios-card-mobile {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e5e7eb;
+  padding: 1.25rem;
+  transition: all 0.2s ease;
+}
+
+.usuarios-card-mobile:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.usuarios-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.usuarios-card-info {
+  flex: 1;
+}
+
+.usuarios-card-name {
+  font-weight: 700;
+  font-size: 1.125rem;
+  color: #1e293b;
+  margin-bottom: 0.25rem;
+}
+
+.usuarios-card-email {
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+}
+
+.usuarios-card-type {
+  margin-top: 0.5rem;
+}
+
+.usuarios-card-type .badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.usuarios-card-body {
+  margin-bottom: 1rem;
+}
+
+.usuarios-info-details {
+  color: #4b5563;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  padding: 0.75rem;
+  background-color: #f9fafb;
+  border-radius: 8px;
+  border-left: 3px solid #3b82f6;
+}
+
+.usuarios-card-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.usuarios-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.usuarios-edit-btn {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.usuarios-edit-btn:hover {
+  background-color: #2563eb;
+  transform: translateY(-1px);
+}
+
+.usuarios-delete-btn {
+  background-color: #ef4444;
+  color: white;
+}
+
+.usuarios-delete-btn:hover {
+  background-color: #dc2626;
+  transform: translateY(-1px);
+}
+
+/* Estado vazio */
+.usuarios-empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: #6b7280;
+}
+
+.usuarios-empty-icon {
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.usuarios-empty-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.usuarios-empty-text {
+  font-size: 0.875rem;
+  margin-bottom: 0;
+}
+
+/* Estado vazio para desktop */
+.agenda-empty-state {
+  text-align: center;
+  padding: 2rem;
+}
+
+.agenda-empty-state .empty-icon {
+  font-size: 3rem;
+  opacity: 0.5;
+  margin-bottom: 1rem;
+}
+
+.agenda-empty-state h5 {
+  color: #374151;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.agenda-empty-state p {
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin-bottom: 0;
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+  .usuarios-card-mobile {
+    padding: 1rem;
+  }
+  
+  .usuarios-card-name {
+    font-size: 1rem;
+  }
+  
+  .usuarios-card-actions {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .usuarios-action-btn {
+    justify-content: center;
+    padding: 0.75rem 1rem;
+  }
+}
+
+/* Sticky header para versão desktop */
+.thead-sticky th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
