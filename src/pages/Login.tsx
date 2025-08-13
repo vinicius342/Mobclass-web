@@ -1,7 +1,7 @@
 import { JSX, useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { getToken } from 'firebase/messaging';
 import { auth, db, messaging } from '../services/firebase';
 import logo from '../assets/logo.png';
@@ -21,6 +21,40 @@ export default function Login(): JSX.Element {
   const [carregando, setCarregando] = useState(false);
   const navigate = useNavigate();
 
+  // Função para verificar o status do usuário nas coleções
+  const verificarStatusUsuario = async (email: string) => {
+    console.log('🔍 Verificando status do usuário:', email);
+    const colecoes = ['professores', 'alunos', 'responsaveis', 'administradores'];
+    
+    for (const colecao of colecoes) {
+      console.log(`🔍 Buscando na coleção: ${colecao}`);
+      try {
+        const q = query(collection(db, colecao), where('email', '==', email.trim()));
+        const querySnapshot = await getDocs(q);
+        
+        console.log(`📊 Documentos encontrados na coleção ${colecao}:`, querySnapshot.size);
+        
+        if (!querySnapshot.empty) {
+          const userData = querySnapshot.docs[0].data();
+          console.log(`✅ Usuário encontrado na coleção ${colecao}:`, userData);
+          console.log(`📋 Status do usuário:`, userData.status || 'Não definido (assumindo Ativo)');
+          
+          return {
+            exists: true,
+            status: userData.status || 'Ativo', // Default para "Ativo" se não tiver status
+            tipo: colecao,
+            userData: userData
+          };
+        }
+      } catch (error) {
+        console.error(`❌ Erro ao buscar na coleção ${colecao}:`, error);
+      }
+    }
+    
+    console.log('❌ Usuário não encontrado em nenhuma coleção');
+    return { exists: false, status: null, tipo: null, userData: null };
+  };
+
   useEffect(() => {
     document.body.classList.add('login-page');
     return () => {
@@ -34,7 +68,26 @@ export default function Login(): JSX.Element {
     setCarregando(true);
 
     try {
+      console.log('🔐 Iniciando autenticação Firebase...');
+      console.log('📧 Email para autenticação:', email.trim());
+      console.log('🔑 Senha possui caracteres:', senha.length > 0 ? 'Sim' : 'Não');
+      
       const cred = await signInWithEmailAndPassword(auth, email.trim(), senha);
+      console.log('✅ Autenticação Firebase realizada com sucesso:', cred.user.email);
+      
+      // Verificar status do usuário após autenticação
+      console.log('📝 Verificando status do usuário...');
+      const statusInfo = await verificarStatusUsuario(email.trim());
+      
+      if (statusInfo.exists && statusInfo.status === 'Inativo') {
+        console.log('🚫 Login negado: usuário inativo');
+        await auth.signOut(); // Fazer logout já que o usuário está inativo
+        setErro('Usuário inativo. Entre em contato com o administrador.');
+        return;
+      }
+      
+      console.log('✅ Status válido, prosseguindo com login...');
+      
       const userRef = doc(db, 'users', cred.user.uid);
       const userSnap = await getDoc(userRef);
 
@@ -79,8 +132,25 @@ export default function Login(): JSX.Element {
         }
       }
     } catch (error: any) {
-      console.error(error);
-      setErro('E-mail ou senha inválidos. Tente novamente.');
+      console.error('❌ Erro completo no login:', error);
+      console.error('❌ Código do erro:', error.code);
+      console.error('❌ Mensagem do erro:', error.message);
+      
+      let errorMessage = 'Erro ao fazer login. Tente novamente.';
+      
+      if (error.code === 'auth/invalid-credential') {
+        errorMessage = 'Email ou senha incorretos. Verifique suas credenciais.';
+      } else if (error.code === 'auth/user-not-found') {
+        errorMessage = 'Usuário não encontrado.';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Senha incorreta.';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Email inválido.';
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = 'Muitas tentativas de login. Tente novamente mais tarde.';
+      }
+      
+      setErro(errorMessage);
     } finally {
       setCarregando(false);
     }

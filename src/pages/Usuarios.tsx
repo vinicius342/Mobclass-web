@@ -276,6 +276,10 @@ export default function Usuarios(): JSX.Element {
       ...(tipoUsuario === 'responsaveis' && { filhos: user.filhos }),
       ...(user.id && { id: user.id }),
     };
+    
+    // Adicionar o status aos defaults
+    (defaults as any).status = user.status || 'Ativo';
+    
     setFormDefaults(defaults);
     setFormMode('edit');
     setShowForm(true);
@@ -286,7 +290,7 @@ export default function Usuarios(): JSX.Element {
       const userData = {
         nome: data.nome,
         email: data.email,
-        status: 'Ativo',
+        status: (data as any).status || 'Ativo',
         ...(data.tipoUsuario === 'alunos' && { turmaId: data.turmaId }),
         ...(data.tipoUsuario === 'professores' && { turmas: data.turmas }),
         ...(data.tipoUsuario === 'responsaveis' && { filhos: data.filhos }),
@@ -303,6 +307,7 @@ export default function Usuarios(): JSX.Element {
             nome: data.nome,
             email: data.email,
             tipoUsuario: data.tipoUsuario,
+            status: (data as any).status || 'Ativo',
             turmaId: data.turmaId,
             filhos: data.filhos,
             turmas: data.turmas,

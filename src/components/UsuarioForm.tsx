@@ -3,7 +3,7 @@ import { useForm, SubmitHandler } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
 import { Form, Button, Spinner } from "react-bootstrap";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export interface Turma {
   id: string;
@@ -16,15 +16,17 @@ export interface AlunoOption {
   turmaId?: string;
 }
 
+type TipoUsuario = 'professores' | 'alunos' | 'responsaveis' | 'administradores';
+
 export interface FormValues {
-  tipoUsuario: "professores" | "alunos" | "responsaveis" | "administradores";
+  tipoUsuario: TipoUsuario;
   nome: string;
   email: string;
-  senha?: string;
+  senha: string;
   turmaId?: string;
-  turmas?: string[];
-  filhos?: string[];
-  modoAcesso?: "aluno" | "responsavel";
+  turmas: string[];
+  filhos: string[];
+  modoAcesso: 'aluno' | 'responsavel';
 }
 
 interface UsuarioFormProps {
@@ -36,7 +38,7 @@ interface UsuarioFormProps {
   onCancel?: () => void;
 }
 
-const schema: yup.ObjectSchema<FormValues> = yup.object({
+const schema = yup.object({
   tipoUsuario: yup
     .mixed<FormValues['tipoUsuario']>()
     .oneOf(["professores", "alunos", "responsaveis", "administradores"])
@@ -48,7 +50,7 @@ const schema: yup.ObjectSchema<FormValues> = yup.object({
   senha: yup.string().when('$formMode', {
     is: 'add',
     then: s => s.required('Senha é obrigatória').min(6, 'Mínimo 6 caracteres'),
-    otherwise: s => s.strip()
+    otherwise: s => s.optional()
   }),
 
   turmaId: yup.string().when('tipoUsuario', {
@@ -85,7 +87,7 @@ export default function UsuarioForm({
     handleSubmit,
     watch,
     formState: { errors, isSubmitting }
-  } = useForm<FormValues>({
+  } = useForm({
     resolver: yupResolver(schema),
     context: { formMode },
     defaultValues: {
@@ -101,16 +103,31 @@ export default function UsuarioForm({
   });
 
   const tipo = watch('tipoUsuario');
+  const [status, setStatus] = useState<'Ativo' | 'Inativo'>('Ativo');
   const [buscaAluno, setBuscaAluno] = useState('');
+
+  // Inicializar status quando defaultValues mudar
+  useEffect(() => {
+    // Se o usuário tem status no defaultValues, usar esse valor, senão assumir "Ativo"
+    const initialStatus = (defaultValues as any)?.status || 'Ativo';
+    setStatus(initialStatus);
+  }, [defaultValues]);
 
   const alunosFiltrados = alunosExistentes.filter(a =>
     a.nome.toLowerCase().includes(buscaAluno.toLowerCase())
   );
 
+  // Wrapper para incluir o status no submit
+  const handleFormSubmit = (data: any) => {
+    // Adicionar o status ao objeto de dados
+    const dataWithStatus = { ...data, status };
+    onSubmit(dataWithStatus);
+  };
+
   return (
-    <Form noValidate onSubmit={handleSubmit(onSubmit)}>
+    <Form noValidate onSubmit={handleSubmit(handleFormSubmit)}>
       <Form.Group controlId="usuario-tipo" className="mb-3">
-        <Form.Label htmlFor="usuario-tipo">Tipo de Usuário</Form.Label>
+        <Form.Label>Tipo de Usuário</Form.Label>
         <Form.Select isInvalid={!!errors.tipoUsuario} {...register('tipoUsuario')}>
           <option value="professores">Professor</option>
           <option value="alunos">Aluno</option>
@@ -123,7 +140,7 @@ export default function UsuarioForm({
       </Form.Group>
 
       <Form.Group controlId="usuario-nome" className="mb-3">
-        <Form.Label htmlFor="usuario-nome">Nome</Form.Label>
+        <Form.Label>Nome</Form.Label>
         <Form.Control type="text" placeholder="Digite o nome" isInvalid={!!errors.nome} {...register('nome')} />
         <Form.Control.Feedback type="invalid">
           {errors.nome?.message}
@@ -131,16 +148,39 @@ export default function UsuarioForm({
       </Form.Group>
 
       <Form.Group controlId="usuario-email" className="mb-3">
-        <Form.Label htmlFor="usuario-email">E‑mail</Form.Label>
+        <Form.Label>E‑mail</Form.Label>
         <Form.Control type="email" placeholder="Digite o e‑mail" isInvalid={!!errors.email} {...register('email')} />
         <Form.Control.Feedback type="invalid">
           {errors.email?.message}
         </Form.Control.Feedback>
       </Form.Group>
 
+      <Form.Group controlId="usuario-status" className="mb-3">
+        <Form.Label>Status</Form.Label>
+                {/* Status - Switch Button */}
+        <div className="d-flex justify-content-between align-items-center mb-3 p-3 border rounded">
+          <span className={status === 'Inativo' ? 'text-muted' : 'text-dark fw-bold'}>
+            Status:
+          </span>
+          <Form.Check
+            type="switch"
+            id="status-switch"
+            checked={status === 'Ativo'}
+            onChange={(e) => {
+              const newStatus = e.target.checked ? 'Ativo' : 'Inativo';
+              setStatus(newStatus);
+            }}
+            className="ms-2"
+          />
+          <span className={status === 'Ativo' ? 'text-success fw-bold' : 'text-muted'}>
+            {status}
+          </span>
+        </div>
+      </Form.Group>
+
       {formMode === 'add' && (
         <Form.Group controlId="usuario-senha" className="mb-3">
-          <Form.Label htmlFor="usuario-senha">Senha</Form.Label>
+          <Form.Label>Senha</Form.Label>
           <Form.Control type="password" placeholder="Digite a senha" isInvalid={!!errors.senha} {...register('senha')} />
           <Form.Control.Feedback type="invalid">
             {errors.senha?.message}
@@ -154,7 +194,7 @@ export default function UsuarioForm({
             <Form.Label htmlFor="usuario-turma">Turma</Form.Label>
             <Form.Select isInvalid={!!errors.turmaId} {...register('turmaId')}>
               <option value="">Selecione uma turma</option>
-              {turmas.map(t => (
+              {[...turmas].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
                 <option key={t.id} value={t.id}>{t.nome}</option>
               ))}
             </Form.Select>
@@ -189,7 +229,7 @@ export default function UsuarioForm({
       {tipo === 'professores' && (
         <Form.Group controlId="usuario-turmas" className="mb-3">
           <Form.Label>Turmas</Form.Label>
-          {turmas.map(t => (
+          {[...turmas].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
             <Form.Check
               key={t.id}
               type="checkbox"
