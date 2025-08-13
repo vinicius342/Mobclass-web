@@ -18,26 +18,21 @@ export default function Login(): JSX.Element {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
+  const [isUsuarioInativo, setIsUsuarioInativo] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const navigate = useNavigate();
 
   // Função para verificar o status do usuário nas coleções
   const verificarStatusUsuario = async (email: string) => {
-    console.log('🔍 Verificando status do usuário:', email);
     const colecoes = ['professores', 'alunos', 'responsaveis', 'administradores'];
     
     for (const colecao of colecoes) {
-      console.log(`🔍 Buscando na coleção: ${colecao}`);
       try {
         const q = query(collection(db, colecao), where('email', '==', email.trim()));
         const querySnapshot = await getDocs(q);
         
-        console.log(`📊 Documentos encontrados na coleção ${colecao}:`, querySnapshot.size);
-        
         if (!querySnapshot.empty) {
           const userData = querySnapshot.docs[0].data();
-          console.log(`✅ Usuário encontrado na coleção ${colecao}:`, userData);
-          console.log(`📋 Status do usuário:`, userData.status || 'Não definido (assumindo Ativo)');
           
           return {
             exists: true,
@@ -47,11 +42,10 @@ export default function Login(): JSX.Element {
           };
         }
       } catch (error) {
-        console.error(`❌ Erro ao buscar na coleção ${colecao}:`, error);
+        console.error(`Erro ao buscar na coleção ${colecao}:`, error);
       }
     }
     
-    console.log('❌ Usuário não encontrado em nenhuma coleção');
     return { exists: false, status: null, tipo: null, userData: null };
   };
 
@@ -65,28 +59,21 @@ export default function Login(): JSX.Element {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
+    setIsUsuarioInativo(false);
     setCarregando(true);
 
     try {
-      console.log('🔐 Iniciando autenticação Firebase...');
-      console.log('📧 Email para autenticação:', email.trim());
-      console.log('🔑 Senha possui caracteres:', senha.length > 0 ? 'Sim' : 'Não');
-      
       const cred = await signInWithEmailAndPassword(auth, email.trim(), senha);
-      console.log('✅ Autenticação Firebase realizada com sucesso:', cred.user.email);
       
       // Verificar status do usuário após autenticação
-      console.log('📝 Verificando status do usuário...');
       const statusInfo = await verificarStatusUsuario(email.trim());
       
       if (statusInfo.exists && statusInfo.status === 'Inativo') {
-        console.log('🚫 Login negado: usuário inativo');
         await auth.signOut(); // Fazer logout já que o usuário está inativo
-        setErro('Usuário inativo. Entre em contato com o administrador.');
+        setErro('Entre em contato com o administrador.');
+        setIsUsuarioInativo(true);
         return;
       }
-      
-      console.log('✅ Status válido, prosseguindo com login...');
       
       const userRef = doc(db, 'users', cred.user.uid);
       const userSnap = await getDoc(userRef);
@@ -97,7 +84,6 @@ export default function Login(): JSX.Element {
       }
 
       const userData = userSnap.data();
-      console.log('Dados do usuário logado:', userData);
 
       // ✅ Salva o token FCM após login
       try {
@@ -107,12 +93,9 @@ export default function Login(): JSX.Element {
 
         if (fcmToken) {
           await updateDoc(userRef, { fcmToken });
-          console.log('✅ Token FCM salvo:', fcmToken);
-        } else {
-          console.warn('⚠️ Token FCM retornado como null');
         }
       } catch (err) {
-        console.warn('⚠️ Erro ao salvar token FCM:', err);
+        console.warn('Erro ao salvar token FCM:', err);
       }
 
       if (userData.firstAcesso) {
@@ -132,9 +115,7 @@ export default function Login(): JSX.Element {
         }
       }
     } catch (error: any) {
-      console.error('❌ Erro completo no login:', error);
-      console.error('❌ Código do erro:', error.code);
-      console.error('❌ Mensagem do erro:', error.message);
+      console.error('Erro no login:', error);
       
       let errorMessage = 'Erro ao fazer login. Tente novamente.';
       
@@ -170,7 +151,13 @@ export default function Login(): JSX.Element {
 
         {erro && (
           <Alert variant="danger" className="text-center">
-            {erro}
+            {isUsuarioInativo ? (
+              <>
+                <strong>Usuário inativo.</strong> {erro}
+              </>
+            ) : (
+              erro
+            )}
           </Alert>
         )}
 

@@ -156,12 +156,9 @@ export default function UsuarioForm({
       </Form.Group>
 
       <Form.Group controlId="usuario-status" className="mb-3">
-        <Form.Label>Status</Form.Label>
-                {/* Status - Switch Button */}
-        <div className="d-flex justify-content-between align-items-center mb-3 p-3 border rounded">
-          <span className={status === 'Inativo' ? 'text-muted' : 'text-dark fw-bold'}>
-            Status:
-          </span>
+        {/* Status - Switch Button */}
+        <div className="d-flex align-items-center mb-3 p-3 border rounded">
+          <span className="me-2" style={{ fontWeight: 'bold' }}>Status:</span>
           <Form.Check
             type="switch"
             id="status-switch"
@@ -170,9 +167,10 @@ export default function UsuarioForm({
               const newStatus = e.target.checked ? 'Ativo' : 'Inativo';
               setStatus(newStatus);
             }}
-            className="ms-2"
+            className="mx-2"
+            style={{ transform: 'scale(1.4)' }}
           />
-          <span className={status === 'Ativo' ? 'text-success fw-bold' : 'text-muted'}>
+          <span className={status === 'Ativo' ? 'text-success fw-bold' : 'text-danger fw-bold'}>
             {status}
           </span>
         </div>
