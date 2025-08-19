@@ -5,7 +5,7 @@ import {
 } from 'react-bootstrap';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  LineChart, Line, CartesianGrid, Legend, Cell
+  LineChart, Line, Cell
 } from 'recharts';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -396,7 +396,7 @@ export default function Dashboard(): JSX.Element {
                         <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
                         <Bar
                           dataKey="taxa"
-                          label={{ position: 'top', formatter: (v: number) => `` }}
+                          label={{ position: 'top' }}
                           fill="#8884d8"
                           radius={[5, 5, 0, 0]}
                         >
