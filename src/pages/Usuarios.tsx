@@ -9,12 +9,12 @@ import { PlusCircle, Person } from 'react-bootstrap-icons';
 import Paginacao from '../components/Paginacao';
 import { db } from '../services/firebase';
 import {
-  collection, getDocs, updateDoc, deleteDoc, doc
+  collection, getDocs, updateDoc, deleteDoc, doc, writeBatch
 } from 'firebase/firestore';
 import UsuarioForm, { FormValues, AlunoOption } from '../components/UsuarioForm';
 import { GraduationCap, Plus } from 'lucide-react';
 
-interface UsuarioBase { id: string; nome: string; email: string; status: 'Ativo' | 'Inativo'; }
+interface UsuarioBase { id: string; nome: string; email: string; status: 'Ativo' | 'Inativo'; dataCriacao?: any; }
 interface Professor extends UsuarioBase { turmas: string[]; }
 interface Turma { id: string; nome: string; }
 interface Aluno extends UsuarioBase { turmaId?: string; responsavelId?: string; modoAcesso?: string; }
@@ -41,6 +41,81 @@ export default function Usuarios(): JSX.Element {
     show: false, message: '', variant: 'success'
   });
   const [expandedTurmas, setExpandedTurmas] = useState<Set<string>>(new Set());
+
+  // Função para calcular usuários criados este mês
+  const calcularNovosEsteMes = () => {
+    const hoje = new Date();
+    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59);
+
+    const todosUsuarios = [
+      ...professores,
+      ...alunos,
+      ...responsaveis,
+      ...administradores
+    ];
+
+    return todosUsuarios.filter(usuario => {
+      if (!usuario.dataCriacao) return false;
+      
+      let dataUsuario: Date;
+      
+      // Tratar diferentes formatos de data do Firestore
+      if (usuario.dataCriacao.toDate) {
+        // Timestamp do Firestore
+        dataUsuario = usuario.dataCriacao.toDate();
+      } else if (usuario.dataCriacao.seconds) {
+        // Timestamp em formato objeto
+        dataUsuario = new Date(usuario.dataCriacao.seconds * 1000);
+      } else if (typeof usuario.dataCriacao === 'string') {
+        // String de data
+        dataUsuario = new Date(usuario.dataCriacao);
+      } else {
+        // Já é um objeto Date
+        dataUsuario = new Date(usuario.dataCriacao);
+      }
+
+      return dataUsuario >= inicioMes && dataUsuario <= fimMes;
+    }).length;
+  };
+
+  // Função para migrar usuários existentes sem dataCriacao
+  const migrarUsuariosExistentes = async () => {
+    const batch = writeBatch(db);
+    let hasUpdates = false;
+
+    const collections = [
+      { name: 'professores', data: professores },
+      { name: 'alunos', data: alunos },
+      { name: 'responsaveis', data: responsaveis },
+      { name: 'administradores', data: administradores }
+    ];
+
+    // Data padrão para usuários existentes (1 mês atrás para não influenciar estatísticas atuais)
+    const dataDefault = new Date();
+    dataDefault.setMonth(dataDefault.getMonth() - 1);
+
+    for (const col of collections) {
+      for (const usuario of col.data) {
+        if (!usuario.dataCriacao) {
+          const docRef = doc(db, col.name, usuario.id);
+          batch.update(docRef, { dataCriacao: dataDefault });
+          hasUpdates = true;
+        }
+      }
+    }
+
+    if (hasUpdates) {
+      try {
+        await batch.commit();
+        console.log('Migração de usuários existentes concluída');
+        // Recarregar dados após migração
+        window.location.reload();
+      } catch (error) {
+        console.error('Erro na migração:', error);
+      }
+    }
+  };
 
   const getCurrentUsersList = () => {
     let list: any[] = [];
@@ -119,10 +194,14 @@ export default function Usuarios(): JSX.Element {
         getDocs(collection(db, 'administradores')),
       ]);
       const alunosList = aSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      setProfessores(pSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      const professoresList = pSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      const responsaveisList = rSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      const administradoresList = admSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      
+      setProfessores(professoresList);
       setAlunos(alunosList);
-      setResponsaveis(rSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-      setAdministradores(admSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      setResponsaveis(responsaveisList);
+      setAdministradores(administradoresList);
       setTurmas(tSnap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome })));
       setLoading(false);
       setAlunosOptions(
@@ -136,6 +215,15 @@ export default function Usuarios(): JSX.Element {
           })
           .sort((a, b) => a.nome.localeCompare(b.nome))
       );
+
+      // Verificar se há usuários sem dataCriacao e executar migração se necessário
+      const todosUsuarios = [...professoresList, ...alunosList, ...responsaveisList, ...administradoresList];
+      const usuariosSemData = todosUsuarios.filter(u => !u.dataCriacao);
+      
+      if (usuariosSemData.length > 0) {
+        console.log(`Encontrados ${usuariosSemData.length} usuários sem dataCriacao. Executando migração...`);
+        await migrarUsuariosExistentes();
+      }
     }
     fetchData();
   }, []);
@@ -276,6 +364,10 @@ export default function Usuarios(): JSX.Element {
       ...(tipoUsuario === 'responsaveis' && { filhos: user.filhos }),
       ...(user.id && { id: user.id }),
     };
+    
+    // Adicionar o status aos defaults
+    (defaults as any).status = user.status || 'Ativo';
+    
     setFormDefaults(defaults);
     setFormMode('edit');
     setShowForm(true);
@@ -286,10 +378,12 @@ export default function Usuarios(): JSX.Element {
       const userData = {
         nome: data.nome,
         email: data.email,
-        status: 'Ativo',
+        status: (data as any).status || 'Ativo',
         ...(data.tipoUsuario === 'alunos' && { turmaId: data.turmaId }),
         ...(data.tipoUsuario === 'professores' && { turmas: data.turmas }),
         ...(data.tipoUsuario === 'responsaveis' && { filhos: data.filhos }),
+        // Adicionar dataCriacao apenas para novos usuários
+        ...(formMode === 'add' && { dataCriacao: new Date() }),
       };
 
       if (formMode === 'edit') {
@@ -303,9 +397,11 @@ export default function Usuarios(): JSX.Element {
             nome: data.nome,
             email: data.email,
             tipoUsuario: data.tipoUsuario,
+            status: (data as any).status || 'Ativo',
             turmaId: data.turmaId,
             filhos: data.filhos,
             turmas: data.turmas,
+            dataCriacao: new Date().toISOString(),
           }),
         });
 
@@ -588,7 +684,7 @@ export default function Usuarios(): JSX.Element {
               </div>
               <div className="card-body py-3">
                 <h3 className="mb-0 fw-bold" style={{ color: '#ff9800' }}>
-                  {Math.floor((professores.length + alunos.length + responsaveis.length + administradores.length) * 0.1) || 0}
+                  {calcularNovosEsteMes()}
                 </h3>
               </div>
             </div>

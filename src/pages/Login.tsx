@@ -1,7 +1,7 @@
 import { JSX, useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { getToken } from 'firebase/messaging';
 import { auth, db, messaging } from '../services/firebase';
 import logo from '../assets/logo.png';
@@ -18,8 +18,36 @@ export default function Login(): JSX.Element {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
+  const [isUsuarioInativo, setIsUsuarioInativo] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const navigate = useNavigate();
+
+  // Função para verificar o status do usuário nas coleções
+  const verificarStatusUsuario = async (email: string) => {
+    const colecoes = ['professores', 'alunos', 'responsaveis', 'administradores'];
+    
+    for (const colecao of colecoes) {
+      try {
+        const q = query(collection(db, colecao), where('email', '==', email.trim()));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          const userData = querySnapshot.docs[0].data();
+          
+          return {
+            exists: true,
+            status: userData.status || 'Ativo', // Default para "Ativo" se não tiver status
+            tipo: colecao,
+            userData: userData
+          };
+        }
+      } catch (error) {
+        console.error(`Erro ao buscar na coleção ${colecao}:`, error);
+      }
+    }
+    
+    return { exists: false, status: null, tipo: null, userData: null };
+  };
 
   useEffect(() => {
     document.body.classList.add('login-page');
@@ -31,10 +59,22 @@ export default function Login(): JSX.Element {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
+    setIsUsuarioInativo(false);
     setCarregando(true);
 
     try {
       const cred = await signInWithEmailAndPassword(auth, email.trim(), senha);
+      
+      // Verificar status do usuário após autenticação
+      const statusInfo = await verificarStatusUsuario(email.trim());
+      
+      if (statusInfo.exists && statusInfo.status === 'Inativo') {
+        await auth.signOut(); // Fazer logout já que o usuário está inativo
+        setErro('Entre em contato com o administrador.');
+        setIsUsuarioInativo(true);
+        return;
+      }
+      
       const userRef = doc(db, 'users', cred.user.uid);
       const userSnap = await getDoc(userRef);
 
@@ -44,7 +84,6 @@ export default function Login(): JSX.Element {
       }
 
       const userData = userSnap.data();
-      console.log('Dados do usuário logado:', userData);
 
       // ✅ Salva o token FCM após login
       try {
@@ -54,12 +93,9 @@ export default function Login(): JSX.Element {
 
         if (fcmToken) {
           await updateDoc(userRef, { fcmToken });
-          console.log('✅ Token FCM salvo:', fcmToken);
-        } else {
-          console.warn('⚠️ Token FCM retornado como null');
         }
       } catch (err) {
-        console.warn('⚠️ Erro ao salvar token FCM:', err);
+        console.warn('Erro ao salvar token FCM:', err);
       }
 
       if (userData.firstAcesso) {
@@ -79,8 +115,23 @@ export default function Login(): JSX.Element {
         }
       }
     } catch (error: any) {
-      console.error(error);
-      setErro('E-mail ou senha inválidos. Tente novamente.');
+      console.error('Erro no login:', error);
+      
+      let errorMessage = 'Erro ao fazer login. Tente novamente.';
+      
+      if (error.code === 'auth/invalid-credential') {
+        errorMessage = 'Email ou senha incorretos. Verifique suas credenciais.';
+      } else if (error.code === 'auth/user-not-found') {
+        errorMessage = 'Usuário não encontrado.';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Senha incorreta.';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Email inválido.';
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = 'Muitas tentativas de login. Tente novamente mais tarde.';
+      }
+      
+      setErro(errorMessage);
     } finally {
       setCarregando(false);
     }
@@ -100,7 +151,13 @@ export default function Login(): JSX.Element {
 
         {erro && (
           <Alert variant="danger" className="text-center">
-            {erro}
+            {isUsuarioInativo ? (
+              <>
+                <strong>Usuário inativo.</strong> {erro}
+              </>
+            ) : (
+              erro
+            )}
           </Alert>
         )}
 
