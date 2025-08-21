@@ -12,7 +12,7 @@ import {
   collection, getDocs, updateDoc, deleteDoc, doc, writeBatch
 } from 'firebase/firestore';
 import UsuarioForm, { FormValues, AlunoOption } from '../components/UsuarioForm';
-import { GraduationCap, Plus, Download } from 'lucide-react';
+import { GraduationCap, Download } from 'lucide-react';
 
 // PDF
 import jsPDF from 'jspdf';
@@ -263,44 +263,6 @@ export default function Usuarios(): JSX.Element {
       downloadExcel();
     }
   };
-
-  // Função para calcular usuários criados este mês
-  const calcularNovosEsteMes = () => {
-    const hoje = new Date();
-    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-    const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59);
-
-    const todosUsuarios = [
-      ...professores,
-      ...alunos,
-      ...responsaveis,
-      ...administradores
-    ];
-
-    return todosUsuarios.filter(usuario => {
-      if (!usuario.dataCriacao) return false;
-
-      let dataUsuario: Date;
-
-      // Tratar diferentes formatos de data do Firestore
-      if (usuario.dataCriacao.toDate) {
-        // Timestamp do Firestore
-        dataUsuario = usuario.dataCriacao.toDate();
-      } else if (usuario.dataCriacao.seconds) {
-        // Timestamp em formato objeto
-        dataUsuario = new Date(usuario.dataCriacao.seconds * 1000);
-      } else if (typeof usuario.dataCriacao === 'string') {
-        // String de data
-        dataUsuario = new Date(usuario.dataCriacao);
-      } else {
-        // Já é um objeto Date
-        dataUsuario = new Date(usuario.dataCriacao);
-      }
-
-      return dataUsuario >= inicioMes && dataUsuario <= fimMes;
-    }).length;
-  };
-
   // Função para migrar usuários existentes sem dataCriacao
   const migrarUsuariosExistentes = async () => {
     const batch = writeBatch(db);
@@ -643,6 +605,7 @@ export default function Usuarios(): JSX.Element {
 
       const snapshot = await getDocs(collection(db, data.tipoUsuario));
       const novosDados = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      
       if (data.tipoUsuario === 'professores') setProfessores(novosDados);
       if (data.tipoUsuario === 'alunos') {
         setAlunos(novosDados);
@@ -860,7 +823,7 @@ export default function Usuarios(): JSX.Element {
         {/* Cards de resumo */}
         <div className="row mb-3 g-3">
           {/* Card Total de Usuários */}
-          <div className="col-md-3">
+          <div className="col-md-4">
             <div className="card shadow-sm card-sm border-left-primary mb-1">
               <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
                 <span className="fw-bold" style={{ fontSize: '1rem', color: '#3b4861' }}>Total de Usuários</span>
@@ -874,7 +837,7 @@ export default function Usuarios(): JSX.Element {
             </div>
           </div>
           {/* Card Total de Professores */}
-          <div className="col-md-3">
+          <div className="col-md-4">
             <div className="card shadow-sm card-sm border-left-success mb-1">
               <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
                 <span className="fw-bold" style={{ fontSize: '1rem', color: '#3b4861' }}>Professores</span>
@@ -886,7 +849,7 @@ export default function Usuarios(): JSX.Element {
             </div>
           </div>
           {/* Card Turmas Ativas */}
-          <div className="col-md-3">
+          <div className="col-md-4">
             <div className="card shadow-sm card-sm mb-1" style={{ borderLeft: '4px solid #a78bfa' }}>
               <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
                 <span className="fw-bold" style={{ fontSize: '1rem', color: '#3b4861' }}>Turmas Ativas</span>
@@ -897,22 +860,7 @@ export default function Usuarios(): JSX.Element {
               </div>
             </div>
           </div>
-          {/* Card Novos este mês */}
-          <div className="col-md-3">
-            <div className="card shadow-sm card-sm mb-1" style={{ borderLeft: '4px solid #ff9800' }}>
-              <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
-                <span className="fw-bold" style={{ fontSize: '1rem', color: '#3b4861' }}>Novos este mês</span>
-                <Plus size={20} style={{ color: '#ff9800' }} />
-              </div>
-              <div className="card-body py-3">
-                <h3 className="mb-0 fw-bold" style={{ color: '#ff9800' }}>
-                  {calcularNovosEsteMes()}
-                </h3>
-              </div>
-            </div>
-          </div>
         </div>
-
         {/* Card de filtros avançados */}
         <div className="card mb-3">
           <div className="card-body">
