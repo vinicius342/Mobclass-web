@@ -24,7 +24,7 @@ export interface FormValues {
   tipoUsuario: TipoUsuario;
   nome: string;
   email: string;
-  senha: string;
+  senha?: string;
   turmaId?: string;
   turmas: string[];
   filhos: string[];
@@ -49,11 +49,7 @@ const schema = yup.object({
   nome: yup.string().required('Nome é obrigatório').min(3, 'Mínimo 3 caracteres'),
   email: yup.string().required('E-mail é obrigatório').email('E-mail inválido'),
 
-  senha: yup.string().when('$formMode', {
-    is: 'add',
-    then: s => s.required('Senha é obrigatória').min(6, 'Mínimo 6 caracteres'),
-    otherwise: s => s.optional()
-  }),
+  senha: yup.string().optional(),
 
   turmaId: yup.string().when('tipoUsuario', {
     is: 'alunos',
@@ -262,7 +258,7 @@ export default function UsuarioForm({
       {tipo === 'alunos' && (
         <>
           <Form.Group controlId="usuario-turma" className="mb-3">
-            <Form.Label htmlFor="usuario-turma" style={{ fontWeight: 'bold' }}>Turma</Form.Label>
+            <Form.Label style={{ fontWeight: 'bold' }}>Turma</Form.Label>
             <Form.Select isInvalid={!!errors.turmaId} {...register('turmaId')}>
               <option value="">Selecione uma turma</option>
               {[...turmas].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
