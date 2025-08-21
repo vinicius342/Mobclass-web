@@ -963,9 +963,11 @@ export default function Agenda() {
                                 <Dropdown.Item onClick={() => handleEditar(item)} className="d-flex align-items-center gap-2">
                                   <Edit size={16} /> Editar
                                 </Dropdown.Item>
-                                <Dropdown.Item onClick={() => handleExcluir(item)} className="d-flex align-items-center gap-2 text-danger">
-                                  <Trash2 size={16} /> Excluir
-                                </Dropdown.Item>
+                                {isAdmin && (
+                                  <Dropdown.Item onClick={() => handleExcluir(item)} className="d-flex align-items-center gap-2 text-danger">
+                                    <Trash2 size={16} /> Excluir
+                                  </Dropdown.Item>
+                                )}
                               </Dropdown.Menu>
                             </Dropdown>
                           </td>
@@ -1025,9 +1027,11 @@ export default function Agenda() {
                               <Dropdown.Item onClick={() => handleEditar(item)} className="d-flex align-items-center gap-2">
                                 <Edit size={16} /> Editar
                               </Dropdown.Item>
-                              <Dropdown.Item onClick={() => handleExcluir(item)} className="d-flex align-items-center gap-2 text-danger">
-                                <Trash2 size={16} /> Excluir
-                              </Dropdown.Item>
+                              {isAdmin && (
+                                <Dropdown.Item onClick={() => handleExcluir(item)} className="d-flex align-items-center gap-2 text-danger">
+                                  <Trash2 size={16} /> Excluir
+                                </Dropdown.Item>
+                              )}
                             </Dropdown.Menu>
                           </Dropdown>
                         </div>
@@ -1497,26 +1501,28 @@ export default function Agenda() {
                                               </span>
 
                                               <div className="d-flex gap-1">
-                                                <Button
-                                                  variant="ghost"
-                                                  size="sm"
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setItemToDelete(a);
-                                                    setShowDeleteModal(true);
-                                                  }}
-                                                  className="p-1 border-0 bg-transparent"
-                                                  style={{
-                                                    minWidth: 'auto',
-                                                    fontSize: '0.7rem',
-                                                    lineHeight: '1',
-                                                    color: '#dc3545'
-                                                  }}
-                                                  onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
-                                                  onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-                                                >
-                                                  <Trash2 size={14} />
-                                                </Button>
+                                                {isAdmin && (
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      setItemToDelete(a);
+                                                      setShowDeleteModal(true);
+                                                    }}
+                                                    className="p-1 border-0 bg-transparent"
+                                                    style={{
+                                                      minWidth: 'auto',
+                                                      fontSize: '0.7rem',
+                                                      lineHeight: '1',
+                                                      color: '#dc3545'
+                                                    }}
+                                                    onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                                                  >
+                                                    <Trash2 size={14} />
+                                                  </Button>
+                                                )}
                                                 <Button
                                                   variant="ghost"
                                                   size="sm"

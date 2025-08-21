@@ -1,3 +1,14 @@
+
+/* Checkbox border color for professor turmas list in UsuarioForm */
+.usuarioform-turmas-checkbox .form-check-input[type="checkbox"] {
+  border-color: #2563eb !important; /* azul, troque para a cor desejada */
+  box-shadow: none;
+}
+
+/* Checkbox checked state border color */
+.usuarioform-turmas-checkbox .form-check-input[type="checkbox"]:checked {
+  border-color: #2563eb !important;
+}
 /* Estilo para célula de e-mail na tabela de usuários */
 .email-cell {
   font-size: 0.95em;
@@ -2612,4 +2623,8 @@ button {
   position: sticky;
   top: 0;
   z-index: 10;
+}
+.modal-narrow .modal-dialog {
+  max-width: 420px;
+  width: 90vw;
 }
