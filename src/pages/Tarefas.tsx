@@ -526,22 +526,6 @@ export default function Tarefas() {
                                 tarefasFiltradas
                                   .slice() // cria uma cópia para não mutar o array original
                                   .sort((a, b) => {
-                                    const materiaA = materias.find(m => m.id === a.materiaId)?.nome || '';
-                                    const materiaB = materias.find(m => m.id === b.materiaId)?.nome || '';
-                                    
-                                    const getStatus = (tarefa: Tarefa) => {
-                                      const hoje = new Date();
-                                      const dataEntrega = tarefa.dataEntrega ? new Date(tarefa.dataEntrega) : null;
-                                      if (dataEntrega) {
-                                        if (dataEntrega.getTime() < new Date(hoje.setHours(0, 0, 0, 0)).getTime()) {
-                                          return 'concluida';
-                                        } else {
-                                          return 'andamento';
-                                        }
-                                      }
-                                      return 'sem_data';
-                                    };
-
                                     switch (ordenacao) {
                                       case 'titulo':
                                         return (a.titulo || a.descricao).localeCompare(b.titulo || b.descricao);
@@ -659,21 +643,6 @@ export default function Tarefas() {
                             {tarefasFiltradas
                               .slice() // cria uma cópia para não mutar o array original
                               .sort((a, b) => {
-                                const materiaA = materias.find(m => m.id === a.materiaId)?.nome || '';
-                                const materiaB = materias.find(m => m.id === b.materiaId)?.nome || '';
-                                
-                                const getStatus = (tarefa: Tarefa) => {
-                                  const hoje = new Date();
-                                  const dataEntrega = tarefa.dataEntrega ? new Date(tarefa.dataEntrega) : null;
-                                  if (dataEntrega) {
-                                    if (dataEntrega.getTime() < new Date(hoje.setHours(0, 0, 0, 0)).getTime()) {
-                                      return 'concluida';
-                                    } else {
-                                      return 'andamento';
-                                    }
-                                  }
-                                  return 'sem_data';
-                                };
 
                                 switch (ordenacao) {
                                   case 'titulo':
