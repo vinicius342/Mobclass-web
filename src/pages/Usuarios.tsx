@@ -1227,8 +1227,8 @@ export default function Usuarios(): JSX.Element {
           </>
         )}
 
-        <Modal show={showForm} onHide={() => setShowForm(false)} size="lg" centered>
-          <Modal.Header closeButton>
+        <Modal show={showForm} onHide={() => setShowForm(false)} centered dialogClassName="modal-narrow">
+          <Modal.Header closeButton className='border-bottom-0 pb-1'>
             <Modal.Title>{formMode === 'add' ? 'Adicionar Usuário' : 'Editar Usuário'}</Modal.Title>
           </Modal.Header>
           <Modal.Body>
