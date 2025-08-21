@@ -365,8 +365,8 @@ export default function Agenda() {
           4: { cellWidth: (pageWidth - 40) / 5 }
         },
         margin: { left: 20, right: 20 },
-        didDrawPage: (data) => {
-          currentY = data.cursor?.y || currentY;
+        didDrawPage: () => {
+          // currentY is not updated here as data is unused
         }
       });
 
@@ -449,7 +449,7 @@ export default function Agenda() {
           1: { cellWidth: 80 }
         },
         tableWidth: professoresTableWidth,
-        didDrawPage: (data) => {
+        didDrawPage: () => {
           // Atualiza currentY para o final da tabela mais longa
           const horariosRows = horariosTable.length + 1; // +1 cabeçalho
           const profRows = professoresTable.length + 1;
@@ -1218,8 +1218,8 @@ export default function Agenda() {
                                   4: { cellWidth: (pageWidth - 40) / 5 }
                                 },
                                 margin: { left: 20, right: 20 },
-                                didDrawPage: (data) => {
-                                  currentY = data.cursor?.y || currentY;
+                                didDrawPage: () => {
+                                  // currentY is not updated here as data is unused
                                 }
                               });
                               currentY += 20;
@@ -1296,7 +1296,7 @@ export default function Agenda() {
                                   1: { cellWidth: 80 }
                                 },
                                 tableWidth: professoresTableWidth,
-                                didDrawPage: (data) => {
+                                didDrawPage: () => {
                                   // Atualiza currentY para o final da tabela mais longa
                                   const horariosRows = horariosTable.length + 1;
                                   const profRows = professoresTable.length + 1;
