@@ -12,7 +12,14 @@ import {
   collection, getDocs, updateDoc, deleteDoc, doc, writeBatch
 } from 'firebase/firestore';
 import UsuarioForm, { FormValues, AlunoOption } from '../components/UsuarioForm';
-import { GraduationCap, Plus } from 'lucide-react';
+import { GraduationCap, Plus, Download } from 'lucide-react';
+
+// PDF
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+// XLSX
+import * as XLSX from 'xlsx';
 
 interface UsuarioBase { id: string; nome: string; email: string; status: 'Ativo' | 'Inativo'; dataCriacao?: any; }
 interface Professor extends UsuarioBase { turmas: string[]; }
@@ -41,6 +48,221 @@ export default function Usuarios(): JSX.Element {
     show: false, message: '', variant: 'success'
   });
   const [expandedTurmas, setExpandedTurmas] = useState<Set<string>>(new Set());
+  const [showExportModal, setShowExportModal] = useState(false);
+
+
+  // Funções de exportação
+  // Retorna a lista filtrada completa, sem paginação
+  const getFilteredUsersList = () => {
+    let list: any[] = [];
+    if (activeTab === 'todos') {
+      list = [
+        ...professores.map(p => ({ ...p, tipoUsuario: 'professores' })),
+        ...alunos.map(a => ({ ...a, tipoUsuario: 'alunos' })),
+        ...responsaveis.map(r => ({ ...r, tipoUsuario: 'responsaveis' })),
+        ...administradores.map(adm => ({ ...adm, tipoUsuario: 'administradores' }))
+      ];
+    } else {
+      list = activeTab === 'professores'
+        ? professores
+        : activeTab === 'alunos'
+          ? alunos
+          : activeTab === 'responsaveis'
+            ? responsaveis
+            : administradores;
+    }
+    // Aplicar filtros (igual ao getCurrentUsersList, mas sem slice)
+    list = list.filter(u => {
+      const searchLower = search.toLowerCase();
+      const nameMatch = u.nome.toLowerCase().includes(searchLower);
+      const emailMatch = u.email.toLowerCase().includes(searchLower);
+      let infoMatch = false;
+      if (u.tipoUsuario === 'responsaveis' || (activeTab === 'responsaveis')) {
+        const responsavel = u as any;
+        if (responsavel.filhos && responsavel.filhos.length > 0) {
+          infoMatch = responsavel.filhos.some((filhoId: string) => {
+            const aluno = alunos.find(a => a.id === filhoId);
+            return aluno && aluno.nome.toLowerCase().includes(searchLower);
+          });
+        }
+      } else if ((u.tipoUsuario === 'alunos' || activeTab === 'alunos') && (u as any).turmaId) {
+        const turma = turmas.find(t => t.id === (u as any).turmaId);
+        infoMatch = !!(turma && turma.nome.toLowerCase().includes(searchLower));
+      } else if (u.tipoUsuario === 'professores' || activeTab === 'professores') {
+        const professor = u as any;
+        if (professor.turmas && professor.turmas.length > 0) {
+          infoMatch = professor.turmas.some((turmaId: string) => {
+            const turma = turmas.find(t => t.id === turmaId);
+            return turma && turma.nome.toLowerCase().includes(searchLower);
+          });
+        }
+      }
+      return nameMatch || emailMatch || infoMatch;
+    });
+    if (activeTab === 'alunos' && turmaFiltro) {
+      list = list.filter(a => (a as Aluno).turmaId === turmaFiltro);
+    }
+    return list.sort((a, b) => a.nome.localeCompare(b.nome));
+  };
+
+  const downloadPDF = () => {
+    const tipoFiltro = activeTab === 'todos' ? 'Todos os Usuários' :
+      activeTab === 'professores' ? 'Professores' :
+        activeTab === 'alunos' ? 'Alunos' :
+          activeTab === 'responsaveis' ? 'Responsáveis' : 'Administradores';
+
+    const doc = new jsPDF();
+    doc.text(`Relatório de Usuários - ${tipoFiltro}`, 14, 15);
+
+    // Usar lista filtrada completa
+    const todosUsuarios = getFilteredUsersList();
+    const dadosParaTabela = todosUsuarios.map(usuario => {
+      let tipo = '';
+      let info = '';
+
+      if (activeTab === 'todos') {
+        tipo = usuario.tipoUsuario === 'professores' ? 'Professor' :
+          usuario.tipoUsuario === 'alunos' ? 'Aluno' :
+            usuario.tipoUsuario === 'responsaveis' ? 'Responsável' : 'Administrador';
+
+        if (usuario.tipoUsuario === 'professores' && usuario.turmas) {
+          info = usuario.turmas.map((id: string) => turmas.find(t => t.id === id)?.nome || id).join(', ');
+        } else if (usuario.tipoUsuario === 'alunos' && usuario.turmaId) {
+          info = turmas.find(t => t.id === usuario.turmaId)?.nome || '';
+        } else if (usuario.tipoUsuario === 'responsaveis' && usuario.filhos) {
+          info = usuario.filhos.map((filhoId: string) => alunos.find(a => a.id === filhoId)?.nome || 'Desconhecido').join(', ');
+        }
+      } else {
+        if (activeTab === 'professores' && (usuario as Professor).turmas) {
+          info = (usuario as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome || id).join(', ');
+        } else if (activeTab === 'alunos' && (usuario as Aluno).turmaId) {
+          info = turmas.find(t => t.id === (usuario as Aluno).turmaId)?.nome || '';
+        } else if (activeTab === 'responsaveis' && (usuario as Responsavel).filhos) {
+          info = (usuario as Responsavel).filhos!.map(filhoId => {
+            const aluno = alunos.find(a => a.id === filhoId);
+            return aluno?.nome || 'Desconhecido';
+          }).join(', ');
+        }
+      }
+
+      return activeTab === 'todos'
+        ? [usuario.nome, usuario.email, usuario.status || 'Ativo', tipo, info]
+        : [usuario.nome, usuario.email, usuario.status || 'Ativo', info];
+    });
+
+    const headers = activeTab === 'todos'
+      ? [['Nome', 'E-mail', 'Status', 'Tipo', 'Info']]
+      : [['Nome', 'E-mail', 'Status', activeTab === 'professores' ? 'Turmas' : activeTab === 'alunos' ? 'Turma' : activeTab === 'responsaveis' ? 'Filhos' : 'Info']];
+
+    autoTable(doc, {
+      startY: 25,
+      head: headers,
+      body: dadosParaTabela,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [41, 128, 185] },
+      columnStyles: activeTab === 'todos' ? {
+        0: { cellWidth: 35 },
+        1: { cellWidth: 40 },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 25 },
+        4: { cellWidth: 70 }
+      } : {
+        0: { cellWidth: 40 },
+        1: { cellWidth: 50 },
+        2: { cellWidth: 25 },
+        3: { cellWidth: 75 }
+      }
+    });
+
+    doc.save(`usuarios-${tipoFiltro.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const downloadExcel = () => {
+    const tipoFiltro = activeTab === 'todos' ? 'Todos os Usuários' :
+      activeTab === 'professores' ? 'Professores' :
+        activeTab === 'alunos' ? 'Alunos' :
+          activeTab === 'responsaveis' ? 'Responsáveis' : 'Administradores';
+
+    // Usar lista filtrada completa
+    const todosUsuarios = getFilteredUsersList();
+    const dadosParaExcel = todosUsuarios.map(usuario => {
+      let tipo = '';
+      let info = '';
+
+      if (activeTab === 'todos') {
+        tipo = usuario.tipoUsuario === 'professores' ? 'Professor' :
+          usuario.tipoUsuario === 'alunos' ? 'Aluno' :
+            usuario.tipoUsuario === 'responsaveis' ? 'Responsável' : 'Administrador';
+
+        if (usuario.tipoUsuario === 'professores' && usuario.turmas) {
+          info = usuario.turmas.map((id: string) => turmas.find(t => t.id === id)?.nome || id).join(', ');
+        } else if (usuario.tipoUsuario === 'alunos' && usuario.turmaId) {
+          info = turmas.find(t => t.id === usuario.turmaId)?.nome || '';
+        } else if (usuario.tipoUsuario === 'responsaveis' && usuario.filhos) {
+          info = usuario.filhos.map((filhoId: string) => alunos.find(a => a.id === filhoId)?.nome || 'Desconhecido').join(', ');
+        }
+      } else {
+        if (activeTab === 'professores' && (usuario as Professor).turmas) {
+          info = (usuario as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome || id).join(', ');
+        } else if (activeTab === 'alunos' && (usuario as Aluno).turmaId) {
+          info = turmas.find(t => t.id === (usuario as Aluno).turmaId)?.nome || '';
+        } else if (activeTab === 'responsaveis' && (usuario as Responsavel).filhos) {
+          info = (usuario as Responsavel).filhos!.map(filhoId => {
+            const aluno = alunos.find(a => a.id === filhoId);
+            return aluno?.nome || 'Desconhecido';
+          }).join(', ');
+        }
+      }
+
+      return activeTab === 'todos'
+        ? {
+          'Nome': usuario.nome,
+          'E-mail': usuario.email,
+          'Status': usuario.status || 'Ativo',
+          'Tipo': tipo,
+          'Info': info
+        }
+        : {
+          'Nome': usuario.nome,
+          'E-mail': usuario.email,
+          'Status': usuario.status || 'Ativo',
+          [activeTab === 'professores' ? 'Turmas' : activeTab === 'alunos' ? 'Turma' : activeTab === 'responsaveis' ? 'Filhos' : 'Info']: info
+        };
+    });
+
+    // Cria a planilha
+    const worksheet = XLSX.utils.json_to_sheet(dadosParaExcel);
+
+    // Define a largura das colunas
+    worksheet['!cols'] = activeTab === 'todos' ? [
+      { wch: 25 }, // Nome
+      { wch: 30 }, // E-mail
+      { wch: 15 }, // Status
+      { wch: 20 }, // Tipo
+      { wch: 40 }  // Info
+    ] : [
+      { wch: 25 }, // Nome
+      { wch: 30 }, // E-mail
+      { wch: 15 }, // Status
+      { wch: 40 }  // Info
+    ];
+
+    // Cria o workbook e adiciona a aba
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, `Usuários - ${tipoFiltro}`);
+
+    // Salva o arquivo
+    XLSX.writeFile(workbook, `usuarios-${tipoFiltro.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const handleExport = (tipo: 'pdf' | 'excel') => {
+    setShowExportModal(false);
+    if (tipo === 'pdf') {
+      downloadPDF();
+    } else {
+      downloadExcel();
+    }
+  };
 
   // Função para calcular usuários criados este mês
   const calcularNovosEsteMes = () => {
@@ -57,9 +279,9 @@ export default function Usuarios(): JSX.Element {
 
     return todosUsuarios.filter(usuario => {
       if (!usuario.dataCriacao) return false;
-      
+
       let dataUsuario: Date;
-      
+
       // Tratar diferentes formatos de data do Firestore
       if (usuario.dataCriacao.toDate) {
         // Timestamp do Firestore
@@ -142,10 +364,10 @@ export default function Usuarios(): JSX.Element {
       const searchLower = search.toLowerCase();
       const nameMatch = u.nome.toLowerCase().includes(searchLower);
       const emailMatch = u.email.toLowerCase().includes(searchLower);
-      
+
       // Buscar também na coluna info
       let infoMatch = false;
-      
+
       if (u.tipoUsuario === 'responsaveis' || (activeTab === 'responsaveis')) {
         // Para responsáveis, buscar pelo nome dos filhos (alunos)
         const responsavel = u as any;
@@ -169,7 +391,7 @@ export default function Usuarios(): JSX.Element {
           });
         }
       }
-      
+
       return nameMatch || emailMatch || infoMatch;
     });
 
@@ -197,7 +419,7 @@ export default function Usuarios(): JSX.Element {
       const professoresList = pSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
       const responsaveisList = rSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
       const administradoresList = admSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      
+
       setProfessores(professoresList);
       setAlunos(alunosList);
       setResponsaveis(responsaveisList);
@@ -219,7 +441,7 @@ export default function Usuarios(): JSX.Element {
       // Verificar se há usuários sem dataCriacao e executar migração se necessário
       const todosUsuarios = [...professoresList, ...alunosList, ...responsaveisList, ...administradoresList];
       const usuariosSemData = todosUsuarios.filter(u => !u.dataCriacao);
-      
+
       if (usuariosSemData.length > 0) {
         console.log(`Encontrados ${usuariosSemData.length} usuários sem dataCriacao. Executando migração...`);
         await migrarUsuariosExistentes();
@@ -252,20 +474,20 @@ export default function Usuarios(): JSX.Element {
         {turmasToShow.map(id => {
           const turmaNome = turmas.find(t => t.id === id)?.nome || id;
           return (
-            <span 
-              key={id} 
-              style={{ 
-                background: '#e0edff', 
-                color: '#2563eb', 
-                fontWeight: 700, 
-                border: 'none', 
-                borderRadius: '12px', 
-                padding: '0.22rem 0.5rem', 
-                fontSize: '0.71rem', 
-                letterSpacing: '0.1px', 
-                lineHeight: 1.1, 
-                marginRight: 4, 
-                display: 'inline-block' 
+            <span
+              key={id}
+              style={{
+                background: '#e0edff',
+                color: '#2563eb',
+                fontWeight: 700,
+                border: 'none',
+                borderRadius: '12px',
+                padding: '0.22rem 0.5rem',
+                fontSize: '0.71rem',
+                letterSpacing: '0.1px',
+                lineHeight: 1.1,
+                marginRight: 4,
+                display: 'inline-block'
               }}
             >
               {turmaNome}
@@ -273,19 +495,19 @@ export default function Usuarios(): JSX.Element {
           );
         })}
         {remainingCount > 0 && (
-          <span 
+          <span
             onClick={() => toggleExpandTurmas(userId)}
-            style={{ 
-              background: '#f1f5f9', 
-              color: '#64748b', 
-              fontWeight: 600, 
-              border: 'none', 
-              borderRadius: '12px', 
-              padding: '0.22rem 0.5rem', 
-              fontSize: '0.71rem', 
-              letterSpacing: '0.1px', 
-              lineHeight: 1.1, 
-              marginRight: 4, 
+            style={{
+              background: '#f1f5f9',
+              color: '#64748b',
+              fontWeight: 600,
+              border: 'none',
+              borderRadius: '12px',
+              padding: '0.22rem 0.5rem',
+              fontSize: '0.71rem',
+              letterSpacing: '0.1px',
+              lineHeight: 1.1,
+              marginRight: 4,
               display: 'inline-block',
               cursor: 'pointer',
               transition: 'background-color 0.2s'
@@ -307,7 +529,7 @@ export default function Usuarios(): JSX.Element {
       const searchLower = search.toLowerCase();
       const nameMatch = u.nome.toLowerCase().includes(searchLower);
       const emailMatch = u.email.toLowerCase().includes(searchLower);
-      
+
       // Buscar também na coluna info (nome do aluno para responsáveis)
       let infoMatch = false;
       if (u.id && responsaveis.find(r => r.id === u.id)) {
@@ -320,7 +542,7 @@ export default function Usuarios(): JSX.Element {
           });
         }
       }
-      
+
       return nameMatch || emailMatch || infoMatch;
     });
 
@@ -364,10 +586,10 @@ export default function Usuarios(): JSX.Element {
       ...(tipoUsuario === 'responsaveis' && { filhos: user.filhos }),
       ...(user.id && { id: user.id }),
     };
-    
+
     // Adicionar o status aos defaults
     (defaults as any).status = user.status || 'Ativo';
-    
+
     setFormDefaults(defaults);
     setFormMode('edit');
     setShowForm(true);
@@ -466,10 +688,10 @@ export default function Usuarios(): JSX.Element {
       const searchLower = search.toLowerCase();
       const nameMatch = u.nome.toLowerCase().includes(searchLower);
       const emailMatch = u.email.toLowerCase().includes(searchLower);
-      
+
       // Buscar também na coluna info
       let infoMatch = false;
-      
+
       if (u.tipoUsuario === 'responsaveis' || (activeTab === 'responsaveis')) {
         // Para responsáveis, buscar pelo nome dos filhos (alunos)
         const responsavel = u as Responsavel;
@@ -493,7 +715,7 @@ export default function Usuarios(): JSX.Element {
           });
         }
       }
-      
+
       return nameMatch || emailMatch || infoMatch;
     });
 
@@ -511,7 +733,7 @@ export default function Usuarios(): JSX.Element {
         <td style={{ fontWeight: 600 }}>{user.nome}</td>
         <td className="email-cell">{user.email}</td>
         <td>
-          <Badge 
+          <Badge
             className={`usuario-status-badge ${user.status === 'Ativo' ? 'ativo' : 'inativo'}`}
             style={{
               backgroundColor: user.status === 'Ativo' ? '#22c55e' : '#6c757d',
@@ -527,7 +749,7 @@ export default function Usuarios(): JSX.Element {
               display: 'inline-block'
             }}
           >
-            {user.status === 'Ativo' ? <span style={{fontWeight: 900, marginRight: 3}}>✓</span> : null}
+            {user.status === 'Ativo' ? <span style={{ fontWeight: 900, marginRight: 3 }}>✓</span> : null}
             {user.status || 'Ativo'}
           </Badge>
         </td>
@@ -569,8 +791,8 @@ export default function Usuarios(): JSX.Element {
         )}
         <td>
           <Dropdown align="end">
-            <Dropdown.Toggle 
-              variant="light" 
+            <Dropdown.Toggle
+              variant="light"
               size="sm"
               className="dropdown-toggle-no-caret"
               style={{
@@ -692,7 +914,7 @@ export default function Usuarios(): JSX.Element {
         </div>
 
         {/* Card de filtros avançados */}
-        <div className="card mb-4">
+        <div className="card mb-3">
           <div className="card-body">
             <div className="row g-3 align-items-center">
               <div className="col-md-3">
@@ -738,6 +960,17 @@ export default function Usuarios(): JSX.Element {
             <div className="usuarios-list-desktop d-none d-md-block">
               <Card className="mb-1">
                 <Card.Body>
+                  <div className="d-flex align-items-center justify-content-between px-2 mb-2">
+                    <h3 className="mb-0">Lista de Usuários</h3>
+                    <Button
+                      size="sm"
+                      onClick={() => setShowExportModal(true)}
+                      className="d-flex align-items-center justify-content-center gap-2"
+                    >
+                      <Download size={18} className='me-1' />
+                      Exportar
+                    </Button>
+                  </div>
                   <div className="usuarios-table-desktop w-100">
                     <Table responsive hover className="w-100 text-center">
                       <thead className="thead-sticky">
@@ -766,7 +999,7 @@ export default function Usuarios(): JSX.Element {
                                 <td className="text-center"><strong>{user.nome}</strong></td>
                                 <td className="text-center"><span className="text-secondary">{user.email}</span></td>
                                 <td className="text-center">
-                                  <Badge 
+                                  <Badge
                                     className={`usuario-status-badge ${user.status === 'Ativo' ? 'ativo' : 'inativo'}`}
                                     style={{
                                       backgroundColor: user.status === 'Ativo' ? '#22c55e' : '#6c757d',
@@ -864,7 +1097,7 @@ export default function Usuarios(): JSX.Element {
                             </div>
                           )}
                         </div>
-                        <Badge 
+                        <Badge
                           className={`usuario-status-badge ${user.status === 'Ativo' ? 'ativo' : 'inativo'} align-self-start`}
                           style={{
                             backgroundColor: user.status === 'Ativo' ? '#22c55e' : '#6c757d',
@@ -949,10 +1182,10 @@ export default function Usuarios(): JSX.Element {
                     const searchLower = search.toLowerCase();
                     const nameMatch = u.nome.toLowerCase().includes(searchLower);
                     const emailMatch = u.email.toLowerCase().includes(searchLower);
-                    
+
                     // Buscar também na coluna info
                     let infoMatch = false;
-                    
+
                     if (u.tipoUsuario === 'responsaveis') {
                       const responsavel = u as any;
                       if (responsavel.filhos && responsavel.filhos.length > 0) {
@@ -973,7 +1206,7 @@ export default function Usuarios(): JSX.Element {
                         });
                       }
                     }
-                    
+
                     return nameMatch || emailMatch || infoMatch;
                   })
                   : activeTab === 'alunos' && turmaFiltro
@@ -1007,6 +1240,34 @@ export default function Usuarios(): JSX.Element {
               onSubmit={handleSubmit}
               onCancel={() => setShowForm(false)}
             />
+          </Modal.Body>
+        </Modal>
+
+        {/* Modal de Exportação */}
+        <Modal show={showExportModal} onHide={() => setShowExportModal(false)} centered>
+          <Modal.Header closeButton style={{ borderBottom: '0' }}>
+            <Modal.Title>Escolha o formato de exportação</Modal.Title>
+          </Modal.Header>
+          <Modal.Body style={{ borderTop: '0' }}>
+            <div className="d-flex align-items-center justify-content-between gap-3">
+              <span className="mb-0" style={{ fontSize: 16 }}>Como você gostaria de exportar a lista de usuários?</span>
+              <div className="d-flex gap-3">
+                <Button
+                  variant="outline-primary"
+                  onClick={() => handleExport('pdf')}
+                  className="d-flex align-items-center justify-content-center"
+                >
+                  PDF
+                </Button>
+                <Button
+                  variant="outline-success"
+                  onClick={() => handleExport('excel')}
+                  className="d-flex align-items-center justify-content-center"
+                >
+                  Excel
+                </Button>
+              </div>
+            </div>
           </Modal.Body>
         </Modal>
 
