@@ -53,7 +53,7 @@ interface Tarefa {
   excluida?: boolean;
   links?: Array<{
     url: string;
-    descricao: string;
+    titulo: string;
   }>;
 }
 
@@ -96,9 +96,9 @@ export default function Tarefas() {
   const [turmaId, setTurmaId] = useState('');
   const [dataEntrega, setDataEntrega] = useState('');
   const [editandoId, setEditandoId] = useState<string | null>(null);
-  const [links, setLinks] = useState<Array<{ url: string; descricao: string }>>([]);
+  const [links, setLinks] = useState<Array<{ url: string; titulo: string }>>([]);
   const [novoLinkUrl, setNovoLinkUrl] = useState('');
-  const [novoLinkDescricao, setNovoLinkDescricao] = useState('');
+  const [novoLinkTitulo, setNovoLinkTitulo] = useState('');
 
   const [paginaAtual, setPaginaAtual] = useState(1);
   const tarefasPorPagina = 10;
@@ -275,7 +275,7 @@ export default function Tarefas() {
     setDataEntrega('');
     setLinks([]);
     setNovoLinkUrl('');
-    setNovoLinkDescricao('');
+    setNovoLinkTitulo('');
     setEditandoId(null);
     setShowModal(false);
   };
@@ -395,12 +395,12 @@ export default function Tarefas() {
 
     const novoLink = {
       url: novoLinkUrl.trim(),
-      descricao: novoLinkDescricao.trim() || 'Link'
+      titulo: novoLinkTitulo.trim() || 'Link'
     };
 
     setLinks(prev => [...prev, novoLink]);
     setNovoLinkUrl('');
-    setNovoLinkDescricao('');
+    setNovoLinkTitulo('');
   };
 
   const removerLink = (index: number) => {
@@ -730,7 +730,7 @@ export default function Tarefas() {
                                               className="btn btn-sm btn-outline-primary"
                                               style={{ fontSize: '0.7rem', padding: '2px 6px' }}
                                             >
-                                              🔗 {link.descricao}
+                                              🔗 {link.titulo}
                                             </a>
                                           ))}
                                         </div>
@@ -1143,8 +1143,8 @@ export default function Tarefas() {
                         <Form.Control
                           type="text"
                           placeholder="Título do link"
-                          value={novoLinkDescricao}
-                          onChange={e => setNovoLinkDescricao(e.target.value)}
+                          value={novoLinkTitulo}
+                          onChange={e => setNovoLinkTitulo(e.target.value)}
                           className="mb-2"
                         />
                         <div className="d-flex gap-2">
@@ -1176,7 +1176,7 @@ export default function Tarefas() {
                           <div key={index} className="d-flex align-items-center justify-content-between p-2 mb-1 bg-light rounded">
                             <div className="flex-grow-1">
                               <div className="fw-medium" style={{ fontSize: '0.9rem' }}>
-                                {link.descricao}
+                                {link.titulo}
                               </div>
                               <div className="text-muted" style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>
                                 {link.url}
