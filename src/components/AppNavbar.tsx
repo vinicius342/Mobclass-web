@@ -11,7 +11,7 @@ import { FaLink } from 'react-icons/fa';
 
 import {
   FaHome, FaTasks, FaCalendarAlt, FaClipboardList, FaBook,
-  FaBullhorn, FaUserGraduate, FaUsers, FaSignOutAlt
+  FaBullhorn, FaUserGraduate, FaUsers, FaSignOutAlt, FaExclamationTriangle
 } from 'react-icons/fa';
 
 export default function AppNavbar() {
@@ -21,6 +21,8 @@ export default function AppNavbar() {
   const userData = authContext?.userData;
 
   const isAdmin = userData?.tipo === 'administradores';
+  const isProfessor = userData?.tipo === 'professores';
+  const canAccessOcorrencias = isAdmin || isProfessor;
   const dashboardLink = userData?.tipo === 'professores' ? '/dashboard-professor' : '/dashboard';
 
   const handleLogout = async () => {
@@ -55,6 +57,11 @@ export default function AppNavbar() {
       <Nav.Link as={Link} to="/comunicados" className="text-white d-flex align-items-center gap-2" onClick={isMobile ? handleClose : undefined}>
         <FaBullhorn /> Comunicados
       </Nav.Link>
+      {canAccessOcorrencias && (
+        <Nav.Link as={Link} to="/ocorrencias" className="text-white d-flex align-items-center gap-2" onClick={isMobile ? handleClose : undefined}>
+          <FaExclamationTriangle /> Ocorrências
+        </Nav.Link>
+      )}
 
       {isAdmin && (
         <>

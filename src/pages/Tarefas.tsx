@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Container, Row, Col, Card, Button, Modal, Form, Dropdown, ButtonGroup
+  Container, Row, Col, Card, Button, Modal, Form, Dropdown, ButtonGroup, Table
 } from 'react-bootstrap';
 import {
   collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, getDoc
@@ -51,6 +51,10 @@ interface Tarefa {
   turmaId: string;
   dataEntrega: string;
   excluida?: boolean;
+  links?: Array<{
+    url: string;
+    titulo: string;
+  }>;
 }
 
 interface Turma {
@@ -92,6 +96,9 @@ export default function Tarefas() {
   const [turmaId, setTurmaId] = useState('');
   const [dataEntrega, setDataEntrega] = useState('');
   const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [links, setLinks] = useState<Array<{ url: string; titulo: string }>>([]);
+  const [novoLinkUrl, setNovoLinkUrl] = useState('');
+  const [novoLinkTitulo, setNovoLinkTitulo] = useState('');
 
   const [paginaAtual, setPaginaAtual] = useState(1);
   const tarefasPorPagina = 10;
@@ -262,9 +269,13 @@ export default function Tarefas() {
 
   const handleClose = () => {
     setMateriaSelecionada('');
+    setTitulo('');
     setDescricao('');
     setTurmaId('');
     setDataEntrega('');
+    setLinks([]);
+    setNovoLinkUrl('');
+    setNovoLinkTitulo('');
     setEditandoId(null);
     setShowModal(false);
   };
@@ -272,7 +283,15 @@ export default function Tarefas() {
   const handleSalvar = async () => {
     if (!materiaSelecionada || !descricao || !turmaId || !dataEntrega) return;
     if (!userData) return;
-    const payload = { materiaId: materiaSelecionada, titulo, descricao, turmaId, dataEntrega, professorId: userData.uid };
+    const payload = {
+      materiaId: materiaSelecionada,
+      titulo,
+      descricao,
+      turmaId,
+      dataEntrega,
+      professorId: userData.uid,
+      links: links.length > 0 ? links : undefined
+    };
     if (editandoId) {
       await updateDoc(doc(db, 'tarefas', editandoId), payload);
     } else {
@@ -339,6 +358,7 @@ export default function Tarefas() {
     setDescricao(tarefa.descricao);
     setTurmaId(tarefa.turmaId);
     setDataEntrega(tarefa.dataEntrega);
+    setLinks(tarefa.links || []);
     setShowModal(true); // <-- aqui abre o modal
   };
 
@@ -367,6 +387,24 @@ export default function Tarefas() {
     setEditingId(id);
     setCurrentObs(obs);
     setShowObsModal(true);
+  };
+
+  // Funções para gerenciar links
+  const adicionarLink = () => {
+    if (!novoLinkUrl.trim()) return;
+
+    const novoLink = {
+      url: novoLinkUrl.trim(),
+      titulo: novoLinkTitulo.trim() || 'Link'
+    };
+
+    setLinks(prev => [...prev, novoLink]);
+    setNovoLinkUrl('');
+    setNovoLinkTitulo('');
+  };
+
+  const removerLink = (index: number) => {
+    setLinks(prev => prev.filter((_, i) => i !== index));
   };
 
 
@@ -513,98 +551,101 @@ export default function Tarefas() {
                               </div>
                             </div>
                             {/* Cabeçalho da lista */}
-                            <div className="d-flex justify-content-between px-3 py-2 border-bottom fw-bold text-muted" style={{ fontSize: '1rem', fontWeight: 600 }}>
-                              <div style={{ width: '35%' }}>Título</div>
-                              <div style={{ width: '30%' }}>Descrição</div>
-                              <div style={{ width: '15%', textAlign: 'center' }}>Data Entrega</div>
-                              <div style={{ width: '10%', textAlign: 'center' }}>Status</div>
-                              <div style={{ width: '10%', textAlign: 'end', paddingRight: 10 }}>Ações</div>
-                            </div>
+                            {/* Cabeçalho agora está dentro do Table */}
                             {/* Lista de atividades */}
                             <div>
                               {tarefasFiltradas.length > 0 ? (
-                                tarefasFiltradas
-                                  .slice() // cria uma cópia para não mutar o array original
-                                  .sort((a, b) => {
-                                    switch (ordenacao) {
-                                      case 'titulo':
-                                        return (a.titulo || a.descricao).localeCompare(b.titulo || b.descricao);
-                                      case 'data':
-                                        return new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime(); // decrescente
-                                      default:
-                                        return 0;
-                                    }
-                                  })
-                                  .map(tarefa => (
-                                <Card
-                                  key={tarefa.id}
-                                  className="custom-card-frequencia"
-                                  style={{ borderBottom: '1px solid #f1f3f4', cursor: 'pointer', background: '#fff', borderRadius: 0}}
-                                  onClick={() => setAtividadeSelecionada(tarefa)}
-                                >
-                                  <Card.Body className="d-flex justify-content-between align-items-center py-3 px-3">
-                                    <div style={{ width: '35%' }}>
-                                      <span style={{ fontSize: '1rem', fontWeight: 500 }}>{tarefa.titulo || tarefa.descricao}</span>
-                                    </div>
-                                    <div style={{ width: '30%' }}>
-                                      <span style={{ color: '#6b7280' }}>{tarefa.descricao}</span>
-                                    </div>
-                                    <div style={{ width: '15%', textAlign: 'center' }}>
-                                      {formatarDataBR(tarefa.dataEntrega)}
-                                    </div>
-                                    <div style={{ width: '10%', textAlign: 'center' }}>
-                                      {(() => {
-                                        const hoje = new Date();
-                                        const dataEntrega = tarefa.dataEntrega ? new Date(tarefa.dataEntrega) : null;
-                                        if (dataEntrega) {
-                                          if (dataEntrega.getTime() < new Date(hoje.setHours(0, 0, 0, 0)).getTime()) {
-                                            return <span className="status-badge enviado">Concluída</span>;
-                                          } else {
-                                            return <span className="status-badge agendado">Em andamento</span>;
-                                          }
+                                <Table responsive hover className="mb-0 align-middle">
+                                  <thead>
+                                    <tr>
+                                      <th style={{ width: '35%' }} className='text-muted px-3'>Título</th>
+                                      <th style={{ width: '28%' }} className='text-muted px-3'>Descrição</th>
+                                      <th style={{ width: '13%', textAlign: 'center' }} className='text-muted'>Data Entrega</th>
+                                      <th style={{ width: '9%', textAlign: 'center' }} className='text-muted'>Status</th>
+                                      <th style={{ width: '15%', textAlign: 'center', paddingRight: 0 }} className='text-muted'>Ações</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {tarefasFiltradas
+                                      .slice()
+                                      .sort((a, b) => {
+                                        switch (ordenacao) {
+                                          case 'titulo':
+                                            return (a.titulo || 'Sem título').localeCompare(b.titulo || 'Sem título');
+                                          case 'data':
+                                            return new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime();
+                                          default:
+                                            return 0;
                                         }
-                                        return <span className="status-badge rascunho">Sem data</span>;
-                                      })()}
-                                    </div>
-                                    <div style={{ width: '10%', textAlign: 'end', paddingRight: 18 }} onClick={e => e.stopPropagation()}>
-                                      <Dropdown align="end">
-                                        <Dropdown.Toggle
-                                          variant="light"
-                                          size="sm"
-                                          style={{ border: 'none', background: 'transparent', boxShadow: 'none' }}
-                                          className="dropdown-toggle-no-caret"
-                                          id={`dropdown-acao-tarefa-${tarefa.id}`}
-                                        >
-                                          ⋯
-                                        </Dropdown.Toggle>
-                                        <Dropdown.Menu>
-                                          <Dropdown.Item
-                                            onClick={() => setAtividadeSelecionada(tarefa)}
-                                            className="d-flex align-items-center gap-2"
-                                          >
-                                            <Eye size={16} /> Acompanhar
-                                          </Dropdown.Item>
-                                          <Dropdown.Item
-                                            onClick={() => editarTarefa(tarefa.id)}
-                                            className="d-flex align-items-center gap-2 text-primary"
-                                          >
-                                            <Edit size={16} /> Editar
-                                          </Dropdown.Item>
-                                          <Dropdown.Item
-                                            onClick={() => {
-                                              setTarefaParaExcluir(tarefa);
-                                              setShowDeleteModal(true);
-                                            }}
-                                            className="d-flex align-items-center gap-2 text-danger"
-                                          >
-                                            <Trash2 size={16} /> Excluir
-                                          </Dropdown.Item>
-                                        </Dropdown.Menu>
-                                      </Dropdown>
-                                    </div>
-                                  </Card.Body>
-                                </Card>
-                              ))) : (
+                                      })
+                                      .map(tarefa => (
+                                        <tr key={tarefa.id} style={{ cursor: 'pointer', borderBottom: 'white' }} onClick={() => setAtividadeSelecionada(tarefa)}>
+                                          <td className="py-3 px-3" style={{ width: '35%' }}>
+                                            <span style={{ fontSize: '1rem', fontWeight: 500 }}>
+                                              {tarefa.titulo ? tarefa.titulo : tarefa.descricao || 'Sem título'}
+                                            </span>
+                                          </td>
+                                          <td className="py-3 px-3" style={{ width: '28%' }}>
+                                            <span style={{ color: '#6b7280' }}>
+                                              {tarefa.descricao ? tarefa.descricao : tarefa.titulo || 'Sem descrição'}
+                                            </span>
+                                          </td>
+                                          <td className="py-3 px-3" style={{ width: '13%', textAlign: 'center' }}>{formatarDataBR(tarefa.dataEntrega)}</td>
+                                          <td className="py-3 px-3" style={{ width: '12%', textAlign: 'center' }}>
+                                            {(() => {
+                                              const hoje = new Date();
+                                              const dataEntrega = tarefa.dataEntrega ? new Date(tarefa.dataEntrega) : null;
+                                              if (dataEntrega) {
+                                                if (dataEntrega.getTime() < new Date(hoje.setHours(0, 0, 0, 0)).getTime()) {
+                                                  return <span className="status-badge enviado">Concluída</span>;
+                                                } else {
+                                                  return <span className="status-badge agendado">Em andamento</span>;
+                                                }
+                                              }
+                                              return <span className="status-badge rascunho">Sem data</span>;
+                                            })()}
+                                          </td>
+                                          <td className="py-3 px-3" style={{ width: '12%', textAlign: 'center', paddingRight: 0 }} onClick={e => e.stopPropagation()}>
+                                            <Dropdown align="end">
+                                              <Dropdown.Toggle
+                                                variant="light"
+                                                size="sm"
+                                                style={{ border: 'none', background: 'transparent', boxShadow: 'none' }}
+                                                className="dropdown-toggle-no-caret"
+                                                id={`dropdown-acao-tarefa-${tarefa.id}`}
+                                              >
+                                                ⋯
+                                              </Dropdown.Toggle>
+                                              <Dropdown.Menu>
+                                                <Dropdown.Item
+                                                  onClick={() => setAtividadeSelecionada(tarefa)}
+                                                  className="d-flex align-items-center gap-2"
+                                                >
+                                                  <Eye size={16} /> Acompanhar
+                                                </Dropdown.Item>
+                                                <Dropdown.Item
+                                                  onClick={() => editarTarefa(tarefa.id)}
+                                                  className="d-flex align-items-center gap-2 text-primary"
+                                                >
+                                                  <Edit size={16} /> Editar
+                                                </Dropdown.Item>
+                                                <Dropdown.Item
+                                                  onClick={() => {
+                                                    setTarefaParaExcluir(tarefa);
+                                                    setShowDeleteModal(true);
+                                                  }}
+                                                  className="d-flex align-items-center gap-2 text-danger"
+                                                >
+                                                  <Trash2 size={16} /> Excluir
+                                                </Dropdown.Item>
+                                              </Dropdown.Menu>
+                                            </Dropdown>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                  </tbody>
+                                </Table>
+                              ) : (
                                 <div className="text-center text-muted py-5">
                                   <FontAwesomeIcon icon={faCircleExclamation} size="2x" className="mb-3" />
                                   <div>Nenhuma atividade encontrada para esta turma e matéria.</div>
@@ -646,7 +687,7 @@ export default function Tarefas() {
 
                                 switch (ordenacao) {
                                   case 'titulo':
-                                    return (a.titulo || a.descricao).localeCompare(b.titulo || b.descricao);
+                                    return (a.titulo || 'Sem título').localeCompare(b.titulo || 'Sem título');
                                   case 'data':
                                     return new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime(); // decrescente
                                   default:
@@ -654,53 +695,72 @@ export default function Tarefas() {
                                 }
                               })
                               .map(tarefa => (
-                              <div key={tarefa.id} className="materias-card-mobile" style={{ marginBottom: 16 }}>
-                                <div className="materias-card-header">
-                                  <div className="materias-card-info">
-                                    <div className="materias-card-title">{tarefa.titulo || tarefa.descricao}</div>
-                                    <div className="materias-card-codigo">{tarefa.descricao}</div>
-                                  </div>
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 22 }}>
-                                    {(() => {
-                                      const hoje = new Date();
-                                      const dataEntrega = tarefa.dataEntrega ? new Date(tarefa.dataEntrega) : null;
-                                      if (dataEntrega) {
-                                        if (dataEntrega.getTime() < new Date(hoje.setHours(0, 0, 0, 0)).getTime()) {
-                                          return <span className="status-badge enviado">Concluída</span>;
-                                        } else {
-                                          return <span className="status-badge agendado">Em andamento</span>;
+                                <div key={tarefa.id} className="materias-card-mobile" style={{ marginBottom: 16 }}>
+                                  <div className="materias-card-header">
+                                    <div className="materias-card-info">
+                                      <div className="materias-card-title">{tarefa.titulo || 'Sem título'}</div>
+                                      <div className="materias-card-codigo">{tarefa.descricao}</div>
+                                    </div>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 22 }}>
+                                      {(() => {
+                                        const hoje = new Date();
+                                        const dataEntrega = tarefa.dataEntrega ? new Date(tarefa.dataEntrega) : null;
+                                        if (dataEntrega) {
+                                          if (dataEntrega.getTime() < new Date(hoje.setHours(0, 0, 0, 0)).getTime()) {
+                                            return <span className="status-badge enviado">Concluída</span>;
+                                          } else {
+                                            return <span className="status-badge agendado">Em andamento</span>;
+                                          }
                                         }
-                                      }
-                                      return <span className="status-badge rascunho">Sem data</span>;
-                                    })()}
-                                  </span>
+                                        return <span className="status-badge rascunho">Sem data</span>;
+                                      })()}
+                                    </span>
+                                  </div>
+                                  <div className="materias-card-actions">
+                                    {tarefa.links && tarefa.links.length > 0 && (
+                                      <div className="mb-2">
+                                        <small className="text-muted fw-semibold">Links:</small>
+                                        <div className="d-flex flex-wrap gap-1 mt-1">
+                                          {tarefa.links.map((link, index) => (
+                                            <a
+                                              key={index}
+                                              href={link.url}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="btn btn-sm btn-outline-primary"
+                                              style={{ fontSize: '0.7rem', padding: '2px 6px' }}
+                                            >
+                                              🔗 {link.titulo}
+                                            </a>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    <button
+                                      className="materias-action-btn materias-edit-btn"
+                                      onClick={() => setAtividadeSelecionada(tarefa)}
+                                    >
+                                      <Eye size={18} /> Acompanhar
+                                    </button>
+                                    <button
+                                      className="materias-action-btn"
+                                      style={{ background: '#f3f4f6', color: '#2563eb' }}
+                                      onClick={() => editarTarefa(tarefa.id)}
+                                    >
+                                      <Edit size={18} /> Editar
+                                    </button>
+                                    <button
+                                      className="materias-action-btn materias-delete-btn"
+                                      onClick={() => {
+                                        setTarefaParaExcluir(tarefa);
+                                        setShowDeleteModal(true);
+                                      }}
+                                    >
+                                      <Trash2 size={18} /> Excluir
+                                    </button>
+                                  </div>
                                 </div>
-                                <div className="materias-card-actions">
-                                  <button
-                                    className="materias-action-btn materias-edit-btn"
-                                    onClick={() => setAtividadeSelecionada(tarefa)}
-                                  >
-                                    <Eye size={18} /> Acompanhar
-                                  </button>
-                                  <button
-                                    className="materias-action-btn"
-                                    style={{ background: '#f3f4f6', color: '#2563eb' }}
-                                    onClick={() => editarTarefa(tarefa.id)}
-                                  >
-                                    <Edit size={18} /> Editar
-                                  </button>
-                                  <button
-                                    className="materias-action-btn materias-delete-btn"
-                                    onClick={() => {
-                                      setTarefaParaExcluir(tarefa);
-                                      setShowDeleteModal(true);
-                                    }}
-                                  >
-                                    <Trash2 size={18} /> Excluir
-                                  </button>
-                                </div>
-                              </div>
-                            ))})
+                              ))})
                           </div>
                         ) : (
                           <div className="materias-empty-state">
@@ -893,8 +953,8 @@ export default function Tarefas() {
                                         entrega?.status === 'concluida'
                                           ? 'Entregue'
                                           : entrega?.status === 'nao_entregue'
-                                          ? 'Não entregue'
-                                          : 'Pendente'
+                                            ? 'Não entregue'
+                                            : 'Pendente'
                                       }
                                     >
                                       {entrega?.status === 'concluida' ? (
@@ -1071,6 +1131,69 @@ export default function Tarefas() {
                       value={dataEntrega}
                       onChange={e => setDataEntrega(e.target.value)}
                     />
+                  </Form.Group>
+
+                  {/* Seção de Links */}
+                  <Form.Group className="mb-3">
+                    <Form.Label>Links de Referência</Form.Label>
+
+                    {/* Adicionar novo link */}
+                    <div className="border rounded p-3 mb-2" style={{ backgroundColor: '#f8f9fa' }}>
+                      <div className="mb-2">
+                        <Form.Control
+                          type="text"
+                          placeholder="Título do link"
+                          value={novoLinkTitulo}
+                          onChange={e => setNovoLinkTitulo(e.target.value)}
+                          className="mb-2"
+                        />
+                        <div className="d-flex gap-2">
+                          <Form.Control
+                            type="url"
+                            placeholder="https://exemplo.com"
+                            value={novoLinkUrl}
+                            onChange={e => setNovoLinkUrl(e.target.value)}
+                          />
+                          <Button
+                            variant="outline-primary"
+                            onClick={adicionarLink}
+                            disabled={!novoLinkUrl.trim()}
+                          >
+                            <Plus size={16} />
+                          </Button>
+                        </div>
+                      </div>
+                      <small className="text-muted">
+                        Adicione links úteis para a atividade (vídeos, artigos, materiais de apoio, etc.)
+                      </small>
+                    </div>
+
+                    {/* Lista de links adicionados */}
+                    {links.length > 0 && (
+                      <div className="border rounded p-2">
+                        <small className="text-muted fw-semibold d-block mb-2">Links adicionados:</small>
+                        {links.map((link, index) => (
+                          <div key={index} className="d-flex align-items-center justify-content-between p-2 mb-1 bg-light rounded">
+                            <div className="flex-grow-1">
+                              <div className="fw-medium" style={{ fontSize: '0.9rem' }}>
+                                {link.titulo}
+                              </div>
+                              <div className="text-muted" style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>
+                                {link.url}
+                              </div>
+                            </div>
+                            <Button
+                              variant="outline-danger"
+                              size="sm"
+                              onClick={() => removerLink(index)}
+                              className="ms-2"
+                            >
+                              <Trash2 size={14} />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </Form.Group>
                 </Form>
               </Modal.Body>
