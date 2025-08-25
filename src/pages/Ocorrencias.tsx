@@ -62,6 +62,10 @@ interface Turma {
 export default function Ocorrencias() {
   const authContext = useAuth();
   const userData = authContext?.userData;
+  
+  // Verificar se o usuário tem acesso à página
+  const temAcesso = userData?.tipo === 'administradores' || userData?.tipo === 'professores';
+  
   const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>([]);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
@@ -406,6 +410,28 @@ export default function Ocorrencias() {
       <AppLayout>
         <Container className="d-flex justify-content-center align-items-center vh-75">
           <Spinner animation="border" />
+        </Container>
+      </AppLayout>
+    );
+  }
+
+  // Verificar se o usuário tem acesso à página
+  if (!temAcesso) {
+    return (
+      <AppLayout>
+        <Container className="my-4">
+          <div className="text-center py-5">
+            <div className="mb-4">
+              <AlertTriangle size={64} color="#dc3545" />
+            </div>
+            <h3 className="text-danger mb-3">Acesso Restrito</h3>
+            <p className="text-muted mb-4">
+              Esta página é restrita apenas para <strong>Professores</strong> e <strong>Administradores</strong>.
+            </p>
+            <p className="text-muted">
+              Você está logado como: <strong>{userData?.tipo ? userData.tipo.charAt(0).toUpperCase() + userData.tipo.slice(1) : 'Usuário'}</strong>
+            </p>
+          </div>
         </Container>
       </AppLayout>
     );
