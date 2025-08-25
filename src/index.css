@@ -1,4 +1,7 @@
-
+/* Modal mais estreito para cadastro de ocorrências */
+.modal-narrow .modal-dialog {
+  max-width: 420px;
+}
 /* Checkbox border color for professor turmas list in UsuarioForm */
 .usuarioform-turmas-checkbox .form-check-input[type="checkbox"] {
   border-color: #2563eb !important; /* azul, troque para a cor desejada */
@@ -182,6 +185,15 @@ a:hover {
 .nav-link:hover {
   background-color: rgba(255, 255, 255, 0.1);
   padding-left: 1.5rem;
+}
+
+/* Sobrescrever para offcanvas mobile */
+.offcanvas .nav-link {
+  padding: 0.75rem 1rem !important;
+}
+
+.offcanvas .nav-link:hover {
+  padding-left: 1.5rem !important;
 }
 
 /* Inputs e botões */
@@ -2402,229 +2414,390 @@ button {
   color: #fff !important;
 }
 
-/* ========== ESTILOS PARA USUARIOS - TRANSFERIDOS DO USUARIOS.CSS ========== */
+/* ========== CORREÇÕES PARA SIDEBAR VERTICAL - SEM SCROLL ========== */
 
-/* Versão Desktop */
-.usuarios-list-desktop {
-  margin-bottom: 1rem;
+/* Garantir que a sidebar fique perfeitamente encaixada na tela */
+.sidebar {
+  height: 100vh !important;
+  max-height: 100vh !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 240px !important;
+  padding: 1rem !important;
 }
 
-.usuarios-table-desktop .table {
-  margin-bottom: 0;
-}
-
-.usuarios-table-desktop .table th {
-  /* border-bottom: 2px solid #dee2e6; */
-  font-weight: 600;
-  color: #6c757d;
-  font-size: 0.875rem;
-}
-
-.usuarios-table-desktop .table td {
-  vertical-align: middle;
-  border-bottom: 1px solid #dee2e6;
-}
-
-.usuarios-table-desktop .linha-agenda:hover {
-  background-color: #f8f9fa;
-}
-
-/* Versão Mobile */
-.usuarios-mobile-cards {
-  padding: 0;
-}
-
-.usuarios-header-mobile h3 {
-  color: #1e293b;
-  font-weight: 700;
-  font-size: 1.5rem;
-}
-
-.usuarios-grid-mobile {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.usuarios-card-mobile {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  border: 1px solid #e5e7eb;
-  padding: 1.25rem;
-  transition: all 0.2s ease;
-}
-
-.usuarios-card-mobile:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  transform: translateY(-2px);
-}
-
-.usuarios-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1rem;
-}
-
-.usuarios-card-info {
-  flex: 1;
-}
-
-.usuarios-card-name {
-  font-weight: 700;
-  font-size: 1.125rem;
-  color: #1e293b;
-  margin-bottom: 0.25rem;
-}
-
-.usuarios-card-email {
-  color: #6b7280;
-  font-size: 0.875rem;
-  margin-bottom: 0.5rem;
-}
-
-.usuarios-card-type {
-  margin-top: 0.5rem;
-}
-
-.usuarios-card-type .badge {
-  font-size: 0.75rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 6px;
-  font-weight: 600;
-}
-
-.usuarios-card-body {
-  margin-bottom: 1rem;
-}
-
-.usuarios-info-details {
-  color: #4b5563;
-  font-size: 0.875rem;
-  line-height: 1.5;
-  padding: 0.75rem;
-  background-color: #f9fafb;
-  border-radius: 8px;
-  border-left: 3px solid #3b82f6;
-}
-
-.usuarios-card-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: flex-end;
-}
-
-.usuarios-action-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-decoration: none;
-}
-
-.usuarios-edit-btn {
-  background-color: #3b82f6;
-  color: white;
-}
-
-.usuarios-edit-btn:hover {
-  background-color: #2563eb;
-  transform: translateY(-1px);
-}
-
-.usuarios-delete-btn {
-  background-color: #ef4444;
-  color: white;
-}
-
-.usuarios-delete-btn:hover {
-  background-color: #dc2626;
-  transform: translateY(-1px);
-}
-
-/* Estado vazio */
-.usuarios-empty-state {
+/* Ajustar o cabeçalho da sidebar (logo) */
+.sidebar > div:first-child {
+  flex-shrink: 0;
+  margin-bottom: 1.5rem !important;
   text-align: center;
-  padding: 3rem 1rem;
-  color: #6b7280;
 }
 
-.usuarios-empty-icon {
-  margin-bottom: 1rem;
-  opacity: 0.5;
+.sidebar > div:first-child h5 {
+  font-size: 1.1rem !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0 !important;
 }
 
-.usuarios-empty-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #374151;
-  margin-bottom: 0.5rem;
+.sidebar > div:first-child img {
+  height: 45px !important;
 }
 
-.usuarios-empty-text {
-  font-size: 0.875rem;
-  margin-bottom: 0;
+/* Ajustar a navegação para ocupar o espaço restante */
+.sidebar .nav {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.25rem !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  justify-content: flex-start !important;
 }
 
-/* Estado vazio para desktop */
-.agenda-empty-state {
-  text-align: center;
-  padding: 2rem;
+/* Ajustar os links da navegação */
+.sidebar .nav-link {
+  padding: 0.5rem 0.75rem !important;
+  font-size: 0.9rem !important;
+  margin-bottom: 0.1rem !important;
+  border-radius: 6px !important;
+  transition: all 0.2s ease !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
 }
 
-.agenda-empty-state .empty-icon {
-  font-size: 3rem;
-  opacity: 0.5;
-  margin-bottom: 1rem;
+.sidebar .nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  padding-left: 0.75rem !important;
+  transform: none !important;
 }
 
-.agenda-empty-state h5 {
-  color: #374151;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
+/* Garantir que o logout fique no final */
+.sidebar .nav-link:last-child {
+  margin-top: auto !important;
+  margin-bottom: 0.5rem !important;
+  padding-top: 0.75rem !important;
 }
 
-.agenda-empty-state p {
-  color: #6b7280;
-  font-size: 0.875rem;
-  margin-bottom: 0;
+/* Responsividade para mobile */
+@media (max-width: 991px) {
+  .sidebar {
+    display: none !important;
+  }
 }
 
-/* Responsividade */
+/* ========== FIM DAS CORREÇÕES SIDEBAR ========== */
+
+/* ========== ESTILOS PARA OCORRÊNCIAS - MOBILE ========== */
 @media (max-width: 768px) {
-  .usuarios-card-mobile {
-    padding: 1rem;
+  /* Ocultar tabela desktop no mobile */
+  .ocorrencias-list-desktop {
+    display: none !important;
   }
-  
-  .usuarios-card-name {
-    font-size: 1rem;
+
+  /* Exibir cards mobile */
+  .ocorrencias-mobile-cards {
+    display: block !important;
   }
-  
-  .usuarios-card-actions {
-    flex-direction: column;
-    gap: 0.5rem;
+
+  /* Ajustes para header responsivo */
+  .d-flex.justify-content-between.align-items-center.mb-4 {
+    flex-wrap: wrap;
+    gap: 1rem;
   }
-  
-  .usuarios-action-btn {
+
+  .d-flex.justify-content-between.align-items-center.mb-4 .flex-grow-1 {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .d-flex.justify-content-between.align-items-center.mb-4 h1 {
+    font-size: 1.5rem !important;
+    line-height: 1.2;
+  }
+
+  .d-flex.justify-content-between.align-items-center.mb-4 p {
+    margin-left: 36px !important;
+    font-size: 14px !important;
+  }
+
+  /* Header mobile */
+  .ocorrencias-header-mobile {
+    padding: 0 15px;
+    margin-bottom: 20px;
+  }
+
+  .ocorrencias-header-mobile h3 {
+    font-size: 1.25rem;
+    color: #212529;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+
+  .ocorrencias-header-mobile .d-flex.gap-2 {
+    display: flex !important;
+    gap: 8px !important;
+  }
+
+  .ocorrencias-header-mobile .btn {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
     justify-content: center;
-    padding: 0.75rem 1rem;
+    gap: 6px;
+  }
+
+  /* Cards de ocorrência para mobile */
+  .ocorrencias-card-mobile {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    margin-bottom: 12px;
+    padding: 16px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease;
+    overflow: hidden;
+  }
+
+  .ocorrencias-card-mobile:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+  }
+
+  .ocorrencias-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+    gap: 12px;
+  }
+
+  .ocorrencias-card-title {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #212529;
+    flex: 1;
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  .ocorrencias-card-turma-badge {
+    background: #e0edff;
+    color: #2563eb;
+    font-weight: 700;
+    border: none;
+    border-radius: 12px;
+    padding: 0.22rem 0.5rem;
+    font-size: 0.71rem;
+    letter-spacing: 0.1px;
+    line-height: 1.1;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .ocorrencias-card-body {
+    margin-bottom: 16px;
+  }
+
+  .ocorrencias-aluno-info {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+    gap: 8px;
+  }
+
+  .ocorrencias-aluno-info .user-icon-circle-frequencia {
+    width: 40px;
+    height: 40px;
+    background-color: #ccc;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .ocorrencias-aluno-nome {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #212529;
+    cursor: pointer;
+    transition: color 0.2s ease;
+  }
+
+  .ocorrencias-aluno-nome:hover {
+    color: #2563eb;
+  }
+
+  .ocorrencias-descricao {
+    font-size: 0.875rem;
+    color: #6c757d;
+    line-height: 1.4;
+    margin-bottom: 12px;
+  }
+
+  .ocorrencias-data-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: #6c757d;
+    margin-bottom: 16px;
+  }
+
+  .ocorrencias-card-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .ocorrencias-action-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-height: 40px;
+  }
+
+  .ocorrencias-detalhes-btn {
+    background-color: #17a2b8;
+    color: white;
+    border: 1px solid #17a2b8;
+  }
+
+  .ocorrencias-detalhes-btn:hover {
+    background-color: #138496;
+    border-color: #138496;
+  }
+
+  .ocorrencias-edit-btn {
+    background-color: #007bff;
+    color: white;
+    border: 1px solid #007bff;
+  }
+
+  .ocorrencias-edit-btn:hover {
+    background-color: #0056b3;
+    border-color: #0056b3;
+  }
+
+  .ocorrencias-delete-btn {
+    background-color: #dc3545;
+    color: white;
+    border: 1px solid #dc3545;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .ocorrencias-delete-btn:hover {
+    background-color: #c82333;
+    border-color: #c82333;
+  }
+
+  /* Estado vazio mobile */
+  .ocorrencias-empty-state {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    margin: 0 15px;
+  }
+
+  .ocorrencias-empty-icon {
+    color: #9ca3af;
+    margin-bottom: 16px;
+  }
+
+  .ocorrencias-empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 8px;
+  }
+
+  .ocorrencias-empty-text {
+    font-size: 0.875rem;
+    color: #6b7280;
+    line-height: 1.5;
+    margin-bottom: 0;
+  }
+
+  /* Grid mobile */
+  .ocorrencias-grid-mobile {
+    padding: 0 15px;
   }
 }
 
-/* Sticky header para versão desktop */
-.thead-sticky th {
-  position: sticky;
-  top: 0;
-  z-index: 10;
+/* Estilos para desktop - garantir que cards mobile não apareçam */
+@media (min-width: 769px) {
+  .ocorrencias-mobile-cards {
+    display: none !important;
+  }
+
+  .ocorrencias-list-desktop {
+    display: block !important;
+  }
+
+  .ocorrencias-table-desktop {
+    display: block !important;
+  }
 }
-.modal-narrow .modal-dialog {
-  max-width: 420px;
-  width: 90vw;
+
+/* Responsividade adicional para ocorrências */
+@media (max-width: 576px) {
+  .ocorrencias-card-mobile {
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+
+  .ocorrencias-card-title {
+    font-size: 0.95rem;
+  }
+
+  .ocorrencias-aluno-info .user-icon-circle-frequencia {
+    width: 36px;
+    height: 36px;
+  }
+
+  .ocorrencias-aluno-nome {
+    font-size: 0.9rem;
+  }
+
+  .ocorrencias-descricao {
+    font-size: 0.8rem;
+  }
+
+  .ocorrencias-action-btn {
+    padding: 8px 10px;
+    font-size: 0.75rem;
+    min-height: 36px;
+  }
+
+  .ocorrencias-delete-btn {
+    padding: 8px 10px;
+    font-size: 0.75rem;
+    min-height: 36px;
+  }
 }
+
+/* ========== FIM DOS ESTILOS PARA OCORRÊNCIAS - MOBILE ========== */

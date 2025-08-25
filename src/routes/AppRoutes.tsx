@@ -20,6 +20,7 @@ import ForgotPassword from '../pages/ForgotPassword';
 import FirstChangePassword from '../pages/FirstChangePassword';
 import ResetPassword from '../pages/ResetPassword';
 import Vinculos from '../pages/Vinculos';
+import Ocorrencias from '../pages/Ocorrencias';
 
 export default function AppRoutes(): JSX.Element {
   return (
@@ -44,6 +45,7 @@ export default function AppRoutes(): JSX.Element {
         <Route path="tarefas" element={<Tarefas />} />
         <Route path="notas" element={<Notas />} />
         <Route path="comunicados" element={<Comunicados />} />
+        <Route path="ocorrencias" element={<Ocorrencias />} />
         <Route path="first-change-password" element={<FirstChangePassword />} />
 
 
