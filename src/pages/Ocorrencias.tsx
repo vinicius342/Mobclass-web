@@ -559,9 +559,9 @@ export default function Ocorrencias() {
                   </div>
                 </div>
               )}
-              <div className="ocorrencias-table-desktop w-100" style={{ overflowX: 'auto', overflow: 'visible' }}>
+              <div className="ocorrencias-table-desktop w-100" style={{ overflowX: 'auto' }}>
                 {ocorrenciasPaginadas.length > 0 ? (
-                  <Table hover className="w-100 text-center mb-0" style={{ overflow: 'visible', borderCollapse: 'separate', borderSpacing: '0 8px' }}>
+                  <Table hover className="w-100 text-center mb-0" style={{ borderCollapse: 'separate', borderSpacing: '0 8px' }}>
                     <thead className="thead-sticky">
                       <tr>
                         <th className='text-muted text-start'>Aluno</th>
@@ -571,7 +571,7 @@ export default function Ocorrencias() {
                         <th className='text-muted text-center'>Ações</th>
                       </tr>
                     </thead>
-                    <tbody style={{ overflow: 'visible' }}>
+                    <tbody>
                       {ocorrenciasPaginadas.map((ocorrencia) => {
                         const isHovered = hoveredRow === ocorrencia.id;
                         const rowBg = isHovered ? '#f1f5f9' : '#fff';
@@ -581,21 +581,18 @@ export default function Ocorrencias() {
                             className='align-middle linha-agenda' 
                             onMouseEnter={() => setHoveredRow(ocorrencia.id)} 
                             onMouseLeave={() => setHoveredRow(null)} 
-                            style={{ overflow: 'visible', border: 'transparent', cursor: 'pointer' }}
-                            onClick={(e) => {
-                              // Verifica se o clique não foi em um dropdown ou botão
-                              const target = e.target as HTMLElement;
-                              if (!target.closest('.dropdown, .btn, .dropdown-toggle')) {
-                                openDetailModal(ocorrencia);
-                              }
-                            }}
+                            style={{ overflow: 'visible', border: 'transparent' }}
                           >
                             <td className="text-start" style={{ paddingTop: '0.75rem', paddingBottom: '0.75rem', background: rowBg, borderTopLeftRadius: 8, borderBottomLeftRadius: 8, transition: 'all .15s ease' }}>
                               <div className="d-flex align-items-center">
                                 <div className="user-icon-circle-frequencia">
                                   <User size={20} color="#fff" />
                                 </div>
-                                <strong className="ms-2">
+                                <strong 
+                                  className="ms-2"
+                                  style={{ cursor: 'pointer' }}
+                                  onClick={() => openDetailModal(ocorrencia)}
+                                >
                                   {ocorrencia.alunoNome}
                                 </strong>
                               </div>
@@ -617,7 +614,7 @@ export default function Ocorrencias() {
                               }}>{ocorrencia.turmaNome}</span>
                             </td>
                             <td className="text-center" style={{ paddingTop: '0.75rem', paddingBottom: '0.75rem', background: rowBg, transition: 'all .15s ease' }}>{new Date(ocorrencia.dataOcorrencia).toLocaleDateString('pt-BR')}</td>
-                            <td className="text-center" style={{ position: 'relative', overflow: 'visible', paddingTop: '0.75rem', paddingBottom: '0.75rem', background: rowBg, borderTopRightRadius: 8, borderBottomRightRadius: 8, transition: 'all .15s ease' }}>
+                            <td className="text-center" style={{ position: 'relative', paddingTop: '0.75rem', paddingBottom: '0.75rem', background: rowBg, borderTopRightRadius: 8, borderBottomRightRadius: 8, transition: 'all .15s ease' }}>
                               <Dropdown align="end">
                                 <Dropdown.Toggle
                                   variant="light"
@@ -628,18 +625,17 @@ export default function Ocorrencias() {
                                     background: 'transparent',
                                     boxShadow: 'none'
                                   }}
-                                  onClick={(e) => e.stopPropagation()}
                                 >
                                   ...
                                 </Dropdown.Toggle>
-                                <Dropdown.Menu style={{ zIndex: 9999, position: 'absolute' }}>
-                                  <Dropdown.Item onClick={(e) => { e.stopPropagation(); openDetailModal(ocorrencia); }} className="d-flex align-items-center gap-2">
+                                <Dropdown.Menu>
+                                  <Dropdown.Item onClick={() => openDetailModal(ocorrencia)} className="d-flex align-items-center gap-2">
                                     <Eye size={14} /> Detalhes
                                   </Dropdown.Item>
-                                  <Dropdown.Item onClick={(e) => { e.stopPropagation(); openEditModal(ocorrencia); }} className="d-flex align-items-center gap-2 text-primary">
+                                  <Dropdown.Item onClick={() => openEditModal(ocorrencia)} className="d-flex align-items-center gap-2 text-primary">
                                     <Edit size={14} /> Editar
                                   </Dropdown.Item>
-                                  <Dropdown.Item onClick={(e) => { e.stopPropagation(); handleDelete(ocorrencia.id); }} className="d-flex align-items-center gap-2 text-danger">
+                                  <Dropdown.Item onClick={() => handleDelete(ocorrencia.id)} className="d-flex align-items-center gap-2 text-danger">
                                     <Trash2 size={14} /> Excluir
                                   </Dropdown.Item>
                                 </Dropdown.Menu>
