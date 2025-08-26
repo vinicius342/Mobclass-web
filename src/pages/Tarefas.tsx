@@ -283,15 +283,17 @@ export default function Tarefas() {
   const handleSalvar = async () => {
     if (!materiaSelecionada || !descricao || !turmaId || !dataEntrega) return;
     if (!userData) return;
-    const payload = {
+    const payload: any = {
       materiaId: materiaSelecionada,
       titulo,
       descricao,
       turmaId,
       dataEntrega,
-      professorId: userData.uid,
-      links: links.length > 0 ? links : undefined
+      professorId: userData.uid
     };
+    if (links.length > 0) {
+      payload.links = links;
+    }
     if (editandoId) {
       await updateDoc(doc(db, 'tarefas', editandoId), payload);
     } else {
