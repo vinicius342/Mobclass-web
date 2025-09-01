@@ -132,7 +132,7 @@ export default function Tarefas() {
           return [
             entrega?.status ?? 'Não entregue',
             aluno.nome,
-            entrega?.dataConclusao ?? '-',
+            entrega?.dataConclusao ? formatarDataBR(entrega.dataConclusao) : '-',
             entrega?.anexoUrl ? 'Sim' : 'Não'
           ];
         })
@@ -149,7 +149,7 @@ export default function Tarefas() {
       return {
         Aluno: aluno.nome,
         Status: entrega?.status ?? 'Não entregue',
-        'Data de Conclusão': entrega?.dataConclusao ?? '-',
+        'Data de Conclusão': entrega?.dataConclusao ? formatarDataBR(entrega.dataConclusao) : '-',
         Anexo: entrega?.anexoUrl ? 'Sim' : 'Não'
       };
     });
@@ -310,15 +310,23 @@ export default function Tarefas() {
       e => e.alunoId === alunoId && e.tarefaId === atividadeSelecionada.id
     );
 
+    // Prepara os dados para atualização
+    const updateData: any = { status };
+    if (status === 'concluida') {
+      updateData.dataConclusao = new Date().toISOString();
+    } else {
+      updateData.dataConclusao = null; // Remove a data se não está concluída
+    }
+
     if (entregaExistente) {
       // Atualiza no Firestore
       const entregaRef = doc(db, 'entregas', entregaExistente.id);
-      await updateDoc(entregaRef, { status });
+      await updateDoc(entregaRef, updateData);
 
       // Atualiza instantaneamente no estado local
       setEntregas(prev =>
         prev.map(e =>
-          e.id === entregaExistente.id ? { ...e, status } : e
+          e.id === entregaExistente.id ? { ...e, ...updateData } : e
         )
       );
     } else {
@@ -326,8 +334,7 @@ export default function Tarefas() {
       const novaEntrega = {
         alunoId,
         tarefaId: atividadeSelecionada.id,
-        status,
-        dataEntrega: new Date().toISOString(),
+        ...updateData
       };
 
       const docRef = await addDoc(collection(db, 'entregas'), novaEntrega);
@@ -412,8 +419,9 @@ export default function Tarefas() {
 
   function formatarDataBR(data: string) {
     if (!data) return '-';
-    const [ano, mes, dia] = data.split('-');
-    return `${dia}/${mes}/${ano}`;
+    const d = new Date(data);
+    if (isNaN(d.getTime())) return data;
+    return d.toLocaleDateString('pt-BR');
   }
 
   return (
@@ -839,7 +847,7 @@ export default function Tarefas() {
                                       <div style={{ width: '32%' }}>
                                         <span className="aluno-nome-frequencia" style={{ fontSize: '1rem' }}>{aluno.nome}</span>
                                       </div>
-                                      <div style={{ width: '16%', textAlign: 'center' }}>{entrega?.dataConclusao ?? '-'}</div>
+                                      <div style={{ width: '16%', textAlign: 'center' }}>{entrega?.dataConclusao ? formatarDataBR(entrega.dataConclusao) : '-'}</div>
                                       <div style={{ width: '12%', textAlign: 'center' }}>
                                         {entrega?.anexoUrl ? (
                                           <a href={entrega.anexoUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6" }}>
