@@ -9,6 +9,7 @@ import { db } from '../services/firebase';
 import AppLayout from '../components/AppLayout';
 import { useAuth } from '../contexts/AuthContext';
 import Paginacao from '../components/Paginacao';
+import { useUrlValidator } from '../hooks/useUrlValidator';
 
 import { GraduationCap, Plus, Eye, Trash2, ArrowLeft, Edit, ArrowDownUp } from "lucide-react";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -69,44 +70,23 @@ interface Vinculo {
   turmaId: string;
 }
 
-// -------------------- Guard de links (anti-phishing) --------------------
-const BLOCKED_HOSTS = /(bit\.ly|tinyurl\.com|t\.co|is\.gd|rb\.gy|linktr\.ee|shorturl\.at|cutt\.ly|rebrand\.ly|goo\.gl)$/i;
-const HTTPS_URL = /^https:\/\/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+$/;
-
-const ALLOWED = [
-  /^https:\/\/(docs|drive)\.google\.com/i,
-  /^https:\/\/(www\.)?youtube\.com/i,
-  /^https:\/\/youtu\.be/i,
-  /^https:\/\/classroom\.google\.com/i,
-  /^https:\/\/meet\.google\.com/i,
-  /^https:\/\/.*\.edu(\.br)?\/?/i,
-  /^https:\/\/www\.gov\.br/i,
-  // adicione domínios confiáveis da escola aqui:
-  // /^https:\/\/seu-dominio\.edu\.br/i,
-];
-
-function normalizeHttps(url: string): string {
-  let u = url.trim();
-  if (/^http:\/\//i.test(u)) u = u.replace(/^http:\/\//i, 'https://');
-  return u;
-}
-
-function isSafeLink(url?: string): boolean {
-  if (!url) return false;
-  const u = normalizeHttps(url);
-  if (!HTTPS_URL.test(u)) return false;
-  try {
-    const host = new URL(u).host;
-    if (BLOCKED_HOSTS.test(host)) return false;
-    return ALLOWED.some(rx => rx.test(u));
-  } catch {
-    return false;
-  }
-}
-
 export default function Tarefas() {
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
+
+  // Novo sistema de validação de URLs com segurança avançada
+  const { validateUrl, trustedDomains } = useUrlValidator();
+
+  // Funções auxiliares para compatibilidade
+
+  // Funções auxiliares assíncronas
+  const isSafeLink = async (url: string): Promise<boolean> => {
+    const validation = await validateUrl(url);
+    return validation.isValid;
+  };
+
+
+  // Removido: agora os links já são sanitizados ao salvar/carregar
 
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
@@ -145,6 +125,9 @@ export default function Tarefas() {
   const [showObsModal, setShowObsModal] = React.useState(false);
   const [currentObs, setCurrentObs] = React.useState('');
   const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [urlError, setUrlError] = useState('');
+  const [urlSuccess, setUrlSuccess] = useState('');
+  const [securityWarnings, setSecurityWarnings] = useState<string[]>([]);
 
   useEffect(() => {
     if (!userData) return;
@@ -296,14 +279,22 @@ export default function Tarefas() {
     setShowModal(false);
   };
 
+
   const handleSalvar = async () => {
     if (!materiaSelecionada || !descricao || !turmaId || !dataEntrega) return;
     if (!userData) return;
 
-    // Sanitiza e filtra links antes de salvar
-    const safeLinks = (links || [])
-      .map(l => ({ ...l, url: normalizeHttps(l.url) }))
-      .filter(l => isSafeLink(l.url));
+    // Valida e sanitiza links usando o novo sistema (agora assíncrono)
+    const validatedLinks = [];
+    for (const link of links) {
+      const validation = await validateUrl(link.url);
+      if (validation.isValid) {
+        validatedLinks.push({
+          url: validation.sanitizedUrl || link.url,
+          titulo: link.titulo
+        });
+      }
+    }
 
     const payload: any = {
       materiaId: materiaSelecionada,
@@ -312,12 +303,12 @@ export default function Tarefas() {
       turmaId,
       dataEntrega,
       professorId: userData.uid,
-      links: safeLinks
+      links: validatedLinks
     };
 
-    // Se houver diferença (tinha link inseguro), opcionalmente marque a tarefa
-    if (links.length && safeLinks.length < links.length) {
-      payload.bloqueado = false; // você pode setar true e ocultar a tarefa inteira, se preferir
+    // Se houver diferença (links foram removidos por segurança)
+    if (links.length > 0 && validatedLinks.length < links.length) {
+      payload.bloqueado = false; // Pode marcar como bloqueado se preferir
     }
 
     if (editandoId) {
@@ -367,7 +358,8 @@ export default function Tarefas() {
     t => t.turmaId === filtroTurma && t.materiaId === filtroMateria && !t.excluida
   );
 
-  const editarTarefa = (tarefaId: string) => {
+
+  const editarTarefa = async (tarefaId: string) => {
     const tarefa = tarefas.find(t => t.id === tarefaId);
     if (!tarefa) return;
     setEditandoId(tarefa.id);
@@ -376,11 +368,20 @@ export default function Tarefas() {
     setDescricao(tarefa.descricao);
     setTurmaId(tarefa.turmaId);
     setDataEntrega(tarefa.dataEntrega);
-    // ao abrir, já higieniza os links (evita editar/link ruim sem perceber)
-    const sanitized = (tarefa.links || [])
-      .map(l => ({ ...l, url: normalizeHttps(l.url) }))
-      .filter(l => isSafeLink(l.url));
-    setLinks(sanitized);
+    // Valida e higieniza os links ao abrir para edição (agora assíncrono)
+    const validatedLinks = [];
+    if (tarefa.links) {
+      for (const link of tarefa.links) {
+        const validation = await validateUrl(link.url);
+        if (validation.isValid) {
+          validatedLinks.push({
+            url: validation.sanitizedUrl || link.url,
+            titulo: link.titulo
+          });
+        }
+      }
+    }
+    setLinks(validatedLinks);
     setShowModal(true);
   };
 
@@ -399,23 +400,90 @@ export default function Tarefas() {
     setShowObsModal(true);
   };
 
-  const adicionarLink = () => {
-    if (!novoLinkUrl.trim()) return;
-
-    const norm = normalizeHttps(novoLinkUrl.trim());
-    if (!isSafeLink(norm)) {
-      alert('Link inválido/inseguro. Use HTTPS e domínios confiáveis (Drive/Docs/YouTube/Meet/Classroom etc.)');
+  const adicionarLink = async () => {
+    if (!novoLinkUrl.trim()) {
+      setUrlError('URL é obrigatória');
+      setUrlSuccess('');
+      setSecurityWarnings([]);
       return;
     }
 
+    // Usa o novo sistema de validação avançada (agora assíncrono)
+    const validation = await validateUrl(novoLinkUrl.trim());
+
+    if (!validation.isValid) {
+      setUrlError(`🚫 BLOQUEADO: ${validation.error || 'URL inválida'}`);
+      setUrlSuccess('');
+      setSecurityWarnings([]);
+
+      // Log detalhado para debug
+      console.error('[Security Block]', {
+        url: novoLinkUrl.trim(),
+        error: validation.error,
+        score: validation.securityScore,
+        category: validation.domainCategory
+      });
+      return;
+    }
+
+    // URL válida - mostra sucesso e warnings se houver
+    setUrlError('');
+
+    // Mostra informações baseadas na categoria do domínio
+    const warnings = validation.warnings || [];
+    const score = validation.securityScore || 100;
+    const category = validation.domainCategory || 'unknown';
+
+    let successMessage = '';
+
+    switch (category) {
+      case 'trusted':
+        successMessage = `✅ Site confiável validado (Score: ${score}/100)`;
+        break;
+      case 'educational':
+        successMessage = `🎓 Site educacional aceito (Score: ${score}/100)`;
+        break;
+      case 'unknown':
+        if (validation.allowWithWarning) {
+          successMessage = `⚠️ Site aceito com verificação extra (Score: ${score}/100)`;
+          warnings.unshift('Este site não está na lista de confiáveis, mas passou na verificação de segurança');
+        } else {
+          successMessage = `✅ URL aceita (Score: ${score}/100)`;
+        }
+        break;
+    }
+
+    if (score < 80) {
+      warnings.push(`⚠️ Score de segurança moderado: ${score}/100`);
+      console.warn(`[Security Warning] URL com score baixo: ${score}`, validation.warnings);
+    }
+
+    setSecurityWarnings(warnings);
+    setUrlSuccess(successMessage);
+
     const novoLink = {
-      url: norm,
-      titulo: (novoLinkTitulo.trim() || 'Link')
+      url: validation.sanitizedUrl || novoLinkUrl.trim(),
+      titulo: novoLinkTitulo.trim() || 'Link'
     };
 
     setLinks(prev => [...prev, novoLink]);
     setNovoLinkUrl('');
     setNovoLinkTitulo('');
+
+    // Limpa mensagens após 5 segundos para dar tempo de ler
+    setTimeout(() => {
+      setUrlSuccess('');
+      setSecurityWarnings([]);
+    }, 5000);
+
+    // Log de sucesso
+    console.info('[URL Security] Link adicionado com sucesso:', {
+      originalUrl: novoLinkUrl.trim(),
+      sanitizedUrl: validation.sanitizedUrl,
+      score: validation.securityScore,
+      category: validation.domainCategory,
+      warnings: validation.warnings
+    });
   };
 
   const removerLink = (index: number) => {
@@ -610,7 +678,7 @@ export default function Tarefas() {
                                                 {(tarefa.links.filter(l => isSafeLink(l.url))).map((link, idx) => (
                                                   <a
                                                     key={idx}
-                                                    href={normalizeHttps(link.url)}
+                                                    href={link.url}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="ms-2"
@@ -762,7 +830,7 @@ export default function Tarefas() {
                                         {tarefa.links.filter(l => isSafeLink(l.url)).map((link, index) => (
                                           <a
                                             key={index}
-                                            href={normalizeHttps(link.url)}
+                                            href={link.url}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="btn btn-sm btn-outline-primary"
@@ -1175,10 +1243,11 @@ export default function Tarefas() {
                     />
                   </Form.Group>
 
-                  {/* Seção de Links */}
+                  {/* Seção de Links com validação melhorada */}
                   <Form.Group className="mb-3">
                     <Form.Label>Links de Referência</Form.Label>
 
+                    {/* Adicionar novo link */}
                     <div className="border rounded p-3 mb-2" style={{ backgroundColor: '#f8f9fa' }}>
                       <div className="mb-2">
                         <Form.Control
@@ -1193,7 +1262,14 @@ export default function Tarefas() {
                             type="url"
                             placeholder="https://exemplo.com"
                             value={novoLinkUrl}
-                            onChange={e => setNovoLinkUrl(e.target.value)}
+                            onChange={e => {
+                              setNovoLinkUrl(e.target.value);
+                              if (urlError) setUrlError(''); // Limpa erro ao digitar
+                              if (urlSuccess) setUrlSuccess(''); // Limpa sucesso ao digitar
+                              if (securityWarnings.length > 0) setSecurityWarnings([]); // Limpa warnings ao digitar
+                            }}
+                            isInvalid={!!urlError}
+                            isValid={!!urlSuccess && !urlError}
                           />
                           <Button
                             variant="outline-primary"
@@ -1203,20 +1279,54 @@ export default function Tarefas() {
                             <Plus size={16} />
                           </Button>
                         </div>
+
+                        {/* Mensagens de feedback */}
+                        {urlError && (
+                          <div className="mt-2 p-2 bg-danger bg-opacity-10 border border-danger rounded">
+                            <small className="text-danger fw-bold">
+                              <FontAwesomeIcon icon={faX} className="me-1" />
+                              {urlError}
+                            </small>
+                          </div>
+                        )}
+
+                        {urlSuccess && !urlError && (
+                          <div className="mt-2 p-2 bg-success bg-opacity-10 border border-success rounded">
+                            <small className="text-success fw-bold">
+                              <FontAwesomeIcon icon={faCheck} className="me-1" />
+                              {urlSuccess}
+                            </small>
+                          </div>
+                        )}
+
+                        {securityWarnings.length > 0 && !urlError && (
+                          <div className="mt-2 p-2 bg-warning bg-opacity-10 border border-warning rounded">
+                            <small className="text-warning fw-bold">
+                              <FontAwesomeIcon icon={faCircleExclamation} className="me-1" />
+                              Avisos de Segurança:
+                            </small>
+                            <ul className="mb-0 mt-1" style={{ fontSize: '0.75rem' }}>
+                              {securityWarnings.map((warning, idx) => (
+                                <li key={idx} className="text-warning">{warning}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                       <small className="text-muted">
-                        Somente links HTTPS de domínios confiáveis (Drive/Docs/YouTube/Meet/Classroom, *.edu, gov.br).
+                        <strong>Sites aceitos:</strong> YouTube, Google, Microsoft, *.edu.br, *.gov.br, universidades e plataformas educacionais.
                       </small>
                     </div>
 
+                    {/* Lista de links adicionados */}
                     {links.length > 0 && (
                       <div className="border rounded p-2">
-                        <small className="text-muted fw-semibold d-block mb-2">Links adicionados:</small>
+                        <small className="text-muted fw-semibold d-block mb-2">✅ Links adicionados:</small>
                         {links.map((link, index) => (
                           <div key={index} className="d-flex align-items-center justify-content-between p-2 mb-1 bg-light rounded">
                             <div className="flex-grow-1">
                               <div className="fw-medium" style={{ fontSize: '0.9rem' }}>
-                                {link.titulo}
+                                🔗 {link.titulo}
                               </div>
                               <div className="text-muted" style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>
                                 {link.url}
@@ -1234,6 +1344,31 @@ export default function Tarefas() {
                         ))}
                       </div>
                     )}
+
+                    {/* Lista de domínios confiáveis */}
+                    <details className="mt-2">
+                      <summary className="text-muted" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>
+                        Ver sites confiáveis permitidos.
+                      </summary>
+                      <div className="mt-2 p-3 bg-light rounded" style={{ fontSize: '0.8rem' }}>
+                        <div className="row">
+                          <div className="col-md-6">
+                            <strong>🎓 Educacionais:</strong><br />
+                            YouTube, Khan Academy, Coursera, Wikipedia, TED, Udemy<br /><br />
+                            <strong>📝 Google Services:</strong><br />
+                            Docs, Drive, Classroom, Meet, Forms, Sites<br /><br />
+                            <strong>💼 Microsoft:</strong><br />
+                            Office, OneDrive, Teams, SharePoint<br />
+                          </div>
+                          <div className="col-md-6">
+                            <strong>🇧🇷 Brasileiros:</strong><br />
+                            *.gov.br, *.edu.br, USP, UNICAMP, UFRJ, Scielo<br /><br />
+                            <strong>💻 Desenvolvimento:</strong><br />
+                            GitHub, Stack Overflow, Mozilla, W3Schools<br /><br />
+                          </div>
+                        </div>
+                      </div>
+                    </details>
                   </Form.Group>
                 </Form>
               </Modal.Body>
