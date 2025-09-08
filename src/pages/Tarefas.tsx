@@ -10,21 +10,17 @@ import AppLayout from '../components/AppLayout';
 import { useAuth } from '../contexts/AuthContext';
 import Paginacao from '../components/Paginacao';
 
-
-// Ícones para o cabeçalho e abas
 import { GraduationCap, Plus, Eye, Trash2, ArrowLeft, Edit, ArrowDownUp } from "lucide-react";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faX, faCircleExclamation, faCheck, faComment } from '@fortawesome/free-solid-svg-icons';
 import { CheckCircle, XCircle, ExclamationCircle } from 'react-bootstrap-icons';
 
-//PDF
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
-// XLSX
 import * as XLSX from 'xlsx';
 import React from 'react';
 
+// -------------------- Tipagens --------------------
 interface Entrega {
   id: string;
   alunoId: string;
@@ -35,7 +31,6 @@ interface Entrega {
   anexoUrl?: string;
   observacoes?: string;
 }
-
 
 interface Aluno {
   id: string;
@@ -51,6 +46,7 @@ interface Tarefa {
   turmaId: string;
   dataEntrega: string;
   excluida?: boolean;
+  bloqueado?: boolean; // (opcional) se quiser marcar tarefa por ter links ruins
   links?: Array<{
     url: string;
     titulo: string;
@@ -73,6 +69,41 @@ interface Vinculo {
   turmaId: string;
 }
 
+// -------------------- Guard de links (anti-phishing) --------------------
+const BLOCKED_HOSTS = /(bit\.ly|tinyurl\.com|t\.co|is\.gd|rb\.gy|linktr\.ee|shorturl\.at|cutt\.ly|rebrand\.ly|goo\.gl)$/i;
+const HTTPS_URL = /^https:\/\/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+$/;
+
+const ALLOWED = [
+  /^https:\/\/(docs|drive)\.google\.com/i,
+  /^https:\/\/(www\.)?youtube\.com/i,
+  /^https:\/\/youtu\.be/i,
+  /^https:\/\/classroom\.google\.com/i,
+  /^https:\/\/meet\.google\.com/i,
+  /^https:\/\/.*\.edu(\.br)?\/?/i,
+  /^https:\/\/www\.gov\.br/i,
+  // adicione domínios confiáveis da escola aqui:
+  // /^https:\/\/seu-dominio\.edu\.br/i,
+];
+
+function normalizeHttps(url: string): string {
+  let u = url.trim();
+  if (/^http:\/\//i.test(u)) u = u.replace(/^http:\/\//i, 'https://');
+  return u;
+}
+
+function isSafeLink(url?: string): boolean {
+  if (!url) return false;
+  const u = normalizeHttps(url);
+  if (!HTTPS_URL.test(u)) return false;
+  try {
+    const host = new URL(u).host;
+    if (BLOCKED_HOSTS.test(host)) return false;
+    return ALLOWED.some(rx => rx.test(u));
+  } catch {
+    return false;
+  }
+}
+
 export default function Tarefas() {
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
@@ -82,12 +113,11 @@ export default function Tarefas() {
   const [materias, setMaterias] = useState<Materia[]>([]);
   const [vinculos, setVinculos] = useState<Vinculo[]>([]);
 
-  const [] = useState('');
   const [filtroTurma, setFiltroTurma] = useState('');
   const [filtroMateria, setFiltroMateria] = useState('');
-  const [, setLoading] = useState(true);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [, setLoading] = useState(true); // se quiser, troque para const [loading, setLoading] e mostre spinner
   const [alunos, setAlunos] = useState<Aluno[]>([]);
-
 
   const [showModal, setShowModal] = useState(false);
   const [materiaSelecionada, setMateriaSelecionada] = useState('');
@@ -103,18 +133,24 @@ export default function Tarefas() {
   const [paginaAtual, setPaginaAtual] = useState(1);
   const tarefasPorPagina = 10;
 
-  // Estado para atividade selecionada
   const [atividadeSelecionada, setAtividadeSelecionada] = useState<Tarefa | null>(null);
-
-  // Estado para abas
   const [activeTab, setActiveTab] = useState<'cadastro' | 'acompanhamento'>('acompanhamento');
   const [entregas, setEntregas] = useState<Entrega[]>([]);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [tarefaParaExcluir, setTarefaParaExcluir] = useState<Tarefa | null>(null);
 
-  // Estado para ordenação
   const [ordenacao, setOrdenacao] = useState<'titulo' | 'data' | 'status' | 'materia'>('data');
+
+  const [showObsModal, setShowObsModal] = React.useState(false);
+  const [currentObs, setCurrentObs] = React.useState('');
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+
+  useEffect(() => {
+    if (!userData) return;
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userData]);
 
   const exportarPDF = () => {
     if (!atividadeSelecionada) return;
@@ -154,69 +190,48 @@ export default function Tarefas() {
       };
     });
 
-    // Cria a planilha
     const worksheet = XLSX.utils.json_to_sheet(data);
-
-    // Define a largura das colunas (opcional)
     worksheet['!cols'] = [
-      { wch: 35 }, // Aluno
-      { wch: 15 }, // Status
-      { wch: 20 }, // Data de Conclusão
-      { wch: 10 }  // Anexo
+      { wch: 35 },
+      { wch: 15 },
+      { wch: 20 },
+      { wch: 10 }
     ];
 
-    // Cria o workbook e adiciona a aba
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Acompanhamento');
-
-    // Salva o arquivo
     XLSX.writeFile(
       workbook,
       `acompanhamento_${atividadeSelecionada.titulo || atividadeSelecionada.descricao}.xlsx`
     );
   };
 
-  useEffect(() => {
-    if (!userData) return;
-    fetchData();
-  }, [userData]);
-
   const handleSaveObs = async () => {
     if (!editingId) return;
-
     try {
-      // Atualizar no Firebase
-      await updateDoc(doc(db, "entregas", editingId), {
-        observacoes: currentObs,
-      });
-
-      // Atualizar estado local da lista de entregas
-      setEntregas(prev => prev.map(item =>
-        item.id === editingId ? { ...item, observacoes: currentObs } : item
-      ));
-
+      await updateDoc(doc(db, "entregas", editingId), { observacoes: currentObs });
+      setEntregas(prev => prev.map(item => (item.id === editingId ? { ...item, observacoes: currentObs } : item)));
       setShowObsModal(false);
       setEditingId(null);
       setCurrentObs('');
     } catch (error) {
       console.error("Erro ao salvar observação:", error);
-      // Você pode mostrar um alerta aqui para o usuário
+      alert('Não foi possível salvar a observação.');
     }
   };
 
   const fetchData = async () => {
     setLoading(true);
 
-    let turmaDocs = [];
+    let turmaDocs: any[] = [];
     if (isAdmin) {
       turmaDocs = (await getDocs(collection(db, 'turmas'))).docs;
     } else {
-      let vincSnap;
       if (!userData) {
         setLoading(false);
         return;
       }
-      vincSnap = await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userData.uid)));
+      const vincSnap = await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userData.uid)));
       const vincList = vincSnap.docs.map(d => d.data() as Vinculo);
       setVinculos(vincList);
 
@@ -227,22 +242,22 @@ export default function Tarefas() {
     }
     setTurmas(turmaDocs.map(d => ({ id: d.id, nome: d.data()?.nome || '-' })));
 
-    const vincSnap = isAdmin
+    const vincSnap2 = isAdmin
       ? await getDocs(collection(db, 'professores_materias'))
       : userData
         ? await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userData.uid)))
-        : { docs: [] };
+        : { docs: [] as any[] };
 
-    const vincList = vincSnap.docs.map(d => d.data() as Vinculo);
-    setVinculos(vincList);
+    const vincList2 = vincSnap2.docs.map(d => d.data() as Vinculo);
+    setVinculos(vincList2);
 
     const entregasSnap = await getDocs(collection(db, 'entregas'));
-    setEntregas(entregasSnap.docs.map(doc => {
-      const { id: _id, ...data } = doc.data() as Entrega;
-      return { id: doc.id, ...data };
+    setEntregas(entregasSnap.docs.map(docu => {
+      const { id: _id, ...data } = docu.data() as Entrega;
+      return { id: docu.id, ...data };
     }));
 
-    const materiaIds = [...new Set(vincList.map(v => v.materiaId))];
+    const materiaIds = [...new Set(vincList2.map(v => v.materiaId))];
     const materiasSnap = await Promise.all(
       materiaIds.map(async id => {
         const m = await getDoc(doc(db, 'materias', id));
@@ -254,17 +269,18 @@ export default function Tarefas() {
     const tarefasSnap = await getDocs(collection(db, 'tarefas'));
     const tarefasFiltradas = isAdmin
       ? tarefasSnap.docs
-      : tarefasSnap.docs.filter(doc => materiaIds.includes(doc.data().materiaId));
+      : tarefasSnap.docs.filter(docu => materiaIds.includes(docu.data().materiaId));
 
     setTurmas(turmaDocs.map(d => ({ id: d.id, nome: d.data()?.nome || '-' })));
     setTarefas(tarefasFiltradas.map(d => ({ id: d.id, ...(d.data() as any) })));
-    setLoading(false);
-    const alunosSnap = await getDocs(collection(db, 'alunos'));
-    setAlunos(alunosSnap.docs.map(doc => {
-      const data = doc.data() as Omit<Aluno, 'id'>;
-      return { ...data, id: doc.id };
-    }));
 
+    setLoading(false);
+
+    const alunosSnap = await getDocs(collection(db, 'alunos'));
+    setAlunos(alunosSnap.docs.map(docu => {
+      const data = docu.data() as Omit<Aluno, 'id'>;
+      return { ...data, id: docu.id };
+    }));
   };
 
   const handleClose = () => {
@@ -283,17 +299,27 @@ export default function Tarefas() {
   const handleSalvar = async () => {
     if (!materiaSelecionada || !descricao || !turmaId || !dataEntrega) return;
     if (!userData) return;
+
+    // Sanitiza e filtra links antes de salvar
+    const safeLinks = (links || [])
+      .map(l => ({ ...l, url: normalizeHttps(l.url) }))
+      .filter(l => isSafeLink(l.url));
+
     const payload: any = {
       materiaId: materiaSelecionada,
       titulo,
       descricao,
       turmaId,
       dataEntrega,
-      professorId: userData.uid
+      professorId: userData.uid,
+      links: safeLinks
     };
-    if (links.length > 0) {
-      payload.links = links;
+
+    // Se houver diferença (tinha link inseguro), opcionalmente marque a tarefa
+    if (links.length && safeLinks.length < links.length) {
+      payload.bloqueado = false; // você pode setar true e ocultar a tarefa inteira, se preferir
     }
+
     if (editandoId) {
       await updateDoc(doc(db, 'tarefas', editandoId), payload);
     } else {
@@ -302,10 +328,10 @@ export default function Tarefas() {
     handleClose();
     fetchData();
   };
+
   const atualizarEntrega = async (alunoId: string, status: string) => {
     if (!atividadeSelecionada) return;
 
-    // Procura entrega existente para este aluno e tarefa
     const entregaExistente = entregas.find(
       e => e.alunoId === alunoId && e.tarefaId === atividadeSelecionada.id
     );
@@ -319,45 +345,28 @@ export default function Tarefas() {
     }
 
     if (entregaExistente) {
-      // Atualiza no Firestore
       const entregaRef = doc(db, 'entregas', entregaExistente.id);
-      await updateDoc(entregaRef, updateData);
-
-      // Atualiza instantaneamente no estado local
-      setEntregas(prev =>
-        prev.map(e =>
-          e.id === entregaExistente.id ? { ...e, ...updateData } : e
-        )
-      );
+      await updateDoc(entregaRef, { status });
+      setEntregas(prev => prev.map(e => (e.id === entregaExistente.id ? { ...e, status } : e)));
     } else {
-      // Cria nova entrega no Firestore
       const novaEntrega = {
         alunoId,
         tarefaId: atividadeSelecionada.id,
         ...updateData
       };
-
       const docRef = await addDoc(collection(db, 'entregas'), novaEntrega);
-
-      // Atualiza instantaneamente no estado local
-      setEntregas(prev => [
-        ...prev,
-        { id: docRef.id, ...novaEntrega }
-      ]);
+      setEntregas(prev => [...prev, { id: docRef.id, ...novaEntrega }]);
     }
   };
-
 
   const alunosFiltrados = filtroTurma
     ? alunos.filter(aluno => aluno.turmaId === filtroTurma)
     : [];
 
-  // Filtra as tarefas conforme turma e matéria selecionadas
   const tarefasFiltradas = tarefas.filter(
     t => t.turmaId === filtroTurma && t.materiaId === filtroMateria && !t.excluida
   );
 
-  // Função para editar tarefa
   const editarTarefa = (tarefaId: string) => {
     const tarefa = tarefas.find(t => t.id === tarefaId);
     if (!tarefa) return;
@@ -367,30 +376,22 @@ export default function Tarefas() {
     setDescricao(tarefa.descricao);
     setTurmaId(tarefa.turmaId);
     setDataEntrega(tarefa.dataEntrega);
-    setLinks(tarefa.links || []);
-    setShowModal(true); // <-- aqui abre o modal
+    // ao abrir, já higieniza os links (evita editar/link ruim sem perceber)
+    const sanitized = (tarefa.links || [])
+      .map(l => ({ ...l, url: normalizeHttps(l.url) }))
+      .filter(l => isSafeLink(l.url));
+    setLinks(sanitized);
+    setShowModal(true);
   };
 
-  // Função para excluir tarefa
   const excluirTarefa = async (tarefaId: string) => {
-    // Exclui a tarefa
     await deleteDoc(doc(db, 'tarefas', tarefaId));
-
-    // Busca todas as entregas relacionadas a essa tarefa
     const entregasQuery = query(collection(db, 'entregas'), where('tarefaId', '==', tarefaId));
     const entregasSnap = await getDocs(entregasQuery);
-
-    // Exclui cada entrega relacionada
     const promises = entregasSnap.docs.map(entregaDoc => deleteDoc(doc(db, 'entregas', entregaDoc.id)));
     await Promise.all(promises);
-
     fetchData();
   };
-
-  const [showObsModal, setShowObsModal] = React.useState(false);
-  const [currentObs, setCurrentObs] = React.useState(''); // texto da observação que está editando
-  const [editingId, setEditingId] = React.useState<string | null>(null); // id da linha que está editando
-
 
   const openObsModal = (id: string, obs: string) => {
     setEditingId(id);
@@ -398,13 +399,18 @@ export default function Tarefas() {
     setShowObsModal(true);
   };
 
-  // Funções para gerenciar links
   const adicionarLink = () => {
     if (!novoLinkUrl.trim()) return;
 
+    const norm = normalizeHttps(novoLinkUrl.trim());
+    if (!isSafeLink(norm)) {
+      alert('Link inválido/inseguro. Use HTTPS e domínios confiáveis (Drive/Docs/YouTube/Meet/Classroom etc.)');
+      return;
+    }
+
     const novoLink = {
-      url: novoLinkUrl.trim(),
-      titulo: novoLinkTitulo.trim() || 'Link'
+      url: norm,
+      titulo: (novoLinkTitulo.trim() || 'Link')
     };
 
     setLinks(prev => [...prev, novoLink]);
@@ -416,7 +422,6 @@ export default function Tarefas() {
     setLinks(prev => prev.filter((_, i) => i !== index));
   };
 
-
   function formatarDataBR(data: string) {
     if (!data) return '-';
     const d = new Date(data);
@@ -424,6 +429,7 @@ export default function Tarefas() {
     return d.toLocaleDateString('pt-BR');
   }
 
+  // -------------------- Render --------------------
   return (
     <AppLayout>
       <Container className="my-4">
@@ -560,9 +566,7 @@ export default function Tarefas() {
                                 )}
                               </div>
                             </div>
-                            {/* Cabeçalho da lista */}
-                            {/* Cabeçalho agora está dentro do Table */}
-                            {/* Lista de atividades */}
+
                             <div>
                               {tarefasFiltradas.length > 0 ? (
                                 <Table responsive hover className="mb-0 align-middle">
@@ -599,6 +603,28 @@ export default function Tarefas() {
                                             <span style={{ color: '#6b7280' }}>
                                               {tarefa.descricao ? tarefa.descricao : tarefa.titulo || 'Sem descrição'}
                                             </span>
+                                            {/* Links seguros (se houver) */}
+                                            {Array.isArray(tarefa.links) && tarefa.links.length > 0 && (
+                                              <div className="mt-1">
+                                                <small className="text-muted fw-semibold">Links:</small>{' '}
+                                                {(tarefa.links.filter(l => isSafeLink(l.url))).map((link, idx) => (
+                                                  <a
+                                                    key={idx}
+                                                    href={normalizeHttps(link.url)}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="ms-2"
+                                                  >
+                                                    🔗 {link.titulo || 'link'}
+                                                  </a>
+                                                ))}
+                                                {tarefa.links.some(l => !isSafeLink(l.url)) && (
+                                                  <span className="ms-2 text-warning" style={{ fontSize: 12 }}>
+                                                    (alguns links foram ocultados por segurança)
+                                                  </span>
+                                                )}
+                                              </div>
+                                            )}
                                           </td>
                                           <td className="py-3 px-3" style={{ width: '13%', textAlign: 'center' }}>{formatarDataBR(tarefa.dataEntrega)}</td>
                                           <td className="py-3 px-3" style={{ width: '12%', textAlign: 'center' }}>
@@ -665,6 +691,7 @@ export default function Tarefas() {
                           </Card.Body>
                         </Card>
                       </div>
+
                       {/* Mobile */}
                       <div className="d-block d-md-none materias-mobile-cards">
                         <div className="materias-header-mobile mb-3">
@@ -689,17 +716,17 @@ export default function Tarefas() {
                             )}
                           </div>
                         </div>
+
                         {tarefasFiltradas.length > 0 ? (
                           <div className="materias-grid-mobile">
                             {tarefasFiltradas
-                              .slice() // cria uma cópia para não mutar o array original
+                              .slice()
                               .sort((a, b) => {
-
                                 switch (ordenacao) {
                                   case 'titulo':
                                     return (a.titulo || 'Sem título').localeCompare(b.titulo || 'Sem título');
                                   case 'data':
-                                    return new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime(); // decrescente
+                                    return new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime();
                                   default:
                                     return 0;
                                 }
@@ -726,26 +753,34 @@ export default function Tarefas() {
                                       })()}
                                     </span>
                                   </div>
-                                  <div className="materias-card-actions">
-                                    {tarefa.links && tarefa.links.length > 0 && (
-                                      <div className="mb-2">
-                                        <small className="text-muted fw-semibold">Links:</small>
-                                        <div className="d-flex flex-wrap gap-1 mt-1">
-                                          {tarefa.links.map((link, index) => (
-                                            <a
-                                              key={index}
-                                              href={link.url}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="btn btn-sm btn-outline-primary"
-                                              style={{ fontSize: '0.7rem', padding: '2px 6px' }}
-                                            >
-                                              🔗 {link.titulo}
-                                            </a>
-                                          ))}
-                                        </div>
+
+                                  {/* Links seguros no mobile */}
+                                  {Array.isArray(tarefa.links) && tarefa.links.length > 0 && (
+                                    <div className="mb-2">
+                                      <small className="text-muted fw-semibold">Links:</small>
+                                      <div className="d-flex flex-wrap gap-1 mt-1">
+                                        {tarefa.links.filter(l => isSafeLink(l.url)).map((link, index) => (
+                                          <a
+                                            key={index}
+                                            href={normalizeHttps(link.url)}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="btn btn-sm btn-outline-primary"
+                                            style={{ fontSize: '0.7rem', padding: '2px 6px' }}
+                                          >
+                                            🔗 {link.titulo || 'link'}
+                                          </a>
+                                        ))}
                                       </div>
-                                    )}
+                                      {tarefa.links.some(l => !isSafeLink(l.url)) && (
+                                        <div className="text-warning" style={{ fontSize: 12 }}>
+                                          Alguns links foram ocultados por segurança.
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  <div className="materias-card-actions">
                                     <button
                                       className="materias-action-btn materias-edit-btn"
                                       onClick={() => setAtividadeSelecionada(tarefa)}
@@ -770,7 +805,7 @@ export default function Tarefas() {
                                     </button>
                                   </div>
                                 </div>
-                              ))})
+                              ))}
                           </div>
                         ) : (
                           <div className="materias-empty-state">
@@ -808,9 +843,7 @@ export default function Tarefas() {
                       </Col>
                     </Row>
 
-                    {/* Aqui sua tabela existente dos alunos que fizeram a atividade */}
-
-                    {/* Lista de alunos como cards, padrão Materias.tsx */}
+                    {/* Lista de alunos (desktop) */}
                     <div className="alunos-list-desktop d-none d-md-block">
                       <Card>
                         <Card.Body>
@@ -830,7 +863,7 @@ export default function Tarefas() {
                               .map(aluno => {
                                 const entrega = entregas.find(e =>
                                   e.alunoId === aluno.id &&
-                                  e.tarefaId === atividadeSelecionada.id
+                                  e.tarefaId === atividadeSelecionada!.id
                                 );
                                 return (
                                   <Card key={aluno.id} className="custom-card-frequencia" style={{ borderBottom: '1px solid #f1f3f4' }}>
@@ -949,7 +982,7 @@ export default function Tarefas() {
                             .map(aluno => {
                               const entrega = entregas.find(e =>
                                 e.alunoId === aluno.id &&
-                                e.tarefaId === atividadeSelecionada.id
+                                e.tarefaId === atividadeSelecionada!.id
                               );
                               return (
                                 <div key={aluno.id} className="materias-card-mobile" style={{ marginBottom: 16 }}>
@@ -1061,7 +1094,6 @@ export default function Tarefas() {
               </Modal.Footer>
             </Modal>
 
-
             {activeTab === 'cadastro' && (
               <div className="d-flex flex-column align-items-center justify-content-center py-5">
                 <div className="d-flex align-items-center justify-content-center rounded-circle bg-primary bg-opacity-10 mb-3" style={{ width: 64, height: 64 }}>
@@ -1147,7 +1179,6 @@ export default function Tarefas() {
                   <Form.Group className="mb-3">
                     <Form.Label>Links de Referência</Form.Label>
 
-                    {/* Adicionar novo link */}
                     <div className="border rounded p-3 mb-2" style={{ backgroundColor: '#f8f9fa' }}>
                       <div className="mb-2">
                         <Form.Control
@@ -1174,11 +1205,10 @@ export default function Tarefas() {
                         </div>
                       </div>
                       <small className="text-muted">
-                        Adicione links úteis para a atividade (vídeos, artigos, materiais de apoio, etc.)
+                        Somente links HTTPS de domínios confiáveis (Drive/Docs/YouTube/Meet/Classroom, *.edu, gov.br).
                       </small>
                     </div>
 
-                    {/* Lista de links adicionados */}
                     {links.length > 0 && (
                       <div className="border rounded p-2">
                         <small className="text-muted fw-semibold d-block mb-2">Links adicionados:</small>
@@ -1250,6 +1280,7 @@ export default function Tarefas() {
     </AppLayout>
   );
 }
+
 
 
 
