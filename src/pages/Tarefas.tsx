@@ -75,18 +75,43 @@ export default function Tarefas() {
   const isAdmin = userData?.tipo === 'administradores';
 
   // Novo sistema de validação de URLs com segurança avançada
-  const { validateUrl, trustedDomains } = useUrlValidator();
+  const { validateUrl } = useUrlValidator();
 
-  // Funções auxiliares para compatibilidade
-
-  // Funções auxiliares assíncronas
+  // Função auxiliar para verificar se um link é seguro (async)
   const isSafeLink = async (url: string): Promise<boolean> => {
-    const validation = await validateUrl(url);
-    return validation.isValid;
+    try {
+      const validation = await validateUrl(url);
+      return validation.isValid;
+    } catch (error) {
+      console.error('Erro na validação de URL:', error);
+      return false;
+    }
   };
 
+  // Estado para links filtrados (para renderização)
+  const [linksSegurosFiltrados, setLinksSegurosFiltrados] = useState<{[tarefaId: string]: Array<{url: string; titulo: string}>}>({});
 
-  // Removido: agora os links já são sanitizados ao salvar/carregar
+  // Função para filtrar links seguros de todas as tarefas
+  const filtrarLinksSegurosDasTarefas = async (tarefasList: Tarefa[]) => {
+    const linksSegurosPorTarefa: {[tarefaId: string]: Array<{url: string; titulo: string}>} = {};
+    
+    for (const tarefa of tarefasList) {
+      if (tarefa.links && tarefa.links.length > 0) {
+        const linksValidos = [];
+        for (const link of tarefa.links) {
+          const isSeguro = await isSafeLink(link.url);
+          if (isSeguro) {
+            linksValidos.push(link);
+          }
+        }
+        linksSegurosPorTarefa[tarefa.id] = linksValidos;
+      } else {
+        linksSegurosPorTarefa[tarefa.id] = [];
+      }
+    }
+    
+    setLinksSegurosFiltrados(linksSegurosPorTarefa);
+  };
 
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
@@ -255,7 +280,11 @@ export default function Tarefas() {
       : tarefasSnap.docs.filter(docu => materiaIds.includes(docu.data().materiaId));
 
     setTurmas(turmaDocs.map(d => ({ id: d.id, nome: d.data()?.nome || '-' })));
-    setTarefas(tarefasFiltradas.map(d => ({ id: d.id, ...(d.data() as any) })));
+    const tarefasProcessadas = tarefasFiltradas.map(d => ({ id: d.id, ...(d.data() as any) }));
+    setTarefas(tarefasProcessadas);
+
+    // Filtrar links seguros das tarefas carregadas
+    filtrarLinksSegurosDasTarefas(tarefasProcessadas);
 
     setLoading(false);
 
@@ -675,7 +704,7 @@ export default function Tarefas() {
                                             {Array.isArray(tarefa.links) && tarefa.links.length > 0 && (
                                               <div className="mt-1">
                                                 <small className="text-muted fw-semibold">Links:</small>{' '}
-                                                {(tarefa.links.filter(l => isSafeLink(l.url))).map((link, idx) => (
+                                                {(linksSegurosFiltrados[tarefa.id] || []).map((link, idx) => (
                                                   <a
                                                     key={idx}
                                                     href={link.url}
@@ -686,7 +715,7 @@ export default function Tarefas() {
                                                     🔗 {link.titulo || 'link'}
                                                   </a>
                                                 ))}
-                                                {tarefa.links.some(l => !isSafeLink(l.url)) && (
+                                                {tarefa.links.length > (linksSegurosFiltrados[tarefa.id]?.length || 0) && (
                                                   <span className="ms-2 text-warning" style={{ fontSize: 12 }}>
                                                     (alguns links foram ocultados por segurança)
                                                   </span>
@@ -827,7 +856,7 @@ export default function Tarefas() {
                                     <div className="mb-2">
                                       <small className="text-muted fw-semibold">Links:</small>
                                       <div className="d-flex flex-wrap gap-1 mt-1">
-                                        {tarefa.links.filter(l => isSafeLink(l.url)).map((link, index) => (
+                                        {(linksSegurosFiltrados[tarefa.id] || []).map((link, index) => (
                                           <a
                                             key={index}
                                             href={link.url}
@@ -840,7 +869,7 @@ export default function Tarefas() {
                                           </a>
                                         ))}
                                       </div>
-                                      {tarefa.links.some(l => !isSafeLink(l.url)) && (
+                                      {tarefa.links.length > (linksSegurosFiltrados[tarefa.id]?.length || 0) && (
                                         <div className="text-warning" style={{ fontSize: 12 }}>
                                           Alguns links foram ocultados por segurança.
                                         </div>
