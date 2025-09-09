@@ -41,11 +41,7 @@ export const useUrlValidator = (): UseUrlValidatorReturn => {
   const validateMultipleUrls = useCallback(async (urls: string[], userIp?: string): Promise<ValidationResult[]> => {
     setIsValidating(true);
     try {
-      const results: ValidationResult[] = [];
-      for (const url of urls) {
-        const result = await urlSecurityService.validateUrl(url, userIp);
-        results.push(result);
-      }
+      const results = await urlSecurityService.validateMultipleUrls(urls, userIp);
       return results;
     } finally {
       setIsValidating(false);
