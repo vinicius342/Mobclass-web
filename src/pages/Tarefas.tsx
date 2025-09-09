@@ -75,7 +75,7 @@ export default function Tarefas() {
   const isAdmin = userData?.tipo === 'administradores';
 
   // Novo sistema de validação de URLs com segurança avançada
-  const { validateUrl, trustedDomains } = useUrlValidator();
+  const { validateUrl } = useUrlValidator();
 
   // Funções auxiliares para compatibilidade
 
