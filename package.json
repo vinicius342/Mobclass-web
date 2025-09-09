@@ -19,6 +19,7 @@
     "date-fns": "^4.1.0",
     "file-saver": "^2.0.5",
     "firebase": "^11.6.0",
+    "firebase-admin": "^13.5.0",
     "framer-motion": "^12.6.3",
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.511.0",
