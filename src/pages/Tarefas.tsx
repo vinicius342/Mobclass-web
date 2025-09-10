@@ -75,7 +75,7 @@ export default function Tarefas() {
   const isAdmin = userData?.tipo === 'administradores';
 
   // Novo sistema de validação de URLs com segurança avançada
-  const { validateUrl, trustedDomains } = useUrlValidator();
+  const { validateUrl } = useUrlValidator();
 
   // Função auxiliar para verificar se um link é seguro (async)
   const isSafeLink = async (url: string): Promise<boolean> => {
