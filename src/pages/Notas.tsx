@@ -98,7 +98,9 @@ export default function Notas(): JSX.Element {
       }
 
       const alunosSnap = await getDocs(collection(db, 'alunos'));
-      const alunosList = alunosSnap.docs.map(d => ({ uid: d.id, ...(d.data() as any) })) as Aluno[];
+      const alunosList = alunosSnap.docs
+        .map(d => ({ uid: d.id, ...(d.data() as any) }))
+        .filter(aluno => (aluno as any).status !== 'Inativo') as Aluno[]; // Excluir usuários inativos
 
       const notasSnap = await getDocs(collection(db, 'notas'));
       const notasDocs = isAdmin ? notasSnap.docs : notasSnap.docs.filter(doc => materiaIds.includes(doc.data().materiaId));
@@ -139,7 +141,9 @@ export default function Notas(): JSX.Element {
       setNotasEdit({});
       return;
     }
-    const alunosFiltrados = alunos.filter(a => a.turmaId === filtroTurma).sort((a, b) => a.nome.localeCompare(b.nome));
+    const alunosFiltrados = alunos
+      .filter(a => a.turmaId === filtroTurma && (a as any).status !== 'Inativo') // Excluir usuários inativos
+      .sort((a, b) => a.nome.localeCompare(b.nome));
     const newEdit: Record<string, any> = {};
     alunosFiltrados.forEach(a => {
       const existing = notas.find(n =>
@@ -592,13 +596,18 @@ export default function Notas(): JSX.Element {
               }
 
               const resultadosFiltradosOriginal = notas
-                .filter(n =>
-                  (!filtroTurma || n.turmaId === filtroTurma) &&
-                  (!filtroMateria || n.materiaId === filtroMateria) &&
-                  n.bimestre === bimestre &&
-                  n.nomeAluno.toLowerCase().includes(busca.toLowerCase()) &&
-                  (isAdmin || materias.some(m => m.id === n.materiaId))
-                );
+                .filter(n => {
+                  // Verificar se o aluno está ativo
+                  const aluno = alunos.find(a => a.uid === n.alunoUid);
+                  const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
+                  
+                  return alunoAtivo &&
+                    (!filtroTurma || n.turmaId === filtroTurma) &&
+                    (!filtroMateria || n.materiaId === filtroMateria) &&
+                    n.bimestre === bimestre &&
+                    n.nomeAluno.toLowerCase().includes(busca.toLowerCase()) &&
+                    (isAdmin || materias.some(m => m.id === n.materiaId));
+                });
 
               const resultadosMap = new Map<string, Nota>();
               resultadosFiltradosOriginal.forEach(nota => {
@@ -828,9 +837,13 @@ export default function Notas(): JSX.Element {
                           <ResponsiveContainer width="100%" height={250}>
                             <ReBarChart
                               data={
-                                // Apenas alunos da turma selecionada
+                                // Apenas alunos ativos da turma selecionada
                                 resultadosFiltrados
-                                  .filter(nota => nota.turmaId === filtroTurma)
+                                  .filter(nota => {
+                                    const aluno = alunos.find(a => a.uid === nota.alunoUid);
+                                    const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
+                                    return alunoAtivo && nota.turmaId === filtroTurma;
+                                  })
                                   .map(nota => ({
                                     nome: nota.nomeAluno,
                                     media: calcularMediaFinal(nota)
@@ -990,11 +1003,16 @@ export default function Notas(): JSX.Element {
                                     onMouseOut={(e) => (e.currentTarget.style.color = 'black')}
                                     onClick={() => {
                                       const historicoNotas = notas
-                                        .filter(n =>
-                                          n.alunoUid === nota.alunoUid &&
-                                          n.materiaId === filtroMateria &&
-                                          n.turmaId === filtroTurma
-                                        )
+                                        .filter(n => {
+                                          // Verificar se o aluno está ativo
+                                          const aluno = alunos.find(a => a.uid === n.alunoUid);
+                                          const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
+                                          
+                                          return alunoAtivo &&
+                                            n.alunoUid === nota.alunoUid &&
+                                            n.materiaId === filtroMateria &&
+                                            n.turmaId === filtroTurma;
+                                        })
                                         .sort((a, b) => {
                                           const ordem = ['1º', '2º', '3º', '4º'];
                                           return ordem.indexOf(a.bimestre) - ordem.indexOf(b.bimestre);
@@ -1096,11 +1114,16 @@ export default function Notas(): JSX.Element {
                                   className="notas-action-mobile d-flex align-items-center gap-1"
                                   onClick={() => {
                                     const historicoNotas = notas
-                                      .filter(n =>
-                                        n.alunoUid === nota.alunoUid &&
-                                        n.materiaId === filtroMateria &&
-                                        n.turmaId === filtroTurma
-                                      )
+                                      .filter(n => {
+                                        // Verificar se o aluno está ativo
+                                        const aluno = alunos.find(a => a.uid === n.alunoUid);
+                                        const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
+                                        
+                                        return alunoAtivo &&
+                                          n.alunoUid === nota.alunoUid &&
+                                          n.materiaId === filtroMateria &&
+                                          n.turmaId === filtroTurma;
+                                      })
                                       .sort((a, b) => {
                                         const ordem = ['1º', '2º', '3º', '4º'];
                                         return ordem.indexOf(a.bimestre) - ordem.indexOf(b.bimestre);

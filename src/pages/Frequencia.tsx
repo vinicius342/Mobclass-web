@@ -137,6 +137,7 @@ export default function Frequencia(): JSX.Element {
         const alunosSnap = await getDocs(query(collection(db, 'alunos'), where('turmaId', '==', turmaId)));
         const listaAlunos: Aluno[] = alunosSnap.docs
           .map(d => ({ id: d.id, ...(d.data() as any) }))
+          .filter(aluno => (aluno as any).status !== 'Inativo') // Excluir usuários inativos
           .sort((a, b) => a.nome.localeCompare(b.nome));
         setAlunos(listaAlunos);
 
@@ -370,6 +371,7 @@ export default function Frequencia(): JSX.Element {
     const alunosSnap = await getDocs(query(collection(db, 'alunos'), where('turmaId', '==', turmaId)));
     const listaAlunos: Aluno[] = alunosSnap.docs
       .map(d => ({ id: d.id, ...(d.data() as any) }))
+      .filter(aluno => (aluno as any).status !== 'Inativo') // Excluir usuários inativos dos relatórios
       .sort((a, b) => a.nome.localeCompare(b.nome));
     setAlunosRelatorio(listaAlunos);
 
@@ -411,9 +413,11 @@ export default function Frequencia(): JSX.Element {
     const snapshot = await getDocs(q);
     let registros = snapshot.docs.map(doc => doc.data());
 
-    // Filtra por turma e matéria no frontend
+    // Filtra por turma e matéria no frontend, e exclui registros de alunos inativos
     registros = registros.filter(
-      reg => reg.turmaId === turmaId && reg.materiaId === materiaId
+      reg => reg.turmaId === turmaId && reg.materiaId === materiaId &&
+      // Verifica se o aluno ainda está ativo (presente na lista de alunos ativos)
+      listaAlunos.some(aluno => aluno.id === reg.alunoId)
     );
 
     // --- Gráfico da turma ---
@@ -432,14 +436,17 @@ export default function Frequencia(): JSX.Element {
 
     // Função auxiliar para buscar nome do aluno no Firestore se não estiver no array alunos
     async function getNomeAluno(alunoId: string): Promise<string> {
-      const alunoObj = alunos.find(a => a.id === alunoId);
+      const alunoObj = listaAlunos.find(a => a.id === alunoId);
       if (alunoObj) return alunoObj.nome;
-      // Busca no Firestore
+      // Busca no Firestore, mas verifica se está ativo
       try {
         const docSnap = await getDoc(doc(db, 'alunos', alunoId));
         if (docSnap.exists()) {
           const data = docSnap.data();
-          return data.nome || 'Desconhecido';
+          // Só retorna o nome se o aluno estiver ativo
+          if (data.status !== 'Inativo') {
+            return data.nome || 'Desconhecido';
+          }
         }
       } catch {
         // ignore
@@ -450,7 +457,7 @@ export default function Frequencia(): JSX.Element {
     // Agrupa e busca nomes
     for (const reg of registros) {
       const alunoId = reg.alunoId;
-      let nome = alunos.find(a => a.id === alunoId)?.nome;
+      let nome = listaAlunos.find(a => a.id === alunoId)?.nome;
       if (!nome) {
         nome = await getNomeAluno(alunoId);
       }
