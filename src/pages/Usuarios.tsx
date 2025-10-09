@@ -40,6 +40,7 @@ export default function Usuarios(): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [turmaFiltro, setTurmaFiltro] = useState<string>('');
+  const [statusFiltro, setStatusFiltro] = useState<string>('');
   const itemsPerPage = 10;
   const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState<'add' | 'edit'>('add');
@@ -99,8 +100,30 @@ export default function Usuarios(): JSX.Element {
       }
       return nameMatch || emailMatch || infoMatch;
     });
-    if (activeTab === 'alunos' && turmaFiltro) {
-      list = list.filter(a => (a as Aluno).turmaId === turmaFiltro);
+    
+    // Filtro por status
+    if (statusFiltro) {
+      list = list.filter(u => (u.status || 'Ativo') === statusFiltro);
+    }
+    
+    // Filtro por turma
+    if (turmaFiltro) {
+      if (activeTab === 'alunos') {
+        list = list.filter(a => (a as Aluno).turmaId === turmaFiltro);
+      } else if (activeTab === 'todos') {
+        list = list.filter(u => {
+          if (u.tipoUsuario === 'alunos') {
+            return (u as Aluno).turmaId === turmaFiltro;
+          }
+          // Para professores, verificar se lecionam na turma
+          if (u.tipoUsuario === 'professores') {
+            const professor = u as Professor;
+            return professor.turmas && professor.turmas.includes(turmaFiltro);
+          }
+          // Para outros tipos, não mostrar quando há filtro de turma
+          return false;
+        });
+      }
     }
     return list.sort((a, b) => a.nome.localeCompare(b.nome));
   };
@@ -357,8 +380,29 @@ export default function Usuarios(): JSX.Element {
       return nameMatch || emailMatch || infoMatch;
     });
 
-    if (activeTab === 'alunos' && turmaFiltro) {
-      list = list.filter(a => (a as Aluno).turmaId === turmaFiltro);
+    // Filtro por status
+    if (statusFiltro) {
+      list = list.filter(u => (u.status || 'Ativo') === statusFiltro);
+    }
+
+    // Filtro por turma
+    if (turmaFiltro) {
+      if (activeTab === 'alunos') {
+        list = list.filter(a => (a as Aluno).turmaId === turmaFiltro);
+      } else if (activeTab === 'todos') {
+        list = list.filter(u => {
+          if (u.tipoUsuario === 'alunos') {
+            return (u as Aluno).turmaId === turmaFiltro;
+          }
+          // Para professores, verificar se lecionam na turma
+          if (u.tipoUsuario === 'professores') {
+            const professor = u as any;
+            return professor.turmas && professor.turmas.includes(turmaFiltro);
+          }
+          // Para outros tipos, não mostrar quando há filtro de turma
+          return false;
+        });
+      }
     }
 
     list = list.sort((a, b) => a.nome.localeCompare(b.nome));
@@ -484,8 +528,6 @@ export default function Usuarios(): JSX.Element {
     );
   };
 
-  const usuarioLogado = { tipo: 'administradores' };
-
   const filterList = <T extends UsuarioBase>(list: T[]) => {
     let filtered = list.filter(u => {
       const searchLower = search.toLowerCase();
@@ -508,8 +550,35 @@ export default function Usuarios(): JSX.Element {
       return nameMatch || emailMatch || infoMatch;
     });
 
-    if (activeTab === 'alunos' && usuarioLogado.tipo === 'administrador' && turmaFiltro) {
-      filtered = filtered.filter(a => (a as Aluno).turmaId === turmaFiltro);
+    // Filtro por status
+    if (statusFiltro) {
+      filtered = filtered.filter(u => (u.status || 'Ativo') === statusFiltro);
+    }
+
+    // Filtro por turma (removida a condição de administrador)
+    if (turmaFiltro) {
+      if (activeTab === 'alunos') {
+        filtered = filtered.filter(a => (a as Aluno).turmaId === turmaFiltro);
+      } else if (activeTab === 'todos') {
+        // Para a aba "todos", aplicar filtro só para alunos e professores
+        filtered = filtered.filter(u => {
+          // Verificar se é aluno pela presença na lista de alunos
+          const isAluno = alunos.find(a => a.id === u.id);
+          if (isAluno) {
+            return (u as Aluno).turmaId === turmaFiltro;
+          }
+          
+          // Verificar se é professor pela presença na lista de professores
+          const isProfessor = professores.find(p => p.id === u.id);
+          if (isProfessor) {
+            const professor = u as unknown as Professor;
+            return professor.turmas && professor.turmas.includes(turmaFiltro);
+          }
+          
+          // Para responsáveis e administradores, não mostrar quando há filtro de turma
+          return false;
+        });
+      }
     }
 
     return filtered.sort((a, b) => a.nome.localeCompare(b.nome));
@@ -682,8 +751,29 @@ export default function Usuarios(): JSX.Element {
       return nameMatch || emailMatch || infoMatch;
     });
 
-    if (activeTab === 'alunos' && usuarioLogado.tipo === 'administrador' && turmaFiltro) {
-      list = list.filter(a => (a as Aluno).turmaId === turmaFiltro);
+    // Filtro por status
+    if (statusFiltro) {
+      list = list.filter(u => (u.status || 'Ativo') === statusFiltro);
+    }
+
+    // Filtro por turma
+    if (turmaFiltro) {
+      if (activeTab === 'alunos') {
+        list = list.filter(a => (a as Aluno).turmaId === turmaFiltro);
+      } else if (activeTab === 'todos') {
+        list = list.filter(u => {
+          if (u.tipoUsuario === 'alunos') {
+            return (u as Aluno).turmaId === turmaFiltro;
+          }
+          // Para professores, verificar se lecionam na turma
+          if (u.tipoUsuario === 'professores') {
+            const professor = u as Professor;
+            return professor.turmas && professor.turmas.includes(turmaFiltro);
+          }
+          // Para outros tipos, não mostrar quando há filtro de turma
+          return false;
+        });
+      }
     }
 
     list = list.sort((a, b) => a.nome.localeCompare(b.nome));
@@ -880,18 +970,21 @@ export default function Usuarios(): JSX.Element {
                 </Form.Select>
               </div>
               <div className="col-md-3">
-                <Form.Select /* Status */>
+                <Form.Select value={statusFiltro} onChange={e => { setStatusFiltro(e.target.value); setCurrentPage(1); }}>
                   <option value="">Todos os status</option>
                   <option value="Ativo">Ativo</option>
                   <option value="Inativo">Inativo</option>
                 </Form.Select>
               </div>
               <div className="col-md-3">
-                <Form.Select value={turmaFiltro} onChange={e => setTurmaFiltro(e.target.value)}>
-                  <option value="">Todas as turmas</option>
-                  {turmas.map(t => (
-                    <option key={t.id} value={t.id}>{t.nome}</option>
-                  ))}
+                <Form.Select value={turmaFiltro} onChange={e => { setTurmaFiltro(e.target.value); setCurrentPage(1); }}>
+                    <option value="">Todas as turmas</option>
+                    {turmas
+                      .slice()
+                      .sort((a, b) => a.nome.localeCompare(b.nome))
+                      .map(t => (
+                        <option key={t.id} value={t.id}>{t.nome}</option>
+                      ))}
                 </Form.Select>
               </div>
             </div>
@@ -909,7 +1002,10 @@ export default function Usuarios(): JSX.Element {
               <Card className="mb-1">
                 <Card.Body>
                   <div className="d-flex align-items-center justify-content-between px-2 mb-2">
-                    <h3 className="mb-0">Lista de Usuários</h3>
+                    <h3 className="mb-0">
+                      Lista de Usuários
+                      <span className="text-muted" style={{ fontSize: '1rem', marginLeft: 8, verticalAlign: 'middle' }}>({getFilteredUsersList().length})</span>
+                    </h3>
                     <Button
                       size="sm"
                       onClick={() => setShowExportModal(true)}
@@ -1156,7 +1252,8 @@ export default function Usuarios(): JSX.Element {
                     }
 
                     return nameMatch || emailMatch || infoMatch;
-                  })
+                  }).filter(u => !statusFiltro || (u.status || 'Ativo') === statusFiltro)
+                    .filter(u => !turmaFiltro || u.tipoUsuario !== 'alunos' || (u as any).turmaId === turmaFiltro)
                   : activeTab === 'alunos' && turmaFiltro
                     ? filterList(alunos).filter(a => a.turmaId === turmaFiltro)
                     : filterList(

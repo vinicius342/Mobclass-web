@@ -2,10 +2,12 @@
 import { JSX, useEffect, useState, useRef } from 'react';
 import React from 'react';
 import AppLayout from '../components/AppLayout';
+import Paginacao from '../components/Paginacao';
 import {
   Container, Row, Col, Form, Button, Spinner, Toast, ToastContainer,
   Card,
   Modal,
+  Dropdown,
 } from 'react-bootstrap';
 import {
   collection, getDocs, query, where,
@@ -13,10 +15,11 @@ import {
   Query,
   DocumentData
 } from 'firebase/firestore';
-import { AlertTriangle, CalendarIcon, Check, CheckSquare, Info, Save, Undo, User, UserCheck, UserX, X } from "lucide-react";
+import { AlertTriangle, CalendarIcon, Check, CheckSquare, Info, Save, Undo, User, UserCheck, UserX, X} from "lucide-react";
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { FaUserCheck, FaUsers, FaUserTimes } from 'react-icons/fa';
+import { FaClockRotateLeft } from 'react-icons/fa6';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 import { BarChart, Bar, XAxis, YAxis } from 'recharts';
 
@@ -137,6 +140,7 @@ export default function Frequencia(): JSX.Element {
         const alunosSnap = await getDocs(query(collection(db, 'alunos'), where('turmaId', '==', turmaId)));
         const listaAlunos: Aluno[] = alunosSnap.docs
           .map(d => ({ id: d.id, ...(d.data() as any) }))
+          .filter(aluno => (aluno as any).status !== 'Inativo') // Excluir usuários inativos
           .sort((a, b) => a.nome.localeCompare(b.nome));
         setAlunos(listaAlunos);
 
@@ -357,7 +361,8 @@ export default function Frequencia(): JSX.Element {
 
   const aplicarFiltrosRelatorio = async () => {
     setLoadingRelatorio(true);
-    if (!turmaId || !materiaId || !tipoPeriodo) {
+    setPaginaAtualRelatorio(1); // Resetar para primeira página
+    if (!materiaId || !tipoPeriodo) {
       setToast({
         show: true,
         message: 'Por favor, selecione todos os filtros necessários.',
@@ -366,10 +371,16 @@ export default function Frequencia(): JSX.Element {
       return;
     }
 
-    // BUSCA OS ALUNOS DA TURMA PARA O RELATÓRIO
-    const alunosSnap = await getDocs(query(collection(db, 'alunos'), where('turmaId', '==', turmaId)));
+    // BUSCA OS ALUNOS PARA O RELATÓRIO (todas as turmas ou turma específica)
+    let alunosSnap;
+    if (turmaId) {
+      alunosSnap = await getDocs(query(collection(db, 'alunos'), where('turmaId', '==', turmaId)));
+    } else {
+      alunosSnap = await getDocs(collection(db, 'alunos'));
+    }
     const listaAlunos: Aluno[] = alunosSnap.docs
       .map(d => ({ id: d.id, ...(d.data() as any) }))
+      .filter(aluno => (aluno as any).status !== 'Inativo') // Excluir usuários inativos dos relatórios
       .sort((a, b) => a.nome.localeCompare(b.nome));
     setAlunosRelatorio(listaAlunos);
 
@@ -411,9 +422,12 @@ export default function Frequencia(): JSX.Element {
     const snapshot = await getDocs(q);
     let registros = snapshot.docs.map(doc => doc.data());
 
-    // Filtra por turma e matéria no frontend
+    // Filtra por turma (se selecionada) e matéria no frontend, e exclui registros de alunos inativos
     registros = registros.filter(
-      reg => reg.turmaId === turmaId && reg.materiaId === materiaId
+      reg => (!turmaId || reg.turmaId === turmaId) && 
+      (materiaId === 'all' || reg.materiaId === materiaId) &&
+      // Verifica se o aluno ainda está ativo (presente na lista de alunos ativos)
+      listaAlunos.some(aluno => aluno.id === reg.alunoId)
     );
 
     // --- Gráfico da turma ---
@@ -432,14 +446,17 @@ export default function Frequencia(): JSX.Element {
 
     // Função auxiliar para buscar nome do aluno no Firestore se não estiver no array alunos
     async function getNomeAluno(alunoId: string): Promise<string> {
-      const alunoObj = alunos.find(a => a.id === alunoId);
+      const alunoObj = listaAlunos.find(a => a.id === alunoId);
       if (alunoObj) return alunoObj.nome;
-      // Busca no Firestore
+      // Busca no Firestore, mas verifica se está ativo
       try {
         const docSnap = await getDoc(doc(db, 'alunos', alunoId));
         if (docSnap.exists()) {
           const data = docSnap.data();
-          return data.nome || 'Desconhecido';
+          // Só retorna o nome se o aluno estiver ativo
+          if (data.status !== 'Inativo') {
+            return data.nome || 'Desconhecido';
+          }
         }
       } catch {
         // ignore
@@ -450,7 +467,7 @@ export default function Frequencia(): JSX.Element {
     // Agrupa e busca nomes
     for (const reg of registros) {
       const alunoId = reg.alunoId;
-      let nome = alunos.find(a => a.id === alunoId)?.nome;
+      let nome = listaAlunos.find(a => a.id === alunoId)?.nome;
       if (!nome) {
         nome = await getNomeAluno(alunoId);
       }
@@ -483,6 +500,83 @@ export default function Frequencia(): JSX.Element {
   //Lista Relatorio
   const [alunosRelatorio, setAlunosRelatorio] = useState<Aluno[]>([]);
   const [registrosRelatorio, setRegistrosRelatorio] = useState<any[]>([]);
+  
+  // Paginação e ordenação dos relatórios
+  const [paginaAtualRelatorio, setPaginaAtualRelatorio] = useState(1);
+  const itensPorPaginaRelatorio = 10;
+  const [ordenacaoRelatorio, setOrdenacaoRelatorio] = useState<'nome' | 'presencas' | 'faltas' | 'percentual'>('nome');
+
+  // Modal de histórico
+  const [showModalHistorico, setShowModalHistorico] = useState(false);
+  const [alunoHistorico, setAlunoHistorico] = useState<{ nome: string; id: string } | null>(null);
+  const [historicoFrequencia, setHistoricoFrequencia] = useState<any[]>([]);
+
+  // Função para buscar histórico do aluno
+  const buscarHistoricoAluno = async (aluno: { nome: string; id: string }) => {
+    setAlunoHistorico(aluno);
+    setShowModalHistorico(true);
+    
+    try {
+      // Buscar registros de frequência do aluno
+      let registrosQuery = query(
+        collection(db, 'frequencias'), 
+        where('alunoId', '==', aluno.id)
+      );
+      
+      // Se não for "todas as matérias", filtrar pela matéria específica
+      if (materiaId !== 'all') {
+        registrosQuery = query(registrosQuery, where('materiaId', '==', materiaId));
+      }
+      
+      const registrosSnap = await getDocs(registrosQuery);
+      
+      const registros = registrosSnap.docs.map(doc => doc.data());
+      
+      // Agrupar por bimestre (assumindo que a data está no formato YYYY-MM-DD)
+      const bimestres: Record<string, { presencas: number; faltas: number; total: number }> = {
+        '1º Bimestre': { presencas: 0, faltas: 0, total: 0 },
+        '2º Bimestre': { presencas: 0, faltas: 0, total: 0 },
+        '3º Bimestre': { presencas: 0, faltas: 0, total: 0 },
+        '4º Bimestre': { presencas: 0, faltas: 0, total: 0 }
+      };
+      
+      registros.forEach(reg => {
+        const data = new Date(reg.data);
+        const mes = data.getMonth() + 1; // Janeiro = 1
+        
+        let bimestre = '';
+        if (mes >= 2 && mes <= 4) bimestre = '1º Bimestre';
+        else if (mes >= 5 && mes <= 7) bimestre = '2º Bimestre';
+        else if (mes >= 8 && mes <= 10) bimestre = '3º Bimestre';
+        else bimestre = '4º Bimestre';
+        
+        if (bimestres[bimestre]) {
+          bimestres[bimestre].total++;
+          if (reg.presenca) {
+            bimestres[bimestre].presencas++;
+          } else {
+            bimestres[bimestre].faltas++;
+          }
+        }
+      });
+      
+      // Converter para array
+      const historicoArray = Object.entries(bimestres).map(([nome, dados]) => ({
+        bimestre: nome,
+        ...dados,
+        percentual: dados.total > 0 ? ((dados.presencas / dados.total) * 100).toFixed(1) : '0.0'
+      }));
+      
+      setHistoricoFrequencia(historicoArray);
+    } catch (error) {
+      console.error('Erro ao buscar histórico:', error);
+      setToast({
+        show: true,
+        message: 'Erro ao carregar histórico do aluno',
+        variant: 'danger'
+      });
+    }
+  };
 
   return (
     <AppLayout>
@@ -638,7 +732,7 @@ export default function Frequencia(): JSX.Element {
                       setMateriaId('');
                     }}
                   >
-                    <option value="">Selecione a Turma</option>
+                    <option value="">Todas as turmas</option>
                     {turmas.map(t => (
                       <option key={t.id} value={t.id}>
                         {t.nome}
@@ -651,9 +745,9 @@ export default function Frequencia(): JSX.Element {
                   <Form.Select
                     value={materiaId}
                     onChange={e => setMateriaId(e.target.value)}
-                    disabled={!turmaId}
                   >
                     <option value="">Selecione a Matéria</option>
+                    <option value="all">Todas as matérias</option>
                     {materias.map(m => (
                       <option key={m.id} value={m.id}>
                         {m.nome}
@@ -718,7 +812,16 @@ export default function Frequencia(): JSX.Element {
 
               </Row>
 
-              <Row className="mb-2 justify-content-end">
+              <Row className="mb-2 justify-content-between">
+                <Col md={5} className="d-flex align-items-center">
+                  <Form.Control
+                    type="search"
+                    placeholder="Buscar aluno..."
+                    value={buscaNome}
+                    onChange={e => setBuscaNome(e.target.value)}
+                    autoComplete="off"
+                  />
+                </Col>
                 <Col className="d-flex gap-3 justify-content-end" md={7}>
                   <Button
                     variant="primary"
@@ -734,7 +837,6 @@ export default function Frequencia(): JSX.Element {
                   >
                     Limpar Filtros
                   </Button>
-
                 </Col>
               </Row>
             </Card>
@@ -794,114 +896,206 @@ export default function Frequencia(): JSX.Element {
 
         {/* Lista do relatorio */}
         {activeTab === "relatorios-frequencia" && frequenciaGrafico && (
-          // <Row>
           <Card className="shadow-sm">
             <Card.Body>
-              <h3 className="mb-3 px-3">Resumo de Frequência</h3>
+              <div className="d-flex justify-content-between align-items-center mb-3 px-3">
+                <h3 className="mb-0">
+                  Resumo de Frequência
+                  <span className="text-muted" style={{ fontSize: '1rem', marginLeft: 8, verticalAlign: 'middle' }}>
+                    ({alunosRelatorio.filter(a => buscaNome.trim() === '' || a.nome.toLowerCase().includes(buscaNome.toLowerCase())).length})
+                  </span>
+                </h3>
+                <Dropdown onSelect={key => setOrdenacaoRelatorio(key as any)}>
+                  <Dropdown.Toggle
+                    variant="outline-secondary"
+                    id="dropdown-ordenar"
+                    size="sm"
+                    className="d-flex align-items-center gap-2"
+                  >
+                    Ordenar
+                  </Dropdown.Toggle>
+                  <Dropdown.Menu>
+                    <Dropdown.Item eventKey="nome" active={ordenacaoRelatorio === 'nome'}>Nome</Dropdown.Item>
+                    <Dropdown.Item eventKey="presencas" active={ordenacaoRelatorio === 'presencas'}>Presenças</Dropdown.Item>
+                    <Dropdown.Item eventKey="faltas" active={ordenacaoRelatorio === 'faltas'}>Faltas</Dropdown.Item>
+                    <Dropdown.Item eventKey="percentual" active={ordenacaoRelatorio === 'percentual'}>Frequência (%)</Dropdown.Item>
+                  </Dropdown.Menu>
+                </Dropdown>
+              </div>
               <div className="d-flex flex-column gap-2">
                 <div className="d-flex justify-content-between px-3 py-2 border-bottom fw-bold text-muted">
-                  <div style={{ width: '25%', display: 'flex', justifyContent: 'center' }}>Aluno</div>
-                  <div style={{ width: '15%', display: 'flex', justifyContent: 'center' }}>Presenças</div>
-                  <div style={{ width: '15%', display: 'flex', justifyContent: 'center' }}>Faltas</div>
-                  <div style={{ width: '20%', display: 'flex', justifyContent: 'center' }} className="nothing-in-mobile">Frequência</div>
-                  <div style={{ width: '20%', display: 'flex', justifyContent: 'center' }}>Status</div>
+                  <div style={{ width: '22%', display: 'flex', justifyContent: 'center' }}>Aluno</div>
+                  <div style={{ width: '12%', display: 'flex', justifyContent: 'center' }}>Presenças</div>
+                  <div style={{ width: '12%', display: 'flex', justifyContent: 'center' }}>Faltas</div>
+                  <div style={{ width: '21%', display: 'flex', justifyContent: 'center' }} className="nothing-in-mobile">Frequência</div>
+                  <div style={{ width: '15%', display: 'flex', justifyContent: 'center' }}>Status</div>
+                  <div style={{ width: '8%', display: 'flex', justifyContent: 'center' }}>Ações</div>
                 </div>
                 {loadingRelatorio ? (
                   <div className="d-flex justify-content-center align-items-center" style={{ height: '200px' }}>
                     <Spinner animation="border" />
                   </div>
                 ) : (
-                  alunosRelatorio.map(a => {
-                    const registrosAluno = registrosRelatorio.filter(r => r.alunoId === a.id);
-                    const presencas = registrosAluno.filter(r => r.presenca === true).length;
-                    const faltas = registrosAluno.filter(r => r.presenca === false).length;
-                    const total = registrosAluno.length;
-                    const percentual = total > 0 ? ((presencas / total) * 100).toFixed(1) : '0.0';
-                    let status = null;
-
-                    if (parseFloat(percentual) >= 80) {
-                      status = (
-                        <span className="badge bg-success d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
-                          <CheckCircle size={16} /> OK
-                        </span>
-                      );
-                    } else if (parseFloat(percentual) >= 60) {
-                      status = (
-                        <span className="badge bg-warning text-dark d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
-                          <AlertTriangle size={16} /> Regular
-                        </span>
-                      );
-                    } else {
-                      status = (
-                        <span className="badge bg-danger d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
-                          <XCircle size={16} /> Crítico
-                        </span>
-                      );
-                    }
-
-
-                    return (
-                      <Card
-                        key={a.id}
-                        className="w-100 custom-card-frequencia mb-0"
-                      >
-                        <Card.Body className="d-flex justify-content-between align-items-center py-3 px-3">
-                          <div className="d-flex align-items-center" style={{ width: '25%' }}>
-                            <div className="user-icon-circle-frequencia">
-                              <User size={24} color="#fff" />
-                            </div>
-                            <span className="aluno-nome-frequencia ms-2" style={{ fontSize: '1rem' }}>{a.nome}</span>
-                          </div>
-                          <div style={{ width: '15%', textAlign: 'center' }}>
-                            <span className="text-success fw-bold">{presencas}</span>
-                          </div>
-                          <div style={{ width: '15%', textAlign: 'center' }}>
-                            <span className="text-danger fw-bold">{faltas}</span>
-                          </div>
-                          <div style={{ width: '20%', display: 'flex', alignItems: 'center', gap: '8px' }} className='nothing-in-mobile'>
-                            <div
-                              className="progress"
-                              style={{
-                                width: '120px', // largura fixa
-                                height: '20px',
-                                borderRadius: '999px',
-                                backgroundColor: '#e9ecef',
-                              }}
-                            >
-                              <div
-                                className="progress-bar"
-                                role="progressbar"
-                                style={{
-                                  width: `${percentual}%`,
-                                  backgroundColor: '#021E4C',
-                                  borderRadius: '999px',
-                                }}
-                                aria-valuenow={parseFloat(percentual)}
-                                aria-valuemin={0}
-                                aria-valuemax={100}
-                              ></div>
-                            </div>
-                            <span
-                              style={{
-                                fontWeight: 'bold',
-                                minWidth: '40px',
-                                textAlign: 'right',
-                                fontSize: '0.9rem',
-                              }}
-                            >
-                              {percentual}%
-                            </span>
-                          </div>
-                          <div style={{ width: '20%', textAlign: 'center', justifyContent: 'center', display: 'flex' }}>{status}</div>
-                        </Card.Body>
-                      </Card>
+                  (() => {
+                    // Filtrar alunos por busca
+                    let alunosFiltrados = alunosRelatorio.filter(a => 
+                      buscaNome.trim() === '' || a.nome.toLowerCase().includes(buscaNome.toLowerCase())
                     );
-                  })
+
+                    // Mapear dados com métricas
+                    let dadosComMetricas = alunosFiltrados.map(a => {
+                      const registrosAluno = registrosRelatorio.filter(r => r.alunoId === a.id);
+                      const presencas = registrosAluno.filter(r => r.presenca === true).length;
+                      const faltas = registrosAluno.filter(r => r.presenca === false).length;
+                      const total = registrosAluno.length;
+                      const percentual = total > 0 ? parseFloat(((presencas / total) * 100).toFixed(1)) : 0;
+                      
+                      return {
+                        aluno: a,
+                        presencas,
+                        faltas,
+                        percentual
+                      };
+                    });
+
+                    // Ordenar dados
+                    dadosComMetricas.sort((a, b) => {
+                      switch (ordenacaoRelatorio) {
+                        case 'nome':
+                          return a.aluno.nome.localeCompare(b.aluno.nome);
+                        case 'presencas':
+                          return b.presencas - a.presencas;
+                        case 'faltas':
+                          return b.faltas - a.faltas;
+                        case 'percentual':
+                          return b.percentual - a.percentual;
+                        default:
+                          return 0;
+                      }
+                    });
+
+                    // Aplicar paginação
+                    const inicioIndex = (paginaAtualRelatorio - 1) * itensPorPaginaRelatorio;
+                    const dadosPaginados = dadosComMetricas.slice(inicioIndex, inicioIndex + itensPorPaginaRelatorio);
+
+                    return dadosPaginados.map(({ aluno: a, presencas, faltas, percentual }) => {
+                      let status = null;
+
+                      if (percentual >= 80) {
+                        status = (
+                          <span className="badge bg-success d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
+                            <CheckCircle size={16} /> OK
+                          </span>
+                        );
+                      } else if (percentual >= 60) {
+                        status = (
+                          <span className="badge bg-warning text-dark d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
+                            <AlertTriangle size={16} /> Regular
+                          </span>
+                        );
+                      } else {
+                        status = (
+                          <span className="badge bg-danger d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
+                            <XCircle size={16} /> Crítico
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <Card
+                          key={a.id}
+                          className="w-100 custom-card-frequencia mb-0"
+                        >
+                          <Card.Body className="d-flex justify-content-between align-items-center py-3 px-3">
+                            <div className="d-flex align-items-center" style={{ width: '22%' }}>
+                              <div className="user-icon-circle-frequencia">
+                                <User size={24} color="#fff" />
+                              </div>
+                              <span className="aluno-nome-frequencia ms-2" style={{ fontSize: '1rem' }}>{a.nome}</span>
+                            </div>
+                            <div style={{ width: '12%', textAlign: 'center' }}>
+                              <span className="text-success fw-bold">{presencas}</span>
+                            </div>
+                            <div style={{ width: '12%', textAlign: 'center' }}>
+                              <span className="text-danger fw-bold">{faltas}</span>
+                            </div>
+                            <div style={{ width: '21%', display: 'flex', alignItems: 'center', gap: '8px' }} className='nothing-in-mobile'>
+                              <div
+                                className="progress"
+                                style={{
+                                  width: '100px',
+                                  height: '20px',
+                                  borderRadius: '999px',
+                                  backgroundColor: '#e9ecef',
+                                }}
+                              >
+                                <div
+                                  className="progress-bar"
+                                  role="progressbar"
+                                  style={{
+                                    width: `${percentual}%`,
+                                    backgroundColor: '#021E4C',
+                                    borderRadius: '999px',
+                                  }}
+                                  aria-valuenow={percentual}
+                                  aria-valuemin={0}
+                                  aria-valuemax={100}
+                                ></div>
+                              </div>
+                              <span
+                                style={{
+                                  fontWeight: 'bold',
+                                  minWidth: '35px',
+                                  textAlign: 'right',
+                                  fontSize: '0.9rem',
+                                }}
+                              >
+                                {percentual.toFixed(1)}%
+                              </span>
+                            </div>
+                            <div style={{ width: '15%', textAlign: 'center', justifyContent: 'center', display: 'flex' }}>{status}</div>
+                            <div style={{ width: '8%', textAlign: 'center', justifyContent: 'center', display: 'flex' }}>
+                              <Button
+                                size="sm"
+                                variant="link"
+                                className="d-flex align-items-center gap-1 mx-auto"
+                                style={{
+                                  color: 'black',
+                                  fontWeight: 'bold',
+                                  textDecoration: 'none',
+                                  border: 'none',
+                                  boxShadow: 'none',
+                                  padding: 0,
+                                  background: 'transparent',
+                                  cursor: 'pointer',
+                                }}
+                                onMouseOver={(e) => (e.currentTarget.style.color = '#333')}
+                                onMouseOut={(e) => (e.currentTarget.style.color = 'black')}
+                                onClick={() => buscarHistoricoAluno({ nome: a.nome, id: a.id })}
+                              >
+                                <FaClockRotateLeft /> Histórico
+                              </Button>
+                            </div>
+                          </Card.Body>
+                        </Card>
+                      );
+                    });
+                  })()
                 )}
               </div>
             </Card.Body>
+            {!loadingRelatorio && (
+              <Paginacao
+                paginaAtual={paginaAtualRelatorio}
+                totalPaginas={Math.ceil(
+                  alunosRelatorio.filter(a => 
+                    buscaNome.trim() === '' || a.nome.toLowerCase().includes(buscaNome.toLowerCase())
+                  ).length / itensPorPaginaRelatorio
+                )}
+                aoMudarPagina={setPaginaAtualRelatorio}
+              />
+            )}
           </Card>
-          // </Row>
         )}
 
         {activeTab === "lancamento-frequencia" && alunos.length > 0 && (
@@ -1160,6 +1354,79 @@ export default function Frequencia(): JSX.Element {
               }}
             >
               Salvar Justificativa
+            </Button>
+          </Modal.Footer>
+        </Modal>
+
+        {/* Modal Histórico */}
+        <Modal show={showModalHistorico} onHide={() => setShowModalHistorico(false)} centered size="lg">
+          <Modal.Header closeButton>
+            <Modal.Title>
+              Histórico de Frequência - {alunoHistorico?.nome}
+              <br />
+              <small className="text-muted">
+                Matéria: {materiaId === 'all' ? 'Todas as matérias' : (materias.find(m => m.id === materiaId)?.nome || 'Não informada')}
+              </small>
+            </Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            {historicoFrequencia.length > 0 ? (
+              <div className="table-responsive">
+                <table className="table table-striped">
+                  <thead>
+                    <tr>
+                      <th>Bimestre</th>
+                      <th className="text-center">Presenças</th>
+                      <th className="text-center">Faltas</th>
+                      <th className="text-center">Total de Aulas</th>
+                      <th className="text-center">Frequência</th>
+                      <th className="text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historicoFrequencia.map(bimestre => (
+                      <tr key={bimestre.bimestre}>
+                        <td className="fw-bold">{bimestre.bimestre}</td>
+                        <td className="text-center text-success fw-bold">{bimestre.presencas}</td>
+                        <td className="text-center text-danger fw-bold">{bimestre.faltas}</td>
+                        <td className="text-center">{bimestre.total}</td>
+                        <td className="text-center fw-bold">{bimestre.percentual}%</td>
+                        <td className="text-center">
+                          {parseFloat(bimestre.percentual) >= 80 ? (
+                            <span className="badge bg-success">
+                              <CheckCircle size={14} className="me-1" />
+                              OK
+                            </span>
+                          ) : parseFloat(bimestre.percentual) >= 60 ? (
+                            <span className="badge bg-warning text-dark">
+                              <AlertTriangle size={14} className="me-1" />
+                              Regular
+                            </span>
+                          ) : (
+                            <span className="badge bg-danger">
+                              <XCircle size={14} className="me-1" />
+                              Crítico
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-4">
+                <div className="mb-3">
+                  <FaClockRotateLeft size={48} className="text-muted" />
+                </div>
+                <h5>Nenhum registro encontrado</h5>
+                <p className="text-muted">Este aluno ainda não possui registros de frequência.</p>
+              </div>
+            )}
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowModalHistorico(false)}>
+              Fechar
             </Button>
           </Modal.Footer>
         </Modal>
