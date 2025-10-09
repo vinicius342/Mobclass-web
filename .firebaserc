@@ -1,5 +1,11 @@
 {
-  "projects": {
-    "default": "agenda-digital-e481b"
+  "projects": { "default": "mobclassapp-prod" },
+  "targets": {
+    "mobclassapp-prod": {
+      "hosting": {
+        "prod": ["mobclassapp-prod-web"]
+      }
+    }
   }
 }
+

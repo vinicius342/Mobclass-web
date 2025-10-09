@@ -1,8 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// base ABSOLUTA
 export default defineConfig({
-  base: './', // 👈 Corrige os caminhos dos assets no Firebase Hosting
+  base: '/',          // garante /assets/... no index gerado
   plugins: [react()],
+  build: { outDir: 'dist' }
 })
 

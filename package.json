@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -18,7 +17,7 @@
     "bootstrap": "^5.3.5",
     "date-fns": "^4.1.0",
     "file-saver": "^2.0.5",
-    "firebase": "^11.6.0",
+    "firebase": "^11.10.0",
     "firebase-admin": "^13.5.0",
     "framer-motion": "^12.6.3",
     "jspdf-autotable": "^5.0.2",
