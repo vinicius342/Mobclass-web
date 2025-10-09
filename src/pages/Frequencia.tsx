@@ -18,6 +18,7 @@ import {
 import { AlertTriangle, CalendarIcon, Check, CheckSquare, Info, Save, Undo, User, UserCheck, UserX, X} from "lucide-react";
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import { FaUserCheck, FaUsers, FaUserTimes } from 'react-icons/fa';
 import { FaClockRotateLeft } from 'react-icons/fa6';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
@@ -56,6 +57,7 @@ interface Vinculo {
 
 export default function Frequencia(): JSX.Element {
   const { userData } = useAuth()!;
+  const { anoLetivo } = useAnoLetivoAtual();
   const isAdmin = userData?.tipo === 'administradores';
 
   const [turmas, setTurmas] = useState<Turma[]>([]);
@@ -603,6 +605,11 @@ export default function Frequencia(): JSX.Element {
             <p className="mb-0" style={{ color: '#3b4861', marginLeft: 44, fontSize: 16 }}>
               Gerencie presenças, ausências e relatórios
             </p>
+            <div className="mt-2" style={{ marginLeft: 44 }}>
+              <small className="badge bg-secondary">
+                Ano Letivo: {anoLetivo}
+              </small>
+            </div>
           </div>
         </div>
 

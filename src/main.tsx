@@ -8,6 +8,7 @@ import './index.css';
 
 import App from './App';
 import { AuthProvider } from './contexts/AuthContext';
+import { AnoLetivoProvider } from './contexts/AnoLetivoContext';
 
 const rootElement = document.getElementById('root');
 
@@ -20,9 +21,11 @@ const root = createRoot(rootElement);
 root.render(
   <StrictMode>
     <AuthProvider>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <AnoLetivoProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </AnoLetivoProvider>
     </AuthProvider>
   </StrictMode>
 );

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import AppLayout from '../components/AppLayout';
 import {
   Container, Table, Button, Modal, Form, Spinner, ToastContainer, Toast, Dropdown, Card
@@ -41,6 +42,7 @@ interface Vinculo {
 }
 
 export default function Turmas() {
+  const { anoLetivo, carregandoAnos } = useAnoLetivoAtual();
   const authContext = useAuth();
   const userData = authContext?.userData;
 
@@ -55,7 +57,7 @@ export default function Turmas() {
   const [showDetalhesModal, setShowDetalhesModal] = useState(false);
   const [turmaDetalhes, setTurmaDetalhes] = useState<Turma | null>(null);
   const [novaTurma, setNovaTurma] = useState('');
-  const [anoLetivo, setAnoLetivo] = useState('');
+  // Removido estado local de anoLetivo, usar apenas o do context
   const [turno, setTurno] = useState('');
   const [editId, setEditId] = useState<string | null>(null);
 
@@ -68,9 +70,9 @@ export default function Turmas() {
   const itensPorPagina = 10;
 
   useEffect(() => {
-    if (!userData) return;
+    if (!userData || carregandoAnos) return;
     fetchData();
-  }, [userData]);
+  }, [userData, carregandoAnos, anoLetivo]);
 
   useEffect(() => {
     if (showModal) {
@@ -85,17 +87,20 @@ export default function Turmas() {
     try {
       let turmasSnap;
       if (userData && userData.tipo === 'administradores') {
-        turmasSnap = await getDocs(collection(db, 'turmas'));
+        turmasSnap = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())));
       } else {
         const turmaIds = userData?.turmas || [];
         if (turmaIds.length > 0) {
-          const turmaQuery = query(collection(db, 'turmas'), where(documentId(), 'in', turmaIds));
+          const turmaQuery = query(
+            collection(db, 'turmas'),
+            where(documentId(), 'in', turmaIds),
+            where('anoLetivo', '==', anoLetivo.toString())
+          );
           turmasSnap = await getDocs(turmaQuery);
         } else {
           turmasSnap = { docs: [] };
         }
       }
-      
       // Buscar dados adicionais para os detalhes
       const [alunosSnap, professoresSnap, materiasSnap, vinculosSnap] = await Promise.all([
         getDocs(collection(db, 'alunos')),
@@ -119,12 +124,10 @@ export default function Turmas() {
     if (turma) {
       setEditId(turma.id);
       setNovaTurma(turma.nome);
-      setAnoLetivo(turma.anoLetivo);
       setTurno(turma.turno);
     } else {
       setEditId(null);
       setNovaTurma('');
-      setAnoLetivo('');
       setTurno('Manhã');
     }
     setErro('');
@@ -135,10 +138,10 @@ export default function Turmas() {
 
   const handleSalvarTurma = async () => {
     if (!novaTurma.trim()) return setErro('Nome da turma é obrigatório.');
-    if (!anoLetivo.trim()) return setErro('Ano letivo é obrigatório.');
+    if (!anoLetivo) return setErro('Ano letivo é obrigatório.');
     if (!turno.trim()) return setErro('Turno é obrigatório.');
 
-    const payload = { nome: novaTurma.trim(), anoLetivo: anoLetivo.trim(), turno: turno.trim() };
+    const payload = { nome: novaTurma.trim(), anoLetivo: anoLetivo.toString(), turno: turno.trim() };
 
     try {
       if (editId) {
@@ -174,8 +177,6 @@ export default function Turmas() {
   const turmasFiltradas = turmas.filter(t => {
     // Busca por nome
     const matchBusca = turmaFiltro === '' || t.nome.toLowerCase().includes(turmaFiltro.toLowerCase());
-    // Filtro ano letivo
-    const matchAno = anoLetivo === '' || t.anoLetivo === anoLetivo;
     // Filtro turno
     const matchTurno = turno === '' || t.turno === turno;
     // Filtro número de alunos
@@ -185,7 +186,7 @@ export default function Turmas() {
     else if (numAlunosFiltro === '20a30') matchNumAlunos = total >= 20 && total <= 30;
     else if (numAlunosFiltro === 'mais30') matchNumAlunos = total > 30;
 
-    return matchBusca && matchAno && matchTurno && matchNumAlunos;
+    return matchBusca && matchTurno && matchNumAlunos;
   });
 
   const inicio = (paginaAtual - 1) * itensPorPagina;
@@ -319,14 +320,7 @@ export default function Turmas() {
                   onChange={e => { setTurmaFiltro(e.target.value); setPaginaAtual(1); }}
                 />
               </div>
-              <div className="col-md-3">
-                <Form.Select value={anoLetivo} onChange={e => { setAnoLetivo(e.target.value); setPaginaAtual(1); }}>
-                  <option value="">Selecione o ano letivo</option>
-                  {[...new Set(turmas.map(t => t.anoLetivo))].sort().map(ano => (
-                    <option key={ano} value={ano}>{ano}</option>
-                  ))}
-                </Form.Select>
-              </div>
+              {/* Filtro de ano letivo removido pois agora é global pelo context */}
               <div className="col-md-3">
                 <Form.Select value={turno} onChange={e => { setTurno(e.target.value); setPaginaAtual(1); }}>
                   <option value="">Todos os turnos</option>
@@ -539,7 +533,7 @@ export default function Turmas() {
               </Form.Group>
               <Form.Group className="mb-3">
                 <Form.Label>Ano Letivo</Form.Label>
-                <Form.Control type="number" min="2020" max="2100" value={anoLetivo} onChange={e => setAnoLetivo(e.target.value)} />
+                <Form.Control type="number" value={anoLetivo} readOnly disabled />
               </Form.Group>
               <Form.Group className="mb-3">
                 <Form.Label>Turno</Form.Label>
