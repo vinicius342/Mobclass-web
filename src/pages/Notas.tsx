@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnoLetivo } from '../contexts/AnoLetivoContext';
 import Paginacao from '../components/Paginacao';
 import { Save, Check, Undo, BarChart, Award, Activity, TrendingDown, ArrowDownUp, BookOpen, Download } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -31,7 +32,7 @@ import * as XLSX from 'xlsx';
 
 interface Turma { id: string; nome: string; }
 interface Aluno { uid: string; nome: string; turmaId: string; }
-interface Materia { id: string; nome: string; turmaId: string; }
+interface Materia { id: string; nome: string; turmaId?: string; }
 interface Nota {
   id: string; turmaId: string; materiaId: string; bimestre: string;
   notaParcial: number; notaGlobal: number; notaParticipacao: number;
@@ -43,6 +44,7 @@ export default function Notas(): JSX.Element {
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
   const userId = userData?.uid;
+  const { anoLetivo } = useAnoLetivo();
 
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
@@ -75,26 +77,72 @@ export default function Notas(): JSX.Element {
 
       if (isAdmin) {
         const turmasSnap = await getDocs(collection(db, 'turmas'));
-        turmaDocs = turmasSnap.docs;
+        // Filtra turmas pelo ano letivo selecionado (convertendo para número)
+        turmaDocs = turmasSnap.docs.filter(doc => Number(doc.data()?.anoLetivo) === anoLetivo);
 
-        const snap = await getDocs(collection(db, 'materias'));
-        materiasList = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-        materiaIds = materiasList.map(m => m.id);
+        // Busca os vínculos de professores_materias para as turmas do ano letivo
+        const turmaIdsAnoLetivo = turmaDocs.map(d => d.id);
+        const vinculosSnap = await getDocs(collection(db, 'professores_materias'));
+        const vinculosFiltrados = vinculosSnap.docs
+          .map(d => ({ id: d.id, ...d.data() as any }))
+          .filter(v => turmaIdsAnoLetivo.includes(v.turmaId));
+
+        // Busca as matérias e adiciona o turmaId vindo do vínculo
+        const materiasSnap = await getDocs(collection(db, 'materias'));
+        const materiasMap = new Map(materiasSnap.docs.map(d => [d.id, { id: d.id, ...d.data() as any }]));
+        
+        // Cria lista de matérias com turmaId baseado nos vínculos
+        const materiasComTurma = new Map<string, Materia>();
+        vinculosFiltrados.forEach(vinculo => {
+          const materia = materiasMap.get(vinculo.materiaId);
+          if (materia) {
+            const key = `${materia.id}_${vinculo.turmaId}`;
+            materiasComTurma.set(key, {
+              id: materia.id,
+              nome: materia.nome,
+              turmaId: vinculo.turmaId
+            });
+          }
+        });
+
+        materiasList = Array.from(materiasComTurma.values());
+        materiaIds = Array.from(new Set(materiasList.map(m => m.id)));
       } else {
         const vincSnap = await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userId)));
-        const vincList = vincSnap.docs.map(d => d.data());
+        const vincList = vincSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
 
         const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-        turmaDocs = await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))));
+        // Busca as turmas e filtra pelo ano letivo (convertendo para número)
+        turmaDocs = (await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))))).filter(doc => doc.exists() && Number(doc.data()?.anoLetivo) === anoLetivo);
 
-        materiaIds = [...new Set(vincList.map(v => v.materiaId))];
+        // Filtra vínculos para apenas turmas do ano letivo selecionado
+        const turmaIdsAnoLetivo = turmaDocs.map(d => d.id);
+        const vinculosFiltrados = vincList.filter(v => turmaIdsAnoLetivo.includes(v.turmaId));
+
+        // Busca as matérias e adiciona o turmaId vindo do vínculo
+        materiaIds = [...new Set(vinculosFiltrados.map(v => v.materiaId))];
         const materiasSnap = await Promise.all(
           materiaIds.map(async id => {
             const m = await getDoc(doc(db, 'materias', id));
             return { id: m.id, ...(m.data() as any) };
           })
         );
-        materiasList = materiasSnap;
+
+        // Cria lista de matérias com turmaId baseado nos vínculos
+        const materiasComTurma = new Map<string, Materia>();
+        vinculosFiltrados.forEach(vinculo => {
+          const materia = materiasSnap.find(m => m.id === vinculo.materiaId);
+          if (materia) {
+            const key = `${materia.id}_${vinculo.turmaId}`;
+            materiasComTurma.set(key, {
+              id: materia.id,
+              nome: materia.nome,
+              turmaId: vinculo.turmaId
+            });
+          }
+        });
+
+        materiasList = Array.from(materiasComTurma.values());
       }
 
       const alunosSnap = await getDocs(collection(db, 'alunos'));
@@ -134,7 +182,14 @@ export default function Notas(): JSX.Element {
       setLoading(false);
     }
     fetchData();
-  }, [userData]);
+  }, [userData, anoLetivo]);
+
+  // Limpa os filtros quando o ano letivo muda
+  useEffect(() => {
+    setFiltroTurma('');
+    setFiltroMateria('');
+    setFiltroBimestre('');
+  }, [anoLetivo]);
 
   useEffect(() => {
     if (!filtroTurma || !filtroMateria || !filtroBimestre) {
@@ -320,13 +375,26 @@ export default function Notas(): JSX.Element {
                 <Col md={3}>
                   <Form.Select value={filtroTurma} onChange={e => setFiltroTurma(e.target.value)}>
                     <option value="">Selecione a Turma</option>
-                    {turmas.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+                    {turmas.map(t => (
+                      <option key={t.id} value={t.id}>{t.nome}</option>
+                    ))}
                   </Form.Select>
                 </Col>
                 <Col md={3}>
                   <Form.Select value={filtroMateria} onChange={e => setFiltroMateria(e.target.value)}>
                     <option value="">Selecione a Matéria</option>
-                    {materias.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                    {materias
+                      .filter(m => !filtroTurma || m.turmaId === filtroTurma)
+                      .reduce((unique, m) => {
+                        // Remove duplicatas: apenas uma matéria por ID
+                        if (!unique.find(item => item.id === m.id)) {
+                          unique.push(m);
+                        }
+                        return unique;
+                      }, [] as Materia[])
+                      .map(m => (
+                        <option key={m.id} value={m.id}>{m.nome}</option>
+                      ))}
                   </Form.Select>
                 </Col>
                 <Col md={3}>
