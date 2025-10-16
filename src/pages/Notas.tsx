@@ -31,7 +31,12 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 interface Turma { id: string; nome: string; }
-interface Aluno { uid: string; nome: string; turmaId: string; }
+interface Aluno { 
+  uid: string; 
+  nome: string; 
+  turmaId: string;
+  historicoTurmas?: { [anoLetivo: string]: string }; // Histórico de turmas por ano letivo
+}
 interface Materia { id: string; nome: string; turmaId?: string; }
 interface Nota {
   id: string; turmaId: string; materiaId: string; bimestre: string;
@@ -66,6 +71,19 @@ export default function Notas(): JSX.Element {
   const [showHistorico, setShowHistorico] = useState(false);
   const [historicoAluno, setHistoricoAluno] = useState<{ nome: string, notas: Nota[] } | null>(null);
   const [ordenacao, setOrdenacao] = useState<'nome' | 'parcial' | 'global' | 'participacao' | 'recuperacao' | 'media' | 'data'>('nome');
+
+  // Função auxiliar para obter a turma do aluno no ano letivo específico
+  const getTurmaAlunoNoAno = (aluno: Aluno, ano: number): string => {
+    const anoStr = ano.toString();
+    
+    // Verificar se existe histórico de turmas
+    if (aluno.historicoTurmas && aluno.historicoTurmas[anoStr]) {
+      return aluno.historicoTurmas[anoStr];
+    }
+    
+    // Fallback para turmaId atual (compatibilidade com dados antigos)
+    return aluno.turmaId;
+  };
 
   useEffect(() => {
     async function fetchData() {
@@ -197,7 +215,7 @@ export default function Notas(): JSX.Element {
       return;
     }
     const alunosFiltrados = alunos
-      .filter(a => a.turmaId === filtroTurma && (a as any).status !== 'Inativo') // Excluir usuários inativos
+      .filter(a => getTurmaAlunoNoAno(a, anoLetivo) === filtroTurma && (a as any).status !== 'Inativo') // Filtrar por histórico de turmas e excluir inativos
       .sort((a, b) => a.nome.localeCompare(b.nome));
     const newEdit: Record<string, any> = {};
     alunosFiltrados.forEach(a => {
