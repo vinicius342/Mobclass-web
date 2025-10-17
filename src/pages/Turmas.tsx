@@ -1482,24 +1482,39 @@ export default function Turmas() {
                       <Table hover className="mb-0">
                         <thead className="thead-sticky">
                           <tr style={{ textAlign: 'center' }}>
+                            <th className='text-muted' style={{ width: '80px' }}>Status</th>
                             <th className='text-muted'>Aluno</th>
                             <th className='text-muted'>Situação</th>
                             <th className='text-muted'>Ações</th>
                           </tr>
                         </thead>
                         <tbody className=''>
-                          {getAlunosFiltrados().length > 0 ? getAlunosFiltrados().map(aluno => (
-                            <tr key={aluno.id} className='align-middle linha-agenda' style={{ textAlign: 'center' }}>
-                              <td>
-                                <div className="d-flex align-items-center justify-content-center gap-2">
-                                  <strong>{aluno.nome}</strong>
-                                </div>
-                              </td>
-                              <td>
-                                {getStatusBadge(aluno.id)}
-                              </td>
-                              <td>
-                                <Dropdown align="end">
+                          {getAlunosFiltrados().length > 0 ? getAlunosFiltrados().map(aluno => {
+                            const foiRematriculado = aluno.turmaId !== turmaFiltroRematricula;
+                            
+                            return (
+                              <tr key={aluno.id} className='align-middle linha-agenda' style={{ textAlign: 'center' }}>
+                                <td>
+                                  {foiRematriculado ? (
+                                    <div className="d-flex align-items-center justify-content-center" title="Rematriculado">
+                                      <CheckCircle2 size={20} color="#22c55e" />
+                                    </div>
+                                  ) : (
+                                    <div className="d-flex align-items-center justify-content-center" title="Aguardando rematrícula">
+                                      <Clock size={20} color="#9ca3af" />
+                                    </div>
+                                  )}
+                                </td>
+                                <td>
+                                  <div className="d-flex align-items-center justify-content-center gap-2">
+                                    <strong>{aluno.nome}</strong>
+                                  </div>
+                                </td>
+                                <td>
+                                  {getStatusBadge(aluno.id)}
+                                </td>
+                                <td>
+                                  <Dropdown align="end">
                                   <Dropdown.Toggle
                                     variant="light"
                                     size="sm"
@@ -1529,9 +1544,10 @@ export default function Turmas() {
                                 </Dropdown>
                               </td>
                             </tr>
-                          )) : (
+                            );
+                          }) : (
                             <tr>
-                              <td colSpan={3} className="text-center py-4">
+                              <td colSpan={4} className="text-center py-4">
                                 <div className="agenda-empty-state">
                                   <div className="empty-icon">👥</div>
                                   <h5>Nenhum aluno encontrado</h5>
