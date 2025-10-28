@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import AppLayout from '../components/AppLayout';
 import {
-  Container, Table, Button, Modal, Form, Spinner, ToastContainer, Toast, Dropdown, Card, ButtonGroup
+  Container, Table, Button, Modal, Form, Spinner, ToastContainer, Toast, Dropdown, Card
 } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircleExclamation } from '@fortawesome/free-solid-svg-icons';
@@ -156,9 +156,9 @@ export default function Turmas() {
   useEffect(() => {
     const alunosFiltrados = getAlunosFiltrados();
     if (alunosFiltrados.length > 0) {
-      calcularStatusAlunosPaginaAtual(alunosFiltrados);
+      calcularStatusAlunosPaginaAtual(alunosFiltrados, anoLetivoRematricula);
     }
-  }, [alunos, turmaFiltroRematricula]);
+  }, [alunos, turmaFiltroRematricula, anoLetivoRematricula]);
 
   // Carregar ações finalizadas do Firebase
   useEffect(() => {
@@ -185,7 +185,6 @@ export default function Turmas() {
     try {
       const anoAtual = anoLetivo.toString();
       const anoAnterior = (anoLetivo - 1).toString();
-      const anoProximo = (anoLetivo + 1).toString();
 
       // Buscar turmas do ano atual
       let turmasAtuaisSnap;
@@ -223,21 +222,20 @@ export default function Turmas() {
         }
       }
 
-      // Buscar turmas do próximo ano para rematrícula
-      let turmasProximoAnoSnap;
+      // Buscar TODAS as turmas para popular o filtro de ano letivo na rematrícula
+      let todasTurmasSnap;
       if (userData && userData.tipo === 'administradores') {
-        turmasProximoAnoSnap = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoProximo)));
+        todasTurmasSnap = await getDocs(collection(db, 'turmas'));
       } else {
         const turmaIds = userData?.turmas || [];
         if (turmaIds.length > 0) {
           const turmaQuery = query(
             collection(db, 'turmas'),
-            where(documentId(), 'in', turmaIds),
-            where('anoLetivo', '==', anoProximo)
+            where(documentId(), 'in', turmaIds)
           );
-          turmasProximoAnoSnap = await getDocs(turmaQuery);
+          todasTurmasSnap = await getDocs(turmaQuery);
         } else {
-          turmasProximoAnoSnap = { docs: [] };
+          todasTurmasSnap = { docs: [] };
         }
       }
 
@@ -255,8 +253,8 @@ export default function Turmas() {
       // Processar turmas do ano anterior
       const turmasAnteriores = turmasAnoAnteriorSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
 
-      // Processar turmas do próximo ano
-      const turmasProximas = turmasProximoAnoSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      // Processar todas as turmas
+      const todasTurmas = todasTurmasSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Turma[];
 
       // Verificar quais turmas do ano anterior podem ser virtualizadas
       const turmasVirtualizadas: Turma[] = [];
@@ -277,10 +275,10 @@ export default function Turmas() {
         }
       }
 
-      // Combinar turmas atuais + virtualizadas + próximo ano
-      const todasTurmas = [...turmasAtuais, ...turmasVirtualizadas, ...turmasProximas].sort((a, b) => a.nome.localeCompare(b.nome));
+      // Combinar todas as turmas reais + virtualizadas
+      const turmasFinais = [...todasTurmas, ...turmasVirtualizadas].sort((a, b) => a.nome.localeCompare(b.nome));
 
-      setTurmas(todasTurmas);
+      setTurmas(turmasFinais);
       setAlunos(alunosSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
       setProfessores(professoresSnap.docs.map(d => ({ id: d.id, nome: d.data().nome })));
       setMaterias(materiasSnap.docs.map(d => ({ id: d.id, nome: d.data().nome })));
@@ -529,9 +527,9 @@ export default function Turmas() {
   // Função para filtrar alunos na tab de rematrícula
   const getAlunosFiltrados = () => {
     return alunos.filter(aluno => {
-      // Filtro por turma (usando histórico do ano letivo atual)
+      // Filtro por turma (usando histórico do ano letivo selecionado na rematrícula)
       const matchTurma = turmaFiltroRematricula === '' ||
-        getTurmaAlunoNoAno(aluno, anoLetivo) === turmaFiltroRematricula;
+        getTurmaAlunoNoAno(aluno, anoLetivoRematricula) === turmaFiltroRematricula;
       return matchTurma;
     });
   };
@@ -560,12 +558,12 @@ export default function Turmas() {
   };
 
   // Função para calcular status do aluno baseado nas notas finais
-  const calcularStatusAluno = async (aluno: Aluno): Promise<string> => {
+  const calcularStatusAluno = async (aluno: Aluno, anoParaCalculo: number = anoLetivo): Promise<string> => {
     try {
       const alunoUidParaBusca = aluno.uid || aluno.id;
 
-      // Obter a turma do aluno no ano letivo atual usando o histórico
-      const turmaIdNoAno = getTurmaAlunoNoAno(aluno, anoLetivo);
+      // Obter a turma do aluno no ano letivo usando o histórico
+      const turmaIdNoAno = getTurmaAlunoNoAno(aluno, anoParaCalculo);
 
       // Buscar todas as notas do aluno na turma do ano letivo atual
       const notasQuery = query(
@@ -656,12 +654,12 @@ export default function Turmas() {
   };
 
   // Função para calcular status de todos os alunos da página atual
-  const calcularStatusAlunosPaginaAtual = async (alunosVisiveis: Aluno[]) => {
+  const calcularStatusAlunosPaginaAtual = async (alunosVisiveis: Aluno[], anoParaCalculo: number = anoLetivo) => {
     const novosStatus = new Map<string, string>();
 
     // Calcular status em paralelo para melhor performance
     const promessas = alunosVisiveis.map(async (aluno) => {
-      const status = await calcularStatusAluno(aluno);
+      const status = await calcularStatusAluno(aluno, anoParaCalculo);
       return { alunoId: aluno.id, status };
     });
 
@@ -782,13 +780,13 @@ export default function Turmas() {
   };
 
   // Função para calcular média final do aluno (soma de todas as médias finais / total de matérias)
-  const calcularMediaFinalAluno = async (alunoId: string): Promise<number | null> => {
+  const calcularMediaFinalAluno = async (alunoId: string, anoParaCalculo: number = anoLetivo): Promise<number | null> => {
     try {
       const aluno = alunos.find(a => a.id === alunoId);
       if (!aluno) return null;
 
       const alunoUidParaBusca = aluno.uid || aluno.id;
-      const turmaIdNoAno = getTurmaAlunoNoAno(aluno, anoLetivo);
+      const turmaIdNoAno = getTurmaAlunoNoAno(aluno, anoParaCalculo);
 
       // Buscar todas as notas do aluno na turma do ano letivo atual
       const notasSnap = await getDocs(query(
@@ -848,7 +846,7 @@ export default function Turmas() {
       const novasMedias: Record<string, number | null> = {};
 
       for (const aluno of alunosFiltrados) {
-        novasMedias[aluno.id] = await calcularMediaFinalAluno(aluno.id);
+        novasMedias[aluno.id] = await calcularMediaFinalAluno(aluno.id, anoLetivoRematricula);
       }
 
       setMediasAlunos(novasMedias);
@@ -857,121 +855,7 @@ export default function Turmas() {
     if (turmaFiltroRematricula) {
       carregarMedias();
     }
-  }, [turmaFiltroRematricula, alunos]);
-
-  // Função para abrir modal de rematrícula - DESABILITADA TEMPORARIAMENTE
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleAbrirRematricula = async (aluno: Aluno) => {
-    try {
-      setAlunoRematricula(aluno);
-
-      // Buscar turma atual do aluno
-      const turmaAtual = turmas.find(t => t.id === aluno.turmaId);
-
-      if (!turmaAtual) {
-        alert('Turma atual do aluno não encontrada');
-        return;
-      }
-
-      // Extrair série da turma atual
-      const serieAtual = extrairSerieDaTurma(turmaAtual.nome);
-
-      const anoProximo = (parseInt(anoLetivo.toString()) + 1).toString();
-
-      // Buscar turmas do ano seguinte
-      // Tentar buscar com string e number para garantir
-      const turmasAnoSeguinteQuery1 = query(
-        collection(db, 'turmas'),
-        where('anoLetivo', '==', anoProximo)
-      );
-
-      const turmasAnoSeguinteQuery2 = query(
-        collection(db, 'turmas'),
-        where('anoLetivo', '==', parseInt(anoProximo))
-      );
-
-      const [turmasAnoSeguinteSnap1, turmasAnoSeguinteSnap2] = await Promise.all([
-        getDocs(turmasAnoSeguinteQuery1),
-        getDocs(turmasAnoSeguinteQuery2)
-      ]);
-
-      // Usar o resultado que trouxe mais turmas
-      const turmasAnoSeguinteSnap = turmasAnoSeguinteSnap1.docs.length > 0 ? turmasAnoSeguinteSnap1 : turmasAnoSeguinteSnap2;
-
-      let turmasAnoSeguinte = turmasAnoSeguinteSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Turma[];
-
-      // Buscar turmas do ano ATUAL que podem ser virtualizadas para o próximo ano
-      const turmasAnoAtualQuery1 = query(
-        collection(db, 'turmas'),
-        where('anoLetivo', '==', anoLetivo.toString())
-      );
-
-      const turmasAnoAtualQuery2 = query(
-        collection(db, 'turmas'),
-        where('anoLetivo', '==', anoLetivo)
-      );
-
-      const [turmasAnoAtualSnap1, turmasAnoAtualSnap2] = await Promise.all([
-        getDocs(turmasAnoAtualQuery1),
-        getDocs(turmasAnoAtualQuery2)
-      ]);
-
-      const turmasAnoAtualSnap = turmasAnoAtualSnap1.docs.length > 0 ? turmasAnoAtualSnap1 : turmasAnoAtualSnap2;
-
-      const turmasAnoAtual = turmasAnoAtualSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Turma[];
-
-      // Virtualizar turmas do ano atual que podem ser usadas no próximo ano
-      const turmasVirtualizadas: Turma[] = [];
-
-      turmasAnoAtual.forEach(turmaAtual => {
-        const podeVirtualizar = turmaAtual.isVirtual !== false;
-        const jaExisteNoProximo = turmasAnoSeguinte.some(t => t.nome === turmaAtual.nome);
-
-        if (podeVirtualizar && !jaExisteNoProximo) {
-          turmasVirtualizadas.push({
-            ...turmaAtual,
-            id: `virtual_${turmaAtual.id}`,
-            isVirtualizada: true,
-            turmaOriginalId: turmaAtual.id,
-            anoLetivo: anoProximo // Marca como do próximo ano
-          });
-        }
-      });
-
-      // Combinar turmas reais do próximo ano + turmas virtualizadas
-      turmasAnoSeguinte = [...turmasAnoSeguinte, ...turmasVirtualizadas];
-
-      // Lógica dinâmica: analizar turmas disponíveis e permitir progressão natural
-      const numeroSerieAtual = extrairNumeroSerie(turmaAtual.nome);
-
-      // Obter todos os números de séries disponíveis no próximo ano
-      const seriesDisponiveis = turmasAnoSeguinte.map(turma => extrairNumeroSerie(turma.nome)).filter(num => num > 0);
-      const seriesUnicas = [...new Set(seriesDisponiveis)].sort((a, b) => a - b);
-
-      const turmasDisp = turmasAnoSeguinte.filter(turma => {
-        const numeroSerieTurma = extrairNumeroSerie(turma.nome);
-        const serieTurma = extrairSerieDaTurma(turma.nome);
-
-        let podeMatricular = false;
-
-        return podeMatricular;
-      });
-
-      setTurmasDisponiveis(turmasDisp);
-      setTurmaSelecionada('');
-      setShowRematricula(true);
-
-    } catch (error) {
-      console.error('❌ Erro ao buscar turmas para rematrícula:', error);
-      alert('Erro ao carregar turmas disponíveis');
-    }
-  };
+  }, [turmaFiltroRematricula, alunos, anoLetivoRematricula]);
 
   // Função para executar a rematrícula
   const executarRematricula = async () => {
@@ -1623,11 +1507,8 @@ export default function Turmas() {
       // Usar o UID do aluno (campo uid) em vez do ID do documento
       const alunoUidParaBusca = aluno.uid || aluno.id;
 
-      // Obter a turma do aluno no ano letivo atual usando o histórico
-      const turmaIdNoAno = getTurmaAlunoNoAno(aluno, anoLetivo);
-
-      // Vamos também buscar TODAS as notas para ver os alunoUid disponíveis (debug)
-      const todasNotasSnap = await getDocs(collection(db, 'notas'));
+      // Obter a turma do aluno no ano letivo selecionado (rematrícula) usando o histórico
+      const turmaIdNoAno = getTurmaAlunoNoAno(aluno, anoLetivoRematricula);
 
       // Buscar as notas do aluno na turma do ano letivo atual
       const notasSnap = await getDocs(query(
@@ -1635,7 +1516,6 @@ export default function Turmas() {
         where('alunoUid', '==', alunoUidParaBusca),
         where('turmaId', '==', turmaIdNoAno)
       ));
-
 
       if (notasSnap.docs.length === 0) {
         // Vamos tentar procurar por uid ou nome
@@ -2002,11 +1882,11 @@ export default function Turmas() {
                                           </Dropdown.Item>
                                           {t.isVirtualizada ? (
                                             <>
-                                              <Dropdown.Item onClick={() => handleMaterializarTurma(t)} className="d-flex align-items-center gap-2 text-success">
+                                              {/* <Dropdown.Item onClick={() => handleMaterializarTurma(t)} className="d-flex align-items-center gap-2 text-success">
                                                 <CheckCircle2 size={16} className="text-success" /> Materializar
-                                              </Dropdown.Item>
+                                              </Dropdown.Item> */}
                                               <Dropdown.Item onClick={() => handleExcluirTurma(t.id)} className="d-flex align-items-center gap-2 text-danger">
-                                                <Trash2 size={16} /> Desativar Virtualização
+                                                <Trash2 size={16} /> Excluir
                                               </Dropdown.Item>
                                             </>
                                           ) : (
@@ -2183,10 +2063,12 @@ export default function Turmas() {
                           setProximaTurma('');
                         }}
                       >
-                        {/* Gerar opções de anos (ex: 2020 a 2030) */}
-                        {Array.from({ length: 11 }, (_, i) => new Date().getFullYear() - 5 + i).map(ano => (
-                          <option key={ano} value={ano}>{ano}</option>
-                        ))}
+                        {/* Mostrar apenas anos que têm turmas cadastradas */}
+                        {[...new Set(turmas.filter(t => !t.isVirtualizada).map(t => parseInt(t.anoLetivo)))]
+                          .sort((a, b) => a - b)
+                          .map(ano => (
+                            <option key={ano} value={ano}>{ano}</option>
+                          ))}
                       </Form.Select>
                     </div>
                     <div className="col-md-4">
@@ -2617,17 +2499,10 @@ export default function Turmas() {
                             <div className="mb-3">
                               <label className="form-label fw-semibold text-muted">Status</label>
                               <div>
-                                {turmaDetalhes.isVirtualizada ? (
-                                  <span className="badge bg-info px-2 py-1">
-                                    <Ghost size={12} className="me-1" />
-                                    Virtual (Ano {anoLetivo - 1})
-                                  </span>
-                                ) : (
-                                  <span className="badge bg-success px-2 py-1">
-                                    <CheckCircle2 size={12} className="me-1" />
-                                    Ativa
-                                  </span>
-                                )}
+                                <span className="badge bg-success px-2 py-1">
+                                  <CheckCircle2 size={12} className="me-1" />
+                                  Ativa
+                                </span>
                               </div>
                             </div>
                           </div>

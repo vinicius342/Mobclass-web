@@ -605,11 +605,6 @@ export default function Frequencia(): JSX.Element {
             <p className="mb-0" style={{ color: '#3b4861', marginLeft: 44, fontSize: 16 }}>
               Gerencie presenças, ausências e relatórios
             </p>
-            <div className="mt-2" style={{ marginLeft: 44 }}>
-              <small className="badge bg-secondary">
-                Ano Letivo: {anoLetivo}
-              </small>
-            </div>
           </div>
         </div>
 
