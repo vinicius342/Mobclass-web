@@ -19,6 +19,12 @@ dist-ssr
 .env.production.local
 .env.production
 
+# Firebase credentials e backups (NUNCA fazer commit!)
+scripts/credentials/
+scripts/backups/
+*-credentials.json
+*-adminsdk-*.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -29,4 +35,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
