@@ -2801,3 +2801,28 @@ button {
 }
 
 /* ========== FIM DOS ESTILOS PARA OCORRÊNCIAS - MOBILE ========== */
+
+  .btn-acao-aprovado:hover {
+    background: #22c55e !important;
+    color: #fff !important;
+  }
+
+  .btn-acao-reprovado:hover {
+    background: #dc3545 !important;
+    color: #fff !important;
+  }
+
+  .btn-aprovar-todos {
+    border: 1px solid #93c4a5 !important;
+    font-style: italic;
+  }
+
+  .btn-reprovar-todos {
+    border: 1px solid #f5a6a6 !important;
+    font-style: italic;
+  }
+
+  /* .filter-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+  } */

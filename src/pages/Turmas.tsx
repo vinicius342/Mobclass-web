@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import AppLayout from '../components/AppLayout';
 import {
-  Container, Table, Button, Modal, Form, Spinner, ToastContainer, Toast, Dropdown, Card
+  Container, Table, Button, Modal, Form, Spinner, ToastContainer, Toast, Dropdown, Card, ButtonGroup
 } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircleExclamation } from '@fortawesome/free-solid-svg-icons';
@@ -13,8 +13,8 @@ import {
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import Paginacao from '../components/Paginacao';
-import { Users, BookOpen, User, Eye, Clock, CheckCircle2, Ghost } from 'lucide-react';
-import { Edit, Trash2 } from 'lucide-react';
+import { Users, BookOpen, User, Eye, Clock, CheckCircle2, Ghost, ArrowRight, ArrowLeftRight, CheckSquare, XSquare, BookText } from 'lucide-react';
+import { Edit, Trash2, Check, X } from 'lucide-react';
 
 interface Turma {
   id: string;
@@ -32,6 +32,7 @@ interface Aluno {
   email?: string;
   uid?: string; // UID do Firebase Auth
   historicoTurmas?: { [anoLetivo: string]: string }; // Histórico de turmas por ano letivo
+  historicoStatus?: { [anoLetivo: string]: 'promovido' | 'reprovado' | 'transferido' }; // Status de cada ano
 }
 interface Professor {
   id: string;
@@ -96,7 +97,11 @@ export default function Turmas() {
 
   // Estados para rematrícula de alunos
   const [turmaFiltroRematricula, setTurmaFiltroRematricula] = useState('');
-  const [buscaRematricula, setBuscaRematricula] = useState('');
+  const [proximaTurma, setProximaTurma] = useState('');
+  const [anoLetivoRematricula, setAnoLetivoRematricula] = useState<number>(anoLetivo); // Filtro local que sobrepõe o contexto
+  const [statusPromocao, setStatusPromocao] = useState<Record<string, 'promovido' | 'reprovado' | null>>({});
+  const [alunosTransferencia, setAlunosTransferencia] = useState<Record<string, string>>({});
+  const [acaoFinalizada, setAcaoFinalizada] = useState<Record<string, 'promovido' | 'reprovado' | 'transferido'>>({});
 
   // Estado para modal de histórico de notas
   const [showHistorico, setShowHistorico] = useState(false);
@@ -116,10 +121,28 @@ export default function Turmas() {
   const [turmaSelecionada, setTurmaSelecionada] = useState<string>('');
   const [processandoRematricula, setProcessandoRematricula] = useState(false);
 
+  // Estado para modal de confirmação de ações
+  const [showModalConfirmacao, setShowModalConfirmacao] = useState(false);
+  const [resumoDestinos, setResumoDestinos] = useState<{
+    promovidos: { alunoNome: string; turmaDestino: string }[];
+    reprovados: { alunoNome: string; turmaDestino: string }[];
+    transferidos: { alunoNome: string; turmaDestino: string }[];
+  }>({ promovidos: [], reprovados: [], transferidos: [] });
+
+  // Estado para modal de transferência individual
+  const [showModalTransferencia, setShowModalTransferencia] = useState(false);
+  const [alunoTransferencia, setAlunoTransferencia] = useState<Aluno | null>(null);
+  const [turmaDestinoTransferencia, setTurmaDestinoTransferencia] = useState<string>('');
+
   useEffect(() => {
     if (!userData || carregandoAnos) return;
     fetchData();
   }, [userData, carregandoAnos, anoLetivo]);
+
+  // Sincronizar anoLetivoRematricula quando o contexto mudar
+  useEffect(() => {
+    setAnoLetivoRematricula(anoLetivo);
+  }, [anoLetivo]);
 
   useEffect(() => {
     if (showModal) {
@@ -135,13 +158,34 @@ export default function Turmas() {
     if (alunosFiltrados.length > 0) {
       calcularStatusAlunosPaginaAtual(alunosFiltrados);
     }
-  }, [alunos, buscaRematricula, turmaFiltroRematricula]);
+  }, [alunos, turmaFiltroRematricula]);
+
+  // Carregar ações finalizadas do Firebase
+  useEffect(() => {
+    const carregarAcoesFinalizadas = () => {
+      const anoAtualStr = anoLetivo.toString();
+      const novasAcoesFinalizadas: Record<string, 'promovido' | 'reprovado' | 'transferido'> = {};
+
+      alunos.forEach(aluno => {
+        if (aluno.historicoStatus && aluno.historicoStatus[anoAtualStr]) {
+          novasAcoesFinalizadas[aluno.id] = aluno.historicoStatus[anoAtualStr];
+        }
+      });
+
+      setAcaoFinalizada(novasAcoesFinalizadas);
+    };
+
+    if (alunos.length > 0) {
+      carregarAcoesFinalizadas();
+    }
+  }, [alunos, anoLetivo]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const anoAtual = anoLetivo.toString();
       const anoAnterior = (anoLetivo - 1).toString();
+      const anoProximo = (anoLetivo + 1).toString();
 
       // Buscar turmas do ano atual
       let turmasAtuaisSnap;
@@ -179,6 +223,24 @@ export default function Turmas() {
         }
       }
 
+      // Buscar turmas do próximo ano para rematrícula
+      let turmasProximoAnoSnap;
+      if (userData && userData.tipo === 'administradores') {
+        turmasProximoAnoSnap = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoProximo)));
+      } else {
+        const turmaIds = userData?.turmas || [];
+        if (turmaIds.length > 0) {
+          const turmaQuery = query(
+            collection(db, 'turmas'),
+            where(documentId(), 'in', turmaIds),
+            where('anoLetivo', '==', anoProximo)
+          );
+          turmasProximoAnoSnap = await getDocs(turmaQuery);
+        } else {
+          turmasProximoAnoSnap = { docs: [] };
+        }
+      }
+
       // Buscar dados adicionais
       const [alunosSnap, professoresSnap, materiasSnap, vinculosSnap] = await Promise.all([
         getDocs(collection(db, 'alunos')),
@@ -192,6 +254,9 @@ export default function Turmas() {
 
       // Processar turmas do ano anterior
       const turmasAnteriores = turmasAnoAnteriorSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+
+      // Processar turmas do próximo ano
+      const turmasProximas = turmasProximoAnoSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
 
       // Verificar quais turmas do ano anterior podem ser virtualizadas
       const turmasVirtualizadas: Turma[] = [];
@@ -212,8 +277,8 @@ export default function Turmas() {
         }
       }
 
-      // Combinar turmas atuais + virtualizadas
-      const todasTurmas = [...turmasAtuais, ...turmasVirtualizadas].sort((a, b) => a.nome.localeCompare(b.nome));
+      // Combinar turmas atuais + virtualizadas + próximo ano
+      const todasTurmas = [...turmasAtuais, ...turmasVirtualizadas, ...turmasProximas].sort((a, b) => a.nome.localeCompare(b.nome));
 
       setTurmas(todasTurmas);
       setAlunos(alunosSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
@@ -267,14 +332,35 @@ export default function Turmas() {
   };
 
   const handleExcluirTurma = async (id: string) => {
-    if (!window.confirm('Deseja realmente excluir esta turma?')) return;
-    try {
-      await deleteDoc(doc(db, 'turmas', id));
-      setToast({ show: true, message: 'Turma excluída.', variant: 'success' });
-      fetchData();
-    } catch (error) {
-      console.error(error);
-      setToast({ show: true, message: 'Erro ao excluir turma.', variant: 'danger' });
+    // Verificar se é uma turma virtualizada
+    const turma = turmas.find(t => t.id === id);
+
+    if (turma?.isVirtualizada && turma?.turmaOriginalId) {
+      // É uma turma virtual - desativar virtualização da turma original
+      if (!window.confirm('Deseja desativar a virtualização desta turma?')) return;
+
+      try {
+        await updateDoc(doc(db, 'turmas', turma.turmaOriginalId), {
+          isVirtual: false
+        });
+        setToast({ show: true, message: 'Virtualização desativada.', variant: 'success' });
+        fetchData();
+      } catch (error) {
+        console.error(error);
+        setToast({ show: true, message: 'Erro ao desativar virtualização.', variant: 'danger' });
+      }
+    } else {
+      // É uma turma real - excluir normalmente
+      if (!window.confirm('Deseja realmente excluir esta turma?')) return;
+
+      try {
+        await deleteDoc(doc(db, 'turmas', id));
+        setToast({ show: true, message: 'Turma excluída.', variant: 'success' });
+        fetchData();
+      } catch (error) {
+        console.error(error);
+        setToast({ show: true, message: 'Erro ao excluir turma.', variant: 'danger' });
+      }
     }
   };
 
@@ -295,6 +381,8 @@ export default function Turmas() {
 
   // Filtragem combinada
   const turmasFiltradas = turmas.filter(t => {
+    // Filtro ano letivo do contexto
+    const matchAno = t.anoLetivo === anoLetivo.toString();
     // Busca por nome
     const matchBusca = turmaFiltro === '' || t.nome.toLowerCase().includes(turmaFiltro.toLowerCase());
     // Filtro turno
@@ -306,7 +394,7 @@ export default function Turmas() {
     else if (numAlunosFiltro === '20a30') matchNumAlunos = total >= 20 && total <= 30;
     else if (numAlunosFiltro === 'mais30') matchNumAlunos = total > 30;
 
-    return matchBusca && matchTurno && matchNumAlunos;
+    return matchAno && matchBusca && matchTurno && matchNumAlunos;
   });
 
   const inicio = (paginaAtual - 1) * itensPorPagina;
@@ -441,13 +529,10 @@ export default function Turmas() {
   // Função para filtrar alunos na tab de rematrícula
   const getAlunosFiltrados = () => {
     return alunos.filter(aluno => {
-      // Filtro por busca (nome do aluno)
-      const matchBusca = buscaRematricula === '' ||
-        aluno.nome.toLowerCase().includes(buscaRematricula.toLowerCase());
       // Filtro por turma (usando histórico do ano letivo atual)
       const matchTurma = turmaFiltroRematricula === '' ||
         getTurmaAlunoNoAno(aluno, anoLetivo) === turmaFiltroRematricula;
-      return matchBusca && matchTurma;
+      return matchTurma;
     });
   };
 
@@ -610,24 +695,74 @@ export default function Turmas() {
 
   // Função para extrair número da série (sem sufixo)
   const extrairNumeroSerie = (nomeTurma: string): number => {
-    console.log('🔍 Extraindo número da série de:', nomeTurma);
-
     // Extrair apenas o número da série (1, 2, 3, 6, 7, 8, 9)
     const match = nomeTurma.match(/^(\d+)/);
     if (match) {
       const numero = parseInt(match[1]);
-      console.log('✅ Número da série extraído:', numero);
       return numero;
     }
 
-    console.log('❌ Nenhum número encontrado em:', nomeTurma);
     return 0;
+  };
+
+  // Função para obter turmas do próximo ano (reais + virtualizadas)
+  const getTurmasProximas = (): Turma[] => {
+    if (!turmaFiltroRematricula) return [];
+
+    const anoAtualNum = parseInt(anoLetivoRematricula.toString());
+    const anoProximoNum = anoAtualNum + 1;
+    const anoProximoStr = anoProximoNum.toString();
+    const anoAtualStr = anoLetivoRematricula.toString();
+
+    // Turmas reais do próximo ano (aquelas que têm anoLetivo do próximo ano e NÃO são virtualizadas localmente)
+    const turmasReaisProximoAno = turmas.filter(t =>
+      t.anoLetivo === anoProximoStr && t.isVirtualizada !== true
+    );
+
+    // Turmas do ano atual que podem ser virtualizadas para o próximo ano
+    const turmasAtuais = turmas.filter(t =>
+      t.anoLetivo === anoAtualStr && t.isVirtualizada !== true
+    );
+
+    const turmasVirtualizadasProximoAno: Turma[] = [];
+
+    for (const turmaAtual of turmasAtuais) {
+      // Pode virtualizar se isVirtual não for false E se não existe turma real com mesmo nome no próximo ano
+      const podeVirtualizar = turmaAtual.isVirtual !== false;
+      const jaExisteNoProximoAno = turmasReaisProximoAno.some(t => t.nome === turmaAtual.nome);
+
+      if (podeVirtualizar && !jaExisteNoProximoAno) {
+        turmasVirtualizadasProximoAno.push({
+          ...turmaAtual,
+          id: `virtual_proximo_${turmaAtual.id}`,
+          anoLetivo: anoProximoStr,
+          isVirtualizada: true,
+          turmaOriginalId: turmaAtual.id
+        });
+      }
+    }
+
+    // Combinar turmas reais + virtualizadas e ordenar
+    const resultado = [...turmasReaisProximoAno, ...turmasVirtualizadasProximoAno]
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
+
+    return resultado;
+  };
+
+  // Função para obter turmas do ano atual (para transferência)
+  const getTurmasAnoAtual = (): Turma[] => {
+    const anoAtualStr = anoLetivoRematricula.toString();
+
+    // Filtrar turmas do ano atual (reais, não virtualizadas)
+    const turmasAnoAtual = turmas.filter(t =>
+      t.anoLetivo === anoAtualStr && t.isVirtualizada !== true
+    );
+
+    return turmasAnoAtual.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
   };
 
   // Função para extrair série completa (com sufixo)
   const extrairSerieDaTurma = (nomeTurma: string): string => {
-    console.log('🔍 Extraindo série de:', nomeTurma);
-
     // Exemplos: "1º A", "2º B", "3º C", "6ª Ano B" -> extrai "1º", "2º", "3º", "6ª"
     const patterns = [
       /^(\d+º)/,     // 1º, 2º, 3º
@@ -639,26 +774,99 @@ export default function Turmas() {
       const match = nomeTurma.match(pattern);
       if (match) {
         const serie = match[1];
-        console.log('✅ Série extraída:', serie);
         return serie;
       }
     }
 
-    console.log('❌ Nenhuma série encontrada em:', nomeTurma);
     return '';
   };
 
-  // Função para abrir modal de rematrícula
+  // Função para calcular média final do aluno (soma de todas as médias finais / total de matérias)
+  const calcularMediaFinalAluno = async (alunoId: string): Promise<number | null> => {
+    try {
+      const aluno = alunos.find(a => a.id === alunoId);
+      if (!aluno) return null;
+
+      const alunoUidParaBusca = aluno.uid || aluno.id;
+      const turmaIdNoAno = getTurmaAlunoNoAno(aluno, anoLetivo);
+
+      // Buscar todas as notas do aluno na turma do ano letivo atual
+      const notasSnap = await getDocs(query(
+        collection(db, 'notas'),
+        where('alunoUid', '==', alunoUidParaBusca),
+        where('turmaId', '==', turmaIdNoAno)
+      ));
+
+      if (notasSnap.empty) return null;
+
+      // Organizar notas por matéria e bimestre
+      const notasPorMateria: Record<string, number[]> = {};
+      notasSnap.docs.forEach(docSnap => {
+        const data = docSnap.data() as Nota;
+        const materiaId = data.materiaId;
+
+        // Verificar se a nota tem dados válidos antes de calcular
+        const temTresNotas =
+          typeof data.notaParcial === 'number' &&
+          typeof data.notaGlobal === 'number' &&
+          typeof data.notaParticipacao === 'number';
+
+        const temRecuperacao = typeof data.notaRecuperacao === 'number';
+
+        // Só calcular média se tiver notas válidas
+        if (temTresNotas || temRecuperacao) {
+          const mediaFinal = calcularMediaFinal(data);
+          if (!notasPorMateria[materiaId]) notasPorMateria[materiaId] = [];
+          if (mediaFinal !== null && mediaFinal !== undefined && !isNaN(mediaFinal)) {
+            notasPorMateria[materiaId].push(mediaFinal);
+          }
+        }
+      });
+
+      // Calcular média final de cada matéria (média dos bimestres)
+      const mediasFinaisMaterias: number[] = Object.values(notasPorMateria)
+        .map(notas => notas.length > 0 ? notas.reduce((a, b) => a + b, 0) / notas.length : null)
+        .filter((v): v is number => v !== null && !isNaN(v));
+
+      if (mediasFinaisMaterias.length === 0) return null;
+
+      // Média final do aluno = média das médias finais das matérias
+      return parseFloat((mediasFinaisMaterias.reduce((a, b) => a + b, 0) / mediasFinaisMaterias.length).toFixed(1));
+    } catch (error) {
+      console.error('Erro ao calcular média final do aluno:', error);
+      return null;
+    }
+  };
+
+  // Estado para armazenar médias dos alunos
+  const [mediasAlunos, setMediasAlunos] = useState<Record<string, number | null>>({});
+
+  // Buscar médias dos alunos quando a lista muda
+  useEffect(() => {
+    const carregarMedias = async () => {
+      const alunosFiltrados = getAlunosFiltrados();
+      const novasMedias: Record<string, number | null> = {};
+
+      for (const aluno of alunosFiltrados) {
+        novasMedias[aluno.id] = await calcularMediaFinalAluno(aluno.id);
+      }
+
+      setMediasAlunos(novasMedias);
+    };
+
+    if (turmaFiltroRematricula) {
+      carregarMedias();
+    }
+  }, [turmaFiltroRematricula, alunos]);
+
+  // Função para abrir modal de rematrícula - DESABILITADA TEMPORARIAMENTE
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleAbrirRematricula = async (aluno: Aluno) => {
     try {
-      console.log('🎓 INICIANDO REMATRÍCULA');
-      console.log('👤 Aluno:', aluno);
-
       setAlunoRematricula(aluno);
 
       // Buscar turma atual do aluno
       const turmaAtual = turmas.find(t => t.id === aluno.turmaId);
-      console.log('🏫 Turma atual:', turmaAtual);
 
       if (!turmaAtual) {
         alert('Turma atual do aluno não encontrada');
@@ -667,16 +875,10 @@ export default function Turmas() {
 
       // Extrair série da turma atual
       const serieAtual = extrairSerieDaTurma(turmaAtual.nome);
-      console.log('📚 Série extraída:', serieAtual, 'de:', turmaAtual.nome);
 
       const anoProximo = (parseInt(anoLetivo.toString()) + 1).toString();
-      console.log('📅 Ano letivo atual:', anoLetivo);
-      console.log('📅 Ano próximo:', anoProximo);
 
       // Buscar turmas do ano seguinte
-      console.log('🔍 Buscando turmas do ano:', anoProximo);
-      console.log('🔍 Tipo do ano próximo:', typeof anoProximo, '| Valor:', anoProximo);
-
       // Tentar buscar com string e number para garantir
       const turmasAnoSeguinteQuery1 = query(
         collection(db, 'turmas'),
@@ -692,9 +894,6 @@ export default function Turmas() {
         getDocs(turmasAnoSeguinteQuery1),
         getDocs(turmasAnoSeguinteQuery2)
       ]);
-
-      console.log('📋 Resultados busca por string:', turmasAnoSeguinteSnap1.docs.length);
-      console.log('📋 Resultados busca por number:', turmasAnoSeguinteSnap2.docs.length);
 
       // Usar o resultado que trouxe mais turmas
       const turmasAnoSeguinteSnap = turmasAnoSeguinteSnap1.docs.length > 0 ? turmasAnoSeguinteSnap1 : turmasAnoSeguinteSnap2;
@@ -727,8 +926,6 @@ export default function Turmas() {
         ...doc.data()
       })) as Turma[];
 
-      console.log('🔄 Turmas do ano atual para virtualizar:', turmasAnoAtual.length);
-
       // Virtualizar turmas do ano atual que podem ser usadas no próximo ano
       const turmasVirtualizadas: Turma[] = [];
 
@@ -747,51 +944,24 @@ export default function Turmas() {
         }
       });
 
-      console.log('🔄 Turmas virtualizadas criadas:', turmasVirtualizadas.length);
-
       // Combinar turmas reais do próximo ano + turmas virtualizadas
       turmasAnoSeguinte = [...turmasAnoSeguinte, ...turmasVirtualizadas];
 
-      console.log('📋 Turmas encontradas para', anoProximo + ':', turmasAnoSeguinte);
-      console.log('📋 Quantidade de turmas (incluindo virtualizadas):', turmasAnoSeguinte.length);
-
       // Lógica dinâmica: analizar turmas disponíveis e permitir progressão natural
-      console.log('🔍 Analisando turmas disponíveis dinamicamente...');
-
       const numeroSerieAtual = extrairNumeroSerie(turmaAtual.nome);
-      console.log('📊 Número da série atual:', numeroSerieAtual);
 
       // Obter todos os números de séries disponíveis no próximo ano
       const seriesDisponiveis = turmasAnoSeguinte.map(turma => extrairNumeroSerie(turma.nome)).filter(num => num > 0);
       const seriesUnicas = [...new Set(seriesDisponiveis)].sort((a, b) => a - b);
-      console.log('� Séries disponíveis no próximo ano:', seriesUnicas);
 
       const turmasDisp = turmasAnoSeguinte.filter(turma => {
         const numeroSerieTurma = extrairNumeroSerie(turma.nome);
         const serieTurma = extrairSerieDaTurma(turma.nome);
 
-        console.log('📝 Verificando turma:', turma.nome, '| Série:', serieTurma, '| Número:', numeroSerieTurma);
-
         let podeMatricular = false;
-
-        // Lógica dinâmica:
-        // 1. Pode repetir a mesma série (mesmo número)
-        // 2. Pode avançar para a próxima série (número + 1) se existir
-        if (numeroSerieTurma === numeroSerieAtual) {
-          podeMatricular = true;
-          console.log('   ✅ PODE REPETIR (mesma série)');
-        } else if (numeroSerieTurma === numeroSerieAtual + 1) {
-          podeMatricular = true;
-          console.log('   ✅ PODE AVANÇAR (série seguinte)');
-        } else {
-          console.log('   ❌ NÃO PODE (série', numeroSerieTurma, '- atual:', numeroSerieAtual + ')');
-        }
 
         return podeMatricular;
       });
-
-      console.log('✅ Turmas disponíveis após filtro:', turmasDisp);
-      console.log('✅ Quantidade final:', turmasDisp.length);
 
       setTurmasDisponiveis(turmasDisp);
       setTurmaSelecionada('');
@@ -819,8 +989,6 @@ export default function Turmas() {
       const turmaVirtual = turmasDisponiveis.find(t => t.id === turmaSelecionada);
 
       if (turmaVirtual?.isVirtualizada && turmaVirtual.turmaOriginalId) {
-        console.log('🔄 Turma virtual detectada, materializando...');
-
         // Verificar se já existe uma turma real com o mesmo nome no ano atual
         const turmasReaisQuery = query(
           collection(db, 'turmas'),
@@ -832,7 +1000,6 @@ export default function Turmas() {
 
         if (turmasReaisSnap.empty) {
           // Materializar a turma virtual
-          console.log('📝 Criando turma real...');
 
           const novaTurmaData = {
             nome: turmaVirtual.nome,
@@ -843,19 +1010,13 @@ export default function Turmas() {
           const novaTurmaRef = await addDoc(collection(db, 'turmas'), novaTurmaData);
           turmaFinalId = novaTurmaRef.id;
 
-          console.log('✅ Turma real criada com ID:', turmaFinalId);
-
           // Copiar vínculos professor-matéria da turma original
-          console.log('🔗 Copiando vínculos da turma original:', turmaVirtual.turmaOriginalId);
-
           const vinculosOriginaisQuery = query(
             collection(db, 'professores_materias'),
             where('turmaId', '==', turmaVirtual.turmaOriginalId)
           );
 
           const vinculosOriginaisSnap = await getDocs(vinculosOriginaisQuery);
-
-          console.log('📋 Vínculos encontrados:', vinculosOriginaisSnap.docs.length);
 
           for (const vinculoDoc of vinculosOriginaisSnap.docs) {
             const vinculoData = vinculoDoc.data();
@@ -866,18 +1027,13 @@ export default function Turmas() {
             });
           }
 
-          console.log('✅ Vínculos copiados com sucesso');
-
           // Marcar turma original como não virtualizável
           await updateDoc(doc(db, 'turmas', turmaVirtual.turmaOriginalId), {
             isVirtual: false
           });
-
-          console.log('✅ Turma original marcada como não virtualizável');
         } else {
           // Turma real já existe, usar ela
           turmaFinalId = turmasReaisSnap.docs[0].id;
-          console.log('✅ Turma real já existe, usando ID:', turmaFinalId);
         }
       }
 
@@ -896,14 +1052,11 @@ export default function Turmas() {
       if (!historicoTurmas[anoLetivoAtualStr]) {
         // Se ainda não tem histórico do ano atual, salvar a turma atual
         historicoTurmas[anoLetivoAtualStr] = alunoData?.turmaId || alunoRematricula.turmaId;
-        console.log(`📚 Salvando turma atual no histórico de ${anoLetivoAtualStr}:`, historicoTurmas[anoLetivoAtualStr]);
       }
 
       // Adicionar a nova turma no histórico do ano letivo de destino
       const anoLetivoTurmaDestino = (turmaVirtual?.anoLetivo || (anoLetivo + 1)).toString();
       historicoTurmas[anoLetivoTurmaDestino] = turmaFinalId;
-
-      console.log('📚 Histórico de turmas completo:', historicoTurmas);
 
       // Atualizar documento do aluno
       await updateDoc(alunoRef, {
@@ -911,8 +1064,6 @@ export default function Turmas() {
         historicoTurmas: historicoTurmas, // Histórico completo por ano letivo
         ultimaAtualizacao: new Date()
       });
-
-      console.log('✅ Aluno rematriculado com histórico preservado');
 
       // Fechar modal e atualizar dados
       setShowRematricula(false);
@@ -940,30 +1091,543 @@ export default function Turmas() {
     setTurmasDisponiveis([]);
   };
 
+  // Função auxiliar para materializar turma virtual
+  const materializarTurmaVirtual = async (turmaIdOuObjeto: string | Turma): Promise<string> => {
+    // Aceitar tanto ID quanto objeto turma
+    const turmaVirtual = typeof turmaIdOuObjeto === 'string'
+      ? turmas.find(t => t.id === turmaIdOuObjeto)
+      : turmaIdOuObjeto;
+
+    const turmaId = typeof turmaIdOuObjeto === 'string' ? turmaIdOuObjeto : turmaIdOuObjeto.id;
+
+    console.log(`🔄 Verificando se turma ${turmaId} precisa ser materializada...`);
+
+    if (!turmaVirtual) {
+      console.log(`❌ Turma ${turmaId} não encontrada`);
+      return turmaId;
+    }
+
+    // Se não é virtual, retornar o próprio ID
+    if (!turmaVirtual.isVirtualizada || !turmaVirtual.turmaOriginalId) {
+      console.log(`ℹ️ Turma ${turmaVirtual.nome} não é virtual - usando diretamente`);
+      return turmaId;
+    }
+
+    console.log(`🔄 Turma ${turmaVirtual.nome} é VIRTUAL - materializando...`);
+
+    // Verificar se já existe uma turma real com o mesmo nome no ano atual
+    const turmasReaisQuery = query(
+      collection(db, 'turmas'),
+      where('nome', '==', turmaVirtual.nome),
+      where('anoLetivo', '==', turmaVirtual.anoLetivo)
+    );
+
+    const turmasReaisSnap = await getDocs(turmasReaisQuery);
+
+    if (turmasReaisSnap.empty) {
+      // Materializar a turma virtual
+      console.log(`📝 Criando turma real: ${turmaVirtual.nome}`);
+
+      const novaTurmaData = {
+        nome: turmaVirtual.nome,
+        anoLetivo: turmaVirtual.anoLetivo,
+        turno: turmaVirtual.turno
+      };
+
+      const novaTurmaRef = await addDoc(collection(db, 'turmas'), novaTurmaData);
+      const turmaRealId = novaTurmaRef.id;
+
+      console.log(`✅ Turma real criada com ID: ${turmaRealId}`);
+
+      // Copiar vínculos professor-matéria da turma original
+      console.log(`🔗 Copiando vínculos da turma original: ${turmaVirtual.turmaOriginalId}`);
+
+      const vinculosOriginaisQuery = query(
+        collection(db, 'professores_materias'),
+        where('turmaId', '==', turmaVirtual.turmaOriginalId)
+      );
+
+      const vinculosOriginaisSnap = await getDocs(vinculosOriginaisQuery);
+      console.log(`📋 Vínculos encontrados: ${vinculosOriginaisSnap.docs.length}`);
+
+      for (const vinculoDoc of vinculosOriginaisSnap.docs) {
+        const vinculoData = vinculoDoc.data();
+        await addDoc(collection(db, 'professores_materias'), {
+          professorId: vinculoData.professorId,
+          materiaId: vinculoData.materiaId,
+          turmaId: turmaRealId
+        });
+      }
+
+      console.log(`✅ Vínculos copiados com sucesso`);
+
+      // Marcar turma original como não virtualizável
+      await updateDoc(doc(db, 'turmas', turmaVirtual.turmaOriginalId), {
+        isVirtual: false
+      });
+
+      console.log(`✅ Turma original marcada como não virtualizável`);
+
+      return turmaRealId;
+    } else {
+      // Turma real já existe, usar ela
+      const turmaRealId = turmasReaisSnap.docs[0].id;
+      console.log(`✅ Turma real já existe com ID: ${turmaRealId}`);
+      return turmaRealId;
+    }
+  };
+
+  // Função para abrir modal de confirmação
+  const handleAbrirModalConfirmacao = () => {
+    console.log('🔘 BOTÃO CONFIRMAR AÇÕES CLICADO');
+
+    const alunosComAcao = Object.keys(statusPromocao).filter(
+      alunoId => statusPromocao[alunoId] !== null || alunosTransferencia[alunoId]
+    );
+
+    console.log('📋 Verificando ações selecionadas...');
+    console.log('   statusPromocao:', statusPromocao);
+    console.log('   alunosTransferencia:', alunosTransferencia);
+    console.log('   alunosComAcao:', alunosComAcao);
+    console.log('   proximaTurma:', proximaTurma);
+
+    if (alunosComAcao.length === 0) {
+      console.log('⚠️ Nenhuma ação selecionada - mostrando toast');
+      setToast({ show: true, message: 'Nenhuma ação selecionada', variant: 'danger' });
+      return;
+    }
+
+    // Verificar se próxima turma está selecionada (exceto para reprovados)
+    const temPromovido = alunosComAcao.some(id => statusPromocao[id] === 'promovido');
+    const temTransferido = Object.keys(alunosTransferencia).length > 0;
+
+    console.log('🔍 Validações:');
+    console.log('   temPromovido:', temPromovido);
+    console.log('   temTransferido:', temTransferido);
+
+    if ((temPromovido || temTransferido) && !proximaTurma) {
+      console.log('⚠️ Próxima turma não selecionada - mostrando toast');
+      setToast({ show: true, message: 'Selecione a próxima turma antes de confirmar', variant: 'danger' });
+      return;
+    }
+
+    // NOVA VALIDAÇÃO: Se tem promovido, validar que próxima turma é maior que a atual
+    if (temPromovido && proximaTurma && turmaFiltroRematricula) {
+      const turmaAtual = turmas.find(t => t.id === turmaFiltroRematricula);
+
+      // Buscar turma próxima (pode ser real ou virtual gerada dinamicamente)
+      let turmaProxima = turmas.find(t => t.id === proximaTurma);
+
+      // Se não encontrou, pode ser uma turma virtual - buscar nas turmas geradas
+      if (!turmaProxima) {
+        const turmasProximas = getTurmasProximas();
+        turmaProxima = turmasProximas.find(t => t.id === proximaTurma);
+      }
+
+      console.log('🔍 Validando série da próxima turma:');
+      console.log('   turmaAtual:', turmaAtual?.nome, '- Ano:', turmaAtual?.anoLetivo);
+      console.log('   turmaProxima:', turmaProxima?.nome, '- Ano:', turmaProxima?.anoLetivo, '- Virtual:', turmaProxima?.isVirtualizada);
+
+      if (turmaAtual && turmaProxima) {
+        const serieAtual = extrairNumeroSerie(turmaAtual.nome);
+        const serieProxima = extrairNumeroSerie(turmaProxima.nome);
+
+        console.log('   serieAtual:', serieAtual);
+        console.log('   serieProxima:', serieProxima);
+
+        // VALIDAÇÃO: Para promover, a série da próxima turma DEVE ser maior
+        if (serieProxima <= serieAtual) {
+          console.log('⚠️ Bloqueando: série próxima não é superior à atual');
+          setToast({
+            show: true,
+            message: 'Para promover alunos, a próxima turma deve ser de uma série superior à atual',
+            variant: 'danger'
+          });
+          return;
+        }
+
+        console.log('✅ Validação de série passou - série próxima é superior');
+      }
+    }
+
+    // Calcular resumo de destinos
+    const promovidos: { alunoNome: string; turmaDestino: string }[] = [];
+    const reprovados: { alunoNome: string; turmaDestino: string }[] = [];
+    const transferidos: { alunoNome: string; turmaDestino: string }[] = [];
+
+    const anoProximoStr = (anoLetivoRematricula + 1).toString();
+    const anoAtualStr = anoLetivoRematricula.toString();
+
+    alunosComAcao.forEach(alunoId => {
+      const aluno = alunos.find(a => a.id === alunoId);
+      if (!aluno) return;
+
+      // Promovidos
+      if (statusPromocao[alunoId] === 'promovido' && proximaTurma) {
+        const turmaDestino = turmas.find(t => t.id === proximaTurma);
+        promovidos.push({
+          alunoNome: aluno.nome,
+          turmaDestino: turmaDestino?.nome || 'Desconhecida'
+        });
+      }
+
+      // Reprovados
+      if (statusPromocao[alunoId] === 'reprovado') {
+        const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(aluno, anoLetivo));
+        const nomeAtualAluno = turmaAtualAluno?.nome || '';
+
+        // Gerar turmas virtualizadas (mesmo código da confirmação)
+        const turmasReaisProximoAno = turmas.filter(t => t.anoLetivo === anoProximoStr && t.isVirtualizada !== true);
+        const turmasAtuais = turmas.filter(t => t.anoLetivo === anoAtualStr && t.isVirtualizada !== true);
+
+        const turmasVirtualizadasProximoAno: Turma[] = [];
+        for (const turmaAtual of turmasAtuais) {
+          const podeVirtualizar = turmaAtual.isVirtual !== false;
+          const jaExisteNoProximoAno = turmasReaisProximoAno.some(t => t.nome === turmaAtual.nome);
+
+          if (podeVirtualizar && !jaExisteNoProximoAno) {
+            turmasVirtualizadasProximoAno.push({
+              ...turmaAtual,
+              id: `virtual_proximo_${turmaAtual.id}`,
+              anoLetivo: anoProximoStr,
+              isVirtualizada: true,
+              turmaOriginalId: turmaAtual.id
+            });
+          }
+        }
+
+        const todasTurmasProximoAno = [...turmasReaisProximoAno, ...turmasVirtualizadasProximoAno];
+        const serieAtual = extrairNumeroSerie(turmaAtualAluno?.nome || '');
+        const turmasMesmaSerie = todasTurmasProximoAno.filter(t => extrairNumeroSerie(t.nome) === serieAtual);
+        const turmaDestino = turmasMesmaSerie.find(t => t.nome === nomeAtualAluno) || turmasMesmaSerie[0];
+
+        reprovados.push({
+          alunoNome: aluno.nome,
+          turmaDestino: turmaDestino?.nome || 'Desconhecida'
+        });
+      }
+
+      // Transferidos
+      if (alunosTransferencia[alunoId]) {
+        const turmaDestino = turmas.find(t => t.id === alunosTransferencia[alunoId]);
+        transferidos.push({
+          alunoNome: aluno.nome,
+          turmaDestino: turmaDestino?.nome || 'Desconhecida'
+        });
+      }
+    });
+
+    setResumoDestinos({ promovidos, reprovados, transferidos });
+
+    console.log('✅ Todas validações passaram - abrindo modal de confirmação');
+    setShowModalConfirmacao(true);
+  };  // Função para confirmar ações de promoção, reprovação e transferência
+  const handleConfirmarAcoes = async () => {
+    try {
+      console.log('🚀 INICIANDO handleConfirmarAcoes');
+      setShowModalConfirmacao(false);
+
+      const alunosComAcao = Object.keys(statusPromocao).filter(
+        alunoId => statusPromocao[alunoId] !== null || alunosTransferencia[alunoId]
+      );
+
+      console.log('📋 Alunos com ação:', alunosComAcao);
+      console.log('📊 statusPromocao:', statusPromocao);
+      console.log('🔄 alunosTransferencia:', alunosTransferencia);
+      console.log('🎯 proximaTurma:', proximaTurma);
+
+      if (alunosComAcao.length === 0) {
+        console.log('⚠️ Nenhum aluno com ação definida');
+        return;
+      }
+
+      const anoAtualStr = anoLetivo.toString();
+      const anoProximoStr = (anoLetivo + 1).toString();
+      console.log(`📅 Ano atual: ${anoAtualStr}, Ano próximo: ${anoProximoStr}`);
+
+      // Processar cada aluno
+      for (const alunoId of alunosComAcao) {
+        console.log(`\n🔍 ====== PROCESSANDO ALUNO ${alunoId} ======`);
+
+        const aluno = alunos.find(a => a.id === alunoId);
+        if (!aluno) {
+          console.log(`❌ Aluno ${alunoId} não encontrado na lista`);
+          continue;
+        }
+
+        console.log(`👤 Aluno encontrado: ${aluno.nome}`);
+
+        const alunoRef = doc(db, 'alunos', alunoId);
+        const alunoDoc = await getDoc(alunoRef);
+
+        if (!alunoDoc.exists()) {
+          console.log(`❌ Documento do aluno ${alunoId} não existe no Firestore`);
+          continue;
+        }
+
+        console.log(`✅ Documento do aluno existe no Firestore`);
+
+        const alunoData = alunoDoc.data();
+        console.log(`📄 Dados atuais do aluno:`, alunoData);
+
+        const historicoTurmas = alunoData?.historicoTurmas || {};
+        const historicoStatus = alunoData?.historicoStatus || {};
+
+        console.log(`📚 Histórico de turmas atual:`, historicoTurmas);
+        console.log(`📊 Histórico de status atual:`, historicoStatus);
+
+
+        // Se for transferência
+        if (alunosTransferencia[alunoId]) {
+          console.log(`🔄 TRANSFERÊNCIA detectada para aluno ${alunoId}`);
+          const turmaDestinoIdOriginal = alunosTransferencia[alunoId];
+          console.log(`🎯 Turma destino ID (original): ${turmaDestinoIdOriginal}`);
+
+          // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO
+          const turmaDestinoId = await materializarTurmaVirtual(turmaDestinoIdOriginal);
+          console.log(`🎯 Turma destino ID (após materialização): ${turmaDestinoId}`);
+
+          const turmaDestino = turmas.find(t => t.id === turmaDestinoIdOriginal);
+
+          if (turmaDestino) {
+            console.log(`✅ Turma destino encontrada: ${turmaDestino.nome}`);
+            console.log(`   isVirtualizada: ${turmaDestino.isVirtualizada}`);
+
+            const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(aluno, anoLetivo));
+            const serieAtual = extrairNumeroSerie(turmaAtualAluno?.nome || '');
+            const serieDestino = extrairNumeroSerie(turmaDestino.nome);
+
+            console.log(`📊 Série atual: ${serieAtual}, Série destino: ${serieDestino}`);
+
+            // Verificar se é série superior (não permitido para transferência)
+            if (serieDestino > serieAtual + 1) {
+              console.log(`❌ Transferência bloqueada: série destino muito superior`);
+              setToast({ show: true, message: `Aluno ${aluno.nome} não pode ser transferido para série superior`, variant: 'danger' });
+              continue;
+            }
+
+            // IMPORTANTE: Preservar a turma atual no histórico do ano atual
+            const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivo);
+            console.log(`📚 Turma atual do aluno: ${turmaAtualId}`);
+
+            if (!historicoTurmas[anoAtualStr]) {
+              historicoTurmas[anoAtualStr] = turmaAtualId;
+              console.log(`✅ Salvando turma atual no histórico de ${anoAtualStr}`);
+            } else {
+              console.log(`ℹ️ Histórico de ${anoAtualStr} já existe`);
+            }
+
+            // Adicionar a turma de destino no histórico do ano da turma de destino (USAR TURMA MATERIALIZADA)
+            historicoTurmas[turmaDestino.anoLetivo] = turmaDestinoId;
+            historicoStatus[anoAtualStr] = 'transferido';
+
+            console.log(`📚 Histórico de turmas atualizado:`, historicoTurmas);
+            console.log(`📊 Histórico de status atualizado:`, historicoStatus);
+
+            const updateData = {
+              turmaId: turmaDestinoId, // USAR TURMA MATERIALIZADA
+              historicoTurmas: historicoTurmas,
+              historicoStatus: historicoStatus,
+              ultimaAtualizacao: new Date()
+            };
+
+            console.log(`💾 Dados que serão salvos no Firestore:`, updateData);
+
+            await updateDoc(alunoRef, updateData);
+
+            console.log(`✅ Documento atualizado no Firestore com sucesso!`);
+
+            setAcaoFinalizada(prev => ({ ...prev, [alunoId]: 'transferido' }));
+          } else {
+            console.log(`❌ Turma destino não encontrada`);
+          }
+        }
+        // Se for promoção
+        else if (statusPromocao[alunoId] === 'promovido') {
+          console.log(`✅ PROMOÇÃO detectada para aluno ${alunoId}`);
+          console.log(`🎯 Próxima turma ID (original): ${proximaTurma}`);
+
+          if (!proximaTurma) {
+            console.log(`❌ Próxima turma não selecionada - abortando promoção`);
+            continue;
+          }
+
+          // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO
+          const turmaDestinoId = await materializarTurmaVirtual(proximaTurma);
+          console.log(`🎯 Turma destino ID (após materialização): ${turmaDestinoId}`);
+
+          const turmaDestino = turmas.find(t => t.id === proximaTurma);
+          if (turmaDestino) {
+            console.log(`✅ Turma destino encontrada: ${turmaDestino.nome}`);
+            console.log(`   isVirtualizada: ${turmaDestino.isVirtualizada}`);
+
+            // IMPORTANTE: Preservar a turma atual no histórico do ano atual
+            const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivo);
+            console.log(`📚 Turma atual do aluno: ${turmaAtualId}`);
+
+            if (!historicoTurmas[anoAtualStr]) {
+              historicoTurmas[anoAtualStr] = turmaAtualId;
+              console.log(`✅ Salvando turma atual no histórico de ${anoAtualStr}`);
+            } else {
+              console.log(`ℹ️ Histórico de ${anoAtualStr} já existe:`, historicoTurmas[anoAtualStr]);
+            }
+
+            // Adicionar a nova turma no histórico do ano seguinte (USAR TURMA MATERIALIZADA)
+            historicoTurmas[anoProximoStr] = turmaDestinoId;
+            historicoStatus[anoAtualStr] = 'promovido';
+
+            console.log(`📚 Histórico de turmas atualizado:`, historicoTurmas);
+            console.log(`📊 Histórico de status atualizado:`, historicoStatus);
+
+            const updateData = {
+              turmaId: turmaDestinoId, // USAR TURMA MATERIALIZADA
+              historicoTurmas: historicoTurmas,
+              historicoStatus: historicoStatus,
+              ultimaAtualizacao: new Date()
+            };
+
+            console.log(`💾 Dados que serão salvos no Firestore:`, updateData);
+
+            await updateDoc(alunoRef, updateData);
+
+            console.log(`✅ Documento atualizado no Firestore com sucesso!`);
+
+            setAcaoFinalizada(prev => ({ ...prev, [alunoId]: 'promovido' }));
+          } else {
+            console.log(`❌ Turma destino não encontrada para ID ${proximaTurma}`);
+          }
+        }
+        // Se for reprovação
+        else if (statusPromocao[alunoId] === 'reprovado') {
+          console.log(`❌ REPROVAÇÃO detectada para aluno ${alunoId}`);
+
+          // Para reprovados: sempre buscar turma da mesma série no ano seguinte
+          const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(aluno, anoLetivo));
+          const serieAtual = extrairNumeroSerie(turmaAtualAluno?.nome || '');
+          console.log(`📊 Turma atual: ${turmaAtualAluno?.nome}, Série: ${serieAtual}`);
+
+          // GERAR TURMAS VIRTUALIZADAS PARA O ANO SEGUINTE
+          const turmasReaisProximoAno = turmas.filter(t =>
+            t.anoLetivo === anoProximoStr && t.isVirtualizada !== true
+          );
+
+          const turmasAtuais = turmas.filter(t =>
+            t.anoLetivo === anoAtualStr && t.isVirtualizada !== true
+          );
+
+          const turmasVirtualizadasProximoAno: Turma[] = [];
+
+          for (const turmaAtual of turmasAtuais) {
+            const podeVirtualizar = turmaAtual.isVirtual !== false;
+            const jaExisteNoProximoAno = turmasReaisProximoAno.some(t => t.nome === turmaAtual.nome);
+
+            if (podeVirtualizar && !jaExisteNoProximoAno) {
+              turmasVirtualizadasProximoAno.push({
+                ...turmaAtual,
+                id: `virtual_proximo_${turmaAtual.id}`,
+                anoLetivo: anoProximoStr,
+                isVirtualizada: true,
+                turmaOriginalId: turmaAtual.id
+              });
+            }
+          }
+
+          // Combinar turmas reais + virtualizadas do próximo ano
+          const todasTurmasProximoAno = [...turmasReaisProximoAno, ...turmasVirtualizadasProximoAno];
+
+          // Buscar turma da mesma série no ano seguinte (incluindo virtuais)
+          const turmasMesmaSerie = todasTurmasProximoAno.filter(t =>
+            extrairNumeroSerie(t.nome) === serieAtual
+          );
+          console.log(`🔍 Turmas da mesma série encontradas:`, turmasMesmaSerie.map(t => `${t.nome} (${t.isVirtualizada ? 'Virtual' : 'Real'})`));
+
+          if (turmasMesmaSerie.length === 0) {
+            console.log(`❌ Nenhuma turma destino encontrada para reprovado`);
+            setToast({ show: true, message: `Nenhuma turma da mesma série encontrada para ${aluno.nome}`, variant: 'danger' });
+            continue;
+          }
+
+          // Buscar turma com MESMO NOME exato, senão qualquer uma da mesma série
+          const nomeAtualAluno = turmaAtualAluno?.nome || '';
+          const turmaDestino = turmasMesmaSerie.find(t => t.nome === nomeAtualAluno) || turmasMesmaSerie[0];
+
+          console.log(`✅ Usando turma: ${turmaDestino.nome} (${turmaDestino.isVirtualizada ? 'Virtual - será materializada' : 'Real'})`);
+
+          // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO (passar objeto completo)
+          console.log(`🎯 Turma destino ID (antes de materializar): ${turmaDestino.id}`);
+          const turmaDestinoIdFinal = await materializarTurmaVirtual(turmaDestino);
+          console.log(`🎯 Turma destino ID (após materialização): ${turmaDestinoIdFinal}`);
+
+          // IMPORTANTE: Preservar a turma atual no histórico do ano atual
+          const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivo);
+          console.log(`📚 Turma atual do aluno: ${turmaAtualId}`);
+
+          if (!historicoTurmas[anoAtualStr]) {
+            historicoTurmas[anoAtualStr] = turmaAtualId;
+            console.log(`✅ Salvando turma atual no histórico de ${anoAtualStr}`);
+          } else {
+            console.log(`ℹ️ Histórico de ${anoAtualStr} já existe`);
+          }
+
+          // Adicionar a turma de destino no histórico do ano seguinte (USAR TURMA MATERIALIZADA)
+          historicoTurmas[anoProximoStr] = turmaDestinoIdFinal;
+          historicoStatus[anoAtualStr] = 'reprovado';
+
+          console.log(`📚 Histórico de turmas atualizado:`, historicoTurmas);
+          console.log(`📊 Histórico de status atualizado:`, historicoStatus);
+
+          const updateData = {
+            turmaId: turmaDestinoIdFinal, // USAR TURMA MATERIALIZADA
+            historicoTurmas: historicoTurmas,
+            historicoStatus: historicoStatus,
+            ultimaAtualizacao: new Date()
+          };
+
+          console.log(`💾 Dados que serão salvos no Firestore:`, updateData);
+
+          await updateDoc(alunoRef, updateData);
+
+          console.log(`✅ Documento atualizado no Firestore com sucesso!`);
+
+          setAcaoFinalizada(prev => ({ ...prev, [alunoId]: 'reprovado' }));
+        }
+      }
+
+      console.log(`\n🎉 ====== PROCESSAMENTO CONCLUÍDO ======`);
+      console.log(`✅ Total de alunos processados: ${alunosComAcao.length}`);
+
+      setToast({
+        show: true,
+        message: `${alunosComAcao.length} aluno(s) processado(s) com sucesso!`,
+        variant: 'success'
+      });
+
+      // Limpar seleções
+      setStatusPromocao({});
+      setAlunosTransferencia({});
+      setProximaTurma('');
+
+      // Recarregar dados
+      await fetchData();
+
+    } catch (error) {
+      console.error('❌ ERRO ao confirmar ações:', error);
+      console.error('Detalhes do erro:', error);
+      setToast({ show: true, message: 'Erro ao processar ações', variant: 'danger' });
+    }
+  };
+
   // Função para abrir modal de histórico de notas
   const handleAbrirBoletim = async (aluno: Aluno) => {
     try {
-      console.log('🔍 Buscando notas para aluno:', aluno);
-      console.log('🔍 ID do aluno:', aluno.id);
-      console.log('🔍 UID do aluno:', aluno.uid);
-      console.log('🔍 Ano letivo atual:', anoLetivo);
-
       // Usar o UID do aluno (campo uid) em vez do ID do documento
       const alunoUidParaBusca = aluno.uid || aluno.id;
-      console.log('🔍 Usando para busca:', alunoUidParaBusca);
 
       // Obter a turma do aluno no ano letivo atual usando o histórico
       const turmaIdNoAno = getTurmaAlunoNoAno(aluno, anoLetivo);
-      console.log('🔍 Turma do aluno no ano', anoLetivo, ':', turmaIdNoAno);
 
       // Vamos também buscar TODAS as notas para ver os alunoUid disponíveis (debug)
       const todasNotasSnap = await getDocs(collection(db, 'notas'));
-      console.log('🔍 TODAS as notas no banco:', todasNotasSnap.docs.map(doc => ({
-        id: doc.id,
-        alunoUid: doc.data().alunoUid,
-        turmaId: doc.data().turmaId,
-        nomeAluno: doc.data().nomeAluno || 'Sem nome'
-      })));
 
       // Buscar as notas do aluno na turma do ano letivo atual
       const notasSnap = await getDocs(query(
@@ -972,12 +1636,9 @@ export default function Turmas() {
         where('turmaId', '==', turmaIdNoAno)
       ));
 
-      console.log('📊 Documentos encontrados para alunoUid =', alunoUidParaBusca, 'e turmaId =', turmaIdNoAno, ':', notasSnap.docs.length);
 
       if (notasSnap.docs.length === 0) {
-        console.log('❌ Nenhuma nota encontrada');
         // Vamos tentar procurar por uid ou nome
-        console.log('🔍 Tentando buscar por outros campos...');
 
         setHistoricoAluno({ nome: aluno.nome, notas: [] });
         setShowHistorico(true);
@@ -1033,7 +1694,6 @@ export default function Turmas() {
         };
       });
 
-      console.log('📋 Notas organizadas por bimestre/matéria:', notasPorMateriaBimestre);
 
       // Preparar dados para o modal no formato de boletim
       const dadosBoletim = {
@@ -1054,7 +1714,81 @@ export default function Turmas() {
     }
   };
 
+  // Função para abrir modal de transferência individual
+  const handleAbrirModalTransferencia = (aluno: Aluno) => {
+    setAlunoTransferencia(aluno);
+    setTurmaDestinoTransferencia('');
+    setShowModalTransferencia(true);
+  };
 
+  // Função para fechar modal de transferência
+  const handleFecharModalTransferencia = () => {
+    setShowModalTransferencia(false);
+    setAlunoTransferencia(null);
+    setTurmaDestinoTransferencia('');
+  };
+
+  // Função para confirmar transferência individual
+  const handleConfirmarTransferenciaIndividual = () => {
+    if (!alunoTransferencia || !turmaDestinoTransferencia) {
+      setToast({ show: true, message: 'Selecione uma turma de destino', variant: 'danger' });
+      return;
+    }
+
+    // Adicionar ao estado de transferências
+    setAlunosTransferencia(prev => ({
+      ...prev,
+      [alunoTransferencia.id]: turmaDestinoTransferencia
+    }));
+
+    // Limpar status de promoção/reprovação caso exista
+    setStatusPromocao(prev => ({ ...prev, [alunoTransferencia.id]: null }));
+
+    setToast({ show: true, message: `${alunoTransferencia.nome} marcado para transferência`, variant: 'success' });
+    handleFecharModalTransferencia();
+  };
+
+  // Função para aprovar todos os alunos
+  const handleAprovarTodos = () => {
+    const alunosFiltrados = getAlunosFiltrados();
+    const novosStatus: Record<string, 'promovido' | 'reprovado' | null> = {};
+
+    alunosFiltrados.forEach(aluno => {
+      if (!acaoFinalizada[aluno.id]) {
+        novosStatus[aluno.id] = 'promovido';
+      }
+    });
+
+    setStatusPromocao(prev => ({ ...prev, ...novosStatus }));
+
+    // Limpar transferências
+    const novaTransferencia = { ...alunosTransferencia };
+    Object.keys(novosStatus).forEach(id => delete novaTransferencia[id]);
+    setAlunosTransferencia(novaTransferencia);
+
+    setToast({ show: true, message: 'Todos os alunos marcados como promovidos', variant: 'success' });
+  };
+
+  // Função para reprovar todos os alunos
+  const handleReprovarTodos = () => {
+    const alunosFiltrados = getAlunosFiltrados();
+    const novosStatus: Record<string, 'promovido' | 'reprovado' | null> = {};
+
+    alunosFiltrados.forEach(aluno => {
+      if (!acaoFinalizada[aluno.id]) {
+        novosStatus[aluno.id] = 'reprovado';
+      }
+    });
+
+    setStatusPromocao(prev => ({ ...prev, ...novosStatus }));
+
+    // Limpar transferências
+    const novaTransferencia = { ...alunosTransferencia };
+    Object.keys(novosStatus).forEach(id => delete novaTransferencia[id]);
+    setAlunosTransferencia(novaTransferencia);
+
+    setToast({ show: true, message: 'Todos os alunos marcados como reprovados', variant: 'success' });
+  };
 
   return (
     <AppLayout>
@@ -1077,9 +1811,6 @@ export default function Turmas() {
                   Gestão de Turmas
                 </h1>
               </div>
-              <Button variant="primary" onClick={() => openModal()}>
-                <PlusCircle className="me-2" size={18} /> Nova Turma
-              </Button>
             </div>
             <p className="mb-0" style={{ color: '#3b4861', marginLeft: 44, fontSize: 16 }}>
               Gerencie as turmas da escola
@@ -1105,7 +1836,7 @@ export default function Turmas() {
                 type="button"
                 style={{ flex: 1 }}
               >
-                Rematrícula de Alunos
+                Promoção de Turmas
               </button>
             </div>
           </div>
@@ -1162,7 +1893,7 @@ export default function Turmas() {
               <Card className="mb-4">
                 <Card.Body>
                   <div className="row g-3">
-                    <div className="col-md-3">
+                    <div className="col-md-4">
                       <Form.Control
                         type="text"
                         placeholder="Buscar turma..."
@@ -1186,6 +1917,11 @@ export default function Turmas() {
                         <option value="20a30">20 a 30</option>
                         <option value="mais30">Mais de 30</option>
                       </Form.Select>
+                    </div>
+                    <div className="col-md-2">
+                      <Button variant="primary" onClick={() => openModal()}>
+                        <PlusCircle className="me-2" size={18} /> Nova Turma
+                      </Button>
                     </div>
                   </div>
                 </Card.Body>
@@ -1224,17 +1960,10 @@ export default function Turmas() {
                                       </div>
                                     </td>
                                     <td>
-                                      {t.isVirtualizada ? (
-                                        <span className="badge bg-info text-white px-2 py-1">
-                                          <Ghost size={14} className="me-1" />
-                                          Virtual
-                                        </span>
-                                      ) : (
-                                        <span className="badge bg-success text-white px-2 py-1">
-                                          <CheckCircle2 size={14} className="me-1" />
-                                          Ativa
-                                        </span>
-                                      )}
+                                      <span className="badge bg-success text-white px-2 py-1">
+                                        <CheckCircle2 size={14} className="me-1" />
+                                        Ativa
+                                      </span>
                                     </td>
                                     <td>
                                       <span
@@ -1272,9 +2001,14 @@ export default function Turmas() {
                                             <Eye size={16} /> Detalhes
                                           </Dropdown.Item>
                                           {t.isVirtualizada ? (
-                                            <Dropdown.Item onClick={() => handleMaterializarTurma(t)} className="d-flex align-items-center gap-2 text-success">
-                                              <CheckCircle2 size={16} className="text-success" /> Materializar
-                                            </Dropdown.Item>
+                                            <>
+                                              <Dropdown.Item onClick={() => handleMaterializarTurma(t)} className="d-flex align-items-center gap-2 text-success">
+                                                <CheckCircle2 size={16} className="text-success" /> Materializar
+                                              </Dropdown.Item>
+                                              <Dropdown.Item onClick={() => handleExcluirTurma(t.id)} className="d-flex align-items-center gap-2 text-danger">
+                                                <Trash2 size={16} /> Desativar Virtualização
+                                              </Dropdown.Item>
+                                            </>
                                           ) : (
                                             <>
                                               <Dropdown.Item onClick={() => openModal(t)} className="d-flex align-items-center gap-2 text-primary">
@@ -1430,22 +2164,76 @@ export default function Turmas() {
               {/* Filtros para Rematrícula */}
               <Card className="mb-4">
                 <Card.Body>
+                  <div className="d-flex align-items-center gap-2 mb-3">
+                    <ArrowLeftRight size={20} className="" />
+                    <h5 className="mb-0">Seleção de Turma</h5>
+                  </div>
                   <div className="row g-3">
-                    <div className="col-md-6">
-                      <Form.Control
-                        type="text"
-                        placeholder="Buscar turmas e alunos..."
-                        value={buscaRematricula}
-                        onChange={e => setBuscaRematricula(e.target.value)}
-                      />
+                    <div className="col-md-4">
+                      <Form.Label
+                        className='filter-label'
+                      >
+                        Ano Letivo
+                      </Form.Label>
+                      <Form.Select
+                        value={anoLetivoRematricula}
+                        onChange={e => {
+                          setAnoLetivoRematricula(parseInt(e.target.value));
+                          setTurmaFiltroRematricula('');
+                          setProximaTurma('');
+                        }}
+                      >
+                        {/* Gerar opções de anos (ex: 2020 a 2030) */}
+                        {Array.from({ length: 11 }, (_, i) => new Date().getFullYear() - 5 + i).map(ano => (
+                          <option key={ano} value={ano}>{ano}</option>
+                        ))}
+                      </Form.Select>
                     </div>
-                    <div className="col-md-6">
-                      <Form.Select value={turmaFiltroRematricula} onChange={e => setTurmaFiltroRematricula(e.target.value)}>
-                        <option value="">Selecione a turma</option>
-                        {turmas.filter(t => !t.isVirtualizada).map(turma => (
+                    <div className="col-md-4">
+                      <Form.Label
+                        className='filter-label'
+                      >
+                        Turma Atual
+                      </Form.Label>
+                      <Form.Select value={turmaFiltroRematricula} onChange={e => {
+                        setTurmaFiltroRematricula(e.target.value);
+                        setProximaTurma('');
+                      }}>
+                        <option value="">Selecione a turma atual</option>
+                        {turmas.filter(t => !t.isVirtualizada && t.anoLetivo === anoLetivoRematricula.toString()).map(turma => (
                           <option key={turma.id} value={turma.id}>{turma.nome}</option>
                         ))}
                       </Form.Select>
+                    </div>
+                    <div className="col-md-4">
+                      <Form.Label className="d-flex align-items-center gap-2 filter-label">
+                        <ArrowRight size={16} className="text-primary" />
+                        Próxima Turma
+                      </Form.Label>
+                      <Form.Select
+                        value={proximaTurma}
+                        onChange={e => setProximaTurma(e.target.value)}
+                        disabled={!turmaFiltroRematricula}
+                      >
+                        <option value="">
+                          {turmaFiltroRematricula && getTurmasProximas().length === 0
+                            ? `Nenhuma turma cadastrada para ${parseInt(anoLetivoRematricula.toString()) + 1}`
+                            : 'Selecione a próxima turma'}
+                        </option>
+                        {getTurmasProximas().map(turma => {
+                          return (
+                            <option key={turma.id} value={turma.id}>
+                              {turma.nome} - ({parseInt(anoLetivoRematricula.toString()) + 1})
+                            </option>
+                          );
+                        })}
+                      </Form.Select>
+                      {turmaFiltroRematricula && getTurmasProximas().length === 0 && (
+                        <Form.Text className="text-warning d-flex align-items-center gap-1 mt-1">
+                          <FontAwesomeIcon icon={faCircleExclamation} />
+                          Crie turmas para {parseInt(anoLetivoRematricula.toString()) + 1} em "Gerenciar Turmas"
+                        </Form.Text>
+                      )}
                     </div>
                   </div>
                 </Card.Body>
@@ -1465,102 +2253,288 @@ export default function Turmas() {
 
               {/* Lista de Alunos só aparece após seleção de turma */}
               {turmaFiltroRematricula && (
-                <Card className="mb-4">
-                  <Card.Body className="pb-0">
-                    <div className="d-flex align-items-center justify-content-between px-2 mb-2">
-                      <h3 className="mb-0 d-flex align-items-center gap-2">Lista de Alunos
-                        <span className="text-muted" style={{ fontSize: '1rem', verticalAlign: 'middle' }}>({getAlunosFiltrados().length})</span>
-                      </h3>
+                <>
+                  {/* Cards informativos */}
+                  <div className="row mb-3 g-3">
+                    {/* Card Total de Alunos */}
+                    <div className="col-md-6 col-lg-3">
+                      <Card className="shadow-sm card-sm border-left-primary mb-1">
+                        <Card.Body className="py-3 px-3">
+                          <div className="d-flex align-items-center justify-content-between mb-1">
+                            <div className="text-muted small" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Total</div>
+                            <Users size={16} style={{ color: '#2563eb', opacity: 0.7 }} />
+                          </div>
+                          <h4 className="mb-0 fw-bold" style={{ color: '#2563eb' }}>{getAlunosFiltrados().length}</h4>
+                        </Card.Body>
+                      </Card>
                     </div>
-                  </Card.Body>
-                  <Card.Body className="pt-0">
-                    {loading ? (
-                      <div className="d-flex justify-content-center align-items-center py-5">
-                        <Spinner animation="border" />
+
+                    {/* Card Aprovados */}
+                    <div className="col-md-6 col-lg-3">
+                      <Card className="shadow-sm card-sm border-left-success mb-1">
+                        <Card.Body className="py-3 px-3">
+                          <div className="d-flex align-items-center justify-content-between mb-1">
+                            <div className="text-muted small" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Aprovados</div>
+                            <CheckCircle2 size={16} style={{ color: '#22c55e', opacity: 0.7 }} />
+                          </div>
+                          <h4 className="mb-0 fw-bold" style={{ color: '#22c55e' }}>
+                            {Object.values(statusPromocao).filter(s => s === 'promovido').length}
+                          </h4>
+                        </Card.Body>
+                      </Card>
+                    </div>
+
+                    {/* Card Reprovados */}
+                    <div className="col-md-6 col-lg-3">
+                      <Card className="shadow-sm card-sm mb-1" style={{ borderLeft: '4px solid #ef4444' }}>
+                        <Card.Body className="py-3 px-3">
+                          <div className="d-flex align-items-center justify-content-between mb-1">
+                            <div className="text-muted small" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Reprovados</div>
+                            <X size={16} style={{ color: '#ef4444', opacity: 0.7 }} />
+                          </div>
+                          <h4 className="mb-0 fw-bold" style={{ color: '#ef4444' }}>
+                            {Object.values(statusPromocao).filter(s => s === 'reprovado').length}
+                          </h4>
+                        </Card.Body>
+                      </Card>
+                    </div>
+
+                    {/* Card Transferidos */}
+                    <div className="col-md-6 col-lg-3">
+                      <Card className="shadow-sm card-sm mb-1" style={{ borderLeft: '4px solid #3b82f6' }}>
+                        <Card.Body className="py-3 px-3">
+                          <div className="d-flex align-items-center justify-content-between mb-1">
+                            <div className="text-muted small" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Transferidos</div>
+                            <ArrowLeftRight size={16} style={{ color: '#3b82f6', opacity: 0.7 }} />
+                          </div>
+                          <h4 className="mb-0 fw-bold" style={{ color: '#3b82f6' }}>
+                            {Object.keys(alunosTransferencia).length}
+                          </h4>
+                        </Card.Body>
+                      </Card>
+                    </div>
+                  </div>
+
+                  <Card className="mb-4">
+                    <Card.Body className="pb-0">
+                      <div className="d-flex align-items-center justify-content-between px-2 mb-2">
+                        <h3 className="mb-0 d-flex align-items-center gap-2">
+                          Lista de Alunos - {turmas.find(t => t.id === turmaFiltroRematricula)?.nome}
+                        </h3>
+                        <div className="d-flex gap-2">
+                          <Button
+                            variant="outline-success"
+                            size="sm"
+                            onClick={handleAprovarTodos}
+                            className="d-flex align-items-center gap-1 btn-aprovar-todos"
+                          >
+                            <Check size={16} />
+                            Aprovar Todos
+                          </Button>
+                          <Button
+                            variant="outline-danger"
+                            size="sm"
+                            onClick={handleReprovarTodos}
+                            className="d-flex align-items-center gap-1 btn-reprovar-todos"
+                          >
+                            <X size={16} />
+                            Reprovar Todos
+                          </Button>
+                        </div>
                       </div>
-                    ) : (
-                      <Table hover className="mb-0">
-                        <thead className="thead-sticky">
-                          <tr style={{ textAlign: 'center' }}>
-                            <th className='text-muted' style={{ width: '80px' }}>Status</th>
-                            <th className='text-muted'>Aluno</th>
-                            <th className='text-muted'>Situação</th>
-                            <th className='text-muted'>Ações</th>
-                          </tr>
-                        </thead>
-                        <tbody className=''>
-                          {getAlunosFiltrados().length > 0 ? getAlunosFiltrados().map(aluno => {
-                            const foiRematriculado = aluno.turmaId !== turmaFiltroRematricula;
-                            
-                            return (
-                              <tr key={aluno.id} className='align-middle linha-agenda' style={{ textAlign: 'center' }}>
-                                <td>
-                                  {foiRematriculado ? (
-                                    <div className="d-flex align-items-center justify-content-center" title="Rematriculado">
-                                      <CheckCircle2 size={20} color="#22c55e" />
+                    </Card.Body>
+                    <Card.Body className="pt-0">
+                      {loading ? (
+                        <div className="d-flex justify-content-center align-items-center py-5">
+                          <Spinner animation="border" />
+                        </div>
+                      ) : (
+                        <Table hover className="mb-0">
+                          <thead className="thead-sticky">
+                            <tr style={{ textAlign: 'center' }}>
+                              <th className='text-muted' style={{ width: '35%' }}>Aluno</th>
+                              <th className='text-muted'>Média Final</th>
+                              <th className='text-muted'>Situação</th>
+                              <th className='text-muted'>Ações</th>
+                              <th className='text-muted'>Boletim</th>
+                            </tr>
+                          </thead>
+                          <tbody className=''>
+                            {getAlunosFiltrados().length > 0 ? getAlunosFiltrados().map(aluno => {
+                              const mediaFinal = mediasAlunos[aluno.id];
+                              const corMedia = mediaFinal !== null && mediaFinal !== undefined
+                                ? mediaFinal >= 7 ? 'text-success' : mediaFinal >= 5 ? 'text-warning' : 'text-danger'
+                                : 'text-muted';
+
+                              return (
+                                <tr key={aluno.id} className='align-middle linha-agenda' style={{ textAlign: 'center', height: '70px' }}>
+                                  <td style={{ textAlign: 'left' }}>
+                                    <div className="d-flex align-items-center gap-2">
+                                      <div className="user-icon-circle-frequencia">
+                                        <User size={24} color="#fff" />
+                                      </div>
+                                      <strong>{aluno.nome}</strong>
                                     </div>
-                                  ) : (
-                                    <div className="d-flex align-items-center justify-content-center" title="Aguardando rematrícula">
-                                      <Clock size={20} color="#9ca3af" />
-                                    </div>
-                                  )}
-                                </td>
-                                <td>
-                                  <div className="d-flex align-items-center justify-content-center gap-2">
-                                    <strong>{aluno.nome}</strong>
+                                  </td>
+                                  <td>
+                                    <span className={`fw-bold ${corMedia}`} style={{ fontSize: '1.1rem' }}>
+                                      {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal.toFixed(1) : '-'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    {getStatusBadge(aluno.id)}
+                                  </td>
+                                  <td>
+                                    {acaoFinalizada[aluno.id] ? (
+                                      // Mostrar badge quando ação foi finalizada
+                                      <div className="d-flex justify-content-center">
+                                        {acaoFinalizada[aluno.id] === 'promovido' && (
+                                          <span className="badge bg-success px-3 py-2" style={{ fontSize: '0.85rem' }}>
+                                            <Check size={14} className="me-1" />
+                                            Promovido
+                                          </span>
+                                        )}
+                                        {acaoFinalizada[aluno.id] === 'reprovado' && (
+                                          <span className="badge bg-danger px-3 py-2" style={{ fontSize: '0.85rem' }}>
+                                            <X size={14} className="me-1" />
+                                            Reprovado
+                                          </span>
+                                        )}
+                                        {acaoFinalizada[aluno.id] === 'transferido' && (
+                                          <span className="badge bg-primary px-3 py-2" style={{ fontSize: '0.85rem' }}>
+                                            <ArrowRight size={14} className="me-1" />
+                                            Transferido
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      // Mostrar botões quando ação não foi finalizada
+                                      <div className="d-flex gap-2 justify-content-center">
+                                        <Button
+                                          className='btn-acao-aprovado'
+                                          size="sm"
+                                          onClick={() => {
+                                            setStatusPromocao(prev => {
+                                              // Se já está promovido, desseleciona
+                                              if (prev[aluno.id] === 'promovido') {
+                                                const { [aluno.id]: _, ...rest } = prev;
+                                                return rest;
+                                              }
+                                              // Senão, marca como promovido
+                                              return { ...prev, [aluno.id]: 'promovido' };
+                                            });
+                                            // Limpar transferência se estava selecionada
+                                            if (alunosTransferencia[aluno.id]) {
+                                              const novaTransferencia = { ...alunosTransferencia };
+                                              delete novaTransferencia[aluno.id];
+                                              setAlunosTransferencia(novaTransferencia);
+                                            }
+                                          }}
+                                          title="Aprovar"
+                                          style={{
+                                            padding: '0.25rem 0.5rem',
+                                            borderRadius: '6px',
+                                            fontWeight: '500',
+                                            backgroundColor: statusPromocao[aluno.id] === 'promovido' ? '#22c55e' : 'white',
+                                            color: statusPromocao[aluno.id] === 'promovido' ? 'white' : 'black',
+                                            border: '1px solid #cbd5e1',
+                                            height: '32px',
+                                            minWidth: '32px'
+                                          }}
+                                        >
+                                          <Check size={16} strokeWidth={2.5} />
+                                        </Button>
+                                        <Button
+                                          className='btn-acao-reprovado'
+                                          size="sm"
+                                          onClick={() => {
+                                            setStatusPromocao(prev => {
+                                              // Se já está reprovado, desseleciona
+                                              if (prev[aluno.id] === 'reprovado') {
+                                                const { [aluno.id]: _, ...rest } = prev;
+                                                return rest;
+                                              }
+                                              // Senão, marca como reprovado
+                                              return { ...prev, [aluno.id]: 'reprovado' };
+                                            });
+                                            // Limpar transferência se estava selecionada
+                                            if (alunosTransferencia[aluno.id]) {
+                                              const novaTransferencia = { ...alunosTransferencia };
+                                              delete novaTransferencia[aluno.id];
+                                              setAlunosTransferencia(novaTransferencia);
+                                            }
+                                          }}
+                                          title="Reprovar"
+                                          style={{
+                                            padding: '0.25rem 0.5rem',
+                                            borderRadius: '6px',
+                                            fontWeight: '500',
+                                            backgroundColor: statusPromocao[aluno.id] === 'reprovado' ? '#ef4444' : 'white',
+                                            color: statusPromocao[aluno.id] === 'reprovado' ? 'white' : 'black',
+                                            border: '1px solid #cbd5e1',
+                                            height: '32px',
+                                            minWidth: '32px'
+                                          }}
+                                        >
+                                          <X size={16} strokeWidth={2.5} />
+                                        </Button>
+                                        <Button
+                                          className="btn-acao-transferencia d-flex align-items-center gap-1"
+                                          size="sm"
+                                          onClick={() => handleAbrirModalTransferencia(aluno)}
+                                          title="Transferir"
+                                          style={{
+                                            padding: '0.25rem 0.5rem',
+                                            borderRadius: '6px',
+                                            fontWeight: '500',
+                                            backgroundColor: alunosTransferencia[aluno.id] ? '#3b82f6' : 'white',
+                                            color: alunosTransferencia[aluno.id] ? 'white' : 'black',
+                                            border: '1px solid #cbd5e1',
+                                            height: '32px',
+                                            minWidth: '32px'
+                                          }}
+                                        >
+                                          <ArrowLeftRight size={18} strokeWidth={2.5} />
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td>
+                                    <Button
+                                      variant="primary"
+                                      size="sm"
+                                      className="d-flex align-items-center gap-1"
+                                      onClick={() => handleAbrirBoletim(aluno)}
+                                      style={{
+                                        margin: '0 auto',
+                                        color: 'black',
+                                        background: 'white',
+                                        border: '1px solid #cbd5e1',
+                                      }}
+                                      title="Ver Boletim"
+                                    >
+                                      <BookText size={16} />
+                                    </Button>
+                                  </td>
+                                </tr>
+                              );
+                            }) : (
+                              <tr>
+                                <td colSpan={5} className="text-center py-4">
+                                  <div className="agenda-empty-state">
+                                    <div className="empty-icon">👥</div>
+                                    <h5>Nenhum aluno encontrado</h5>
+                                    <p className="text-muted">Tente ajustar os filtros ou verifique se há alunos cadastrados.</p>
                                   </div>
                                 </td>
-                                <td>
-                                  {getStatusBadge(aluno.id)}
-                                </td>
-                                <td>
-                                  <Dropdown align="end">
-                                  <Dropdown.Toggle
-                                    variant="light"
-                                    size="sm"
-                                    style={{
-                                      border: 'none',
-                                      background: 'transparent',
-                                      boxShadow: 'none'
-                                    }}
-                                    className="dropdown-toggle-no-caret"
-                                  >
-                                    ⋯
-                                  </Dropdown.Toggle>
-                                  <Dropdown.Menu>
-                                    <Dropdown.Item
-                                      className="d-flex align-items-center gap-2"
-                                      onClick={() => handleAbrirBoletim(aluno)}
-                                    >
-                                      <BookOpen size={16} /> Boletim
-                                    </Dropdown.Item>
-                                    <Dropdown.Item
-                                      className="d-flex align-items-center gap-2 text-primary"
-                                      onClick={() => handleAbrirRematricula(aluno)}
-                                    >
-                                      <Edit size={16} className="text-primary" /> Rematricular
-                                    </Dropdown.Item>
-                                  </Dropdown.Menu>
-                                </Dropdown>
-                              </td>
-                            </tr>
-                            );
-                          }) : (
-                            <tr>
-                              <td colSpan={4} className="text-center py-4">
-                                <div className="agenda-empty-state">
-                                  <div className="empty-icon">👥</div>
-                                  <h5>Nenhum aluno encontrado</h5>
-                                  <p className="text-muted">Tente ajustar os filtros ou verifique se há alunos cadastrados.</p>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </Table>
-                    )}
-                  </Card.Body>
-                </Card>
+                              </tr>
+                            )}
+                          </tbody>
+                        </Table>
+                      )}
+                    </Card.Body>
+                  </Card>
+                </>
               )}
             </>
           )}
@@ -1792,75 +2766,68 @@ export default function Turmas() {
                   >
                     <thead className="fw-bold text-muted align-middle" style={{ background: '#f8f9fa' }}>
                       <tr>
-                        <th style={{ width: '15%' }}>Bimestre</th>
-                        {historicoAluno.dadosBoletim.materias.map((materia: string) => (
-                          <th key={materia} style={{ minWidth: '120px' }}>{materia}</th>
+                        <th style={{ width: '20%' }}>Matéria</th>
+                        {historicoAluno.dadosBoletim.bimestres.map((bimestre: string) => (
+                          <th key={bimestre} style={{ minWidth: '100px' }}>{bimestre} Bim</th>
                         ))}
+                        <th style={{ minWidth: '100px', background: '#e9ecef' }}>Média Final</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {historicoAluno.dadosBoletim.bimestres.map((bimestre: string) => (
-                        <tr key={bimestre}>
-                          <td style={{ fontWeight: 600, background: '#f8f9fa' }}>{bimestre}</td>
-                          {historicoAluno.dadosBoletim.materias.map((materia: string) => {
-                            const nota = historicoAluno.dadosBoletim.notas[bimestre]?.[materia];
-                            const mediaFinal = nota?.mediaFinal;
-                            const getNotaColor = (valor: number | null | undefined) => {
-                              if (valor === null || valor === undefined) return 'text-muted';
-                              if (valor >= 7) return 'text-success';
-                              if (valor >= 5) return 'text-warning';
-                              return 'text-danger';
-                            };
+                      {historicoAluno.dadosBoletim.materias.map((materia: string) => {
+                        // Calcular média final da matéria (média dos 4 bimestres)
+                        const notasBimestres = historicoAluno.dadosBoletim.bimestres
+                          .map((bim: string) => historicoAluno.dadosBoletim.notas[bim]?.[materia]?.mediaFinal)
+                          .filter((n: number | null | undefined) => n !== null && n !== undefined);
 
-                            return (
-                              <td
-                                key={materia}
-                                className={`fw-bold ${getNotaColor(mediaFinal)}`}
-                                style={{
-                                  fontSize: '1.1rem',
-                                  padding: '12px 8px'
-                                }}
-                              >
-                                {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal : '-'}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                      {/* Linha de Média Final */}
-                      <tr style={{ background: '#e9ecef', fontWeight: 700 }}>
-                        <td style={{ fontWeight: 700, fontSize: '1rem' }}>Média Final</td>
-                        {historicoAluno.dadosBoletim.materias.map((materia: string) => {
-                          // Calcular média final da matéria (média dos 4 bimestres)
-                          const notasBimestres = historicoAluno.dadosBoletim.bimestres
-                            .map((bim: string) => historicoAluno.dadosBoletim.notas[bim]?.[materia]?.mediaFinal)
-                            .filter((n: number | null | undefined) => n !== null && n !== undefined);
+                        const mediaFinalMateria = notasBimestres.length > 0
+                          ? (notasBimestres.reduce((sum: number, n: number) => sum + n, 0) / notasBimestres.length).toFixed(1)
+                          : null;
 
-                          const mediaFinalMateria = notasBimestres.length > 0
-                            ? (notasBimestres.reduce((sum: number, n: number) => sum + n, 0) / notasBimestres.length).toFixed(1)
-                            : null;
+                        const getNotaColor = (valor: number | null | undefined) => {
+                          if (valor === null || valor === undefined) return 'text-muted';
+                          if (valor >= 7) return 'text-success';
+                          if (valor >= 5) return 'text-warning';
+                          return 'text-danger';
+                        };
 
-                          const getNotaColor = (valor: number | null) => {
-                            if (valor === null) return 'text-muted';
-                            if (valor >= 6) return 'text-success';
-                            if (valor >= 5) return 'text-warning';
-                            return 'text-danger';
-                          };
+                        return (
+                          <tr key={materia}>
+                            <td style={{ fontWeight: 600, background: '#f8f9fa', textAlign: 'center', paddingLeft: 0 }}>{materia}</td>
+                            {historicoAluno.dadosBoletim.bimestres.map((bimestre: string) => {
+                              const nota = historicoAluno.dadosBoletim.notas[bimestre]?.[materia];
+                              const mediaFinal = nota?.mediaFinal;
 
-                          return (
+                              return (
+                                <td
+                                  key={bimestre}
+                                  className={`fw-bold ${getNotaColor(mediaFinal)}`}
+                                  style={{
+                                    fontSize: '1rem',
+                                    padding: '6px 4px',
+                                    textAlign: 'center',
+                                    verticalAlign: 'middle'
+                                  }}
+                                >
+                                  {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal : '-'}
+                                </td>
+                              );
+                            })}
                             <td
-                              key={materia}
                               className={`fw-bold ${getNotaColor(mediaFinalMateria ? parseFloat(mediaFinalMateria) : null)}`}
                               style={{
-                                fontSize: '1.2rem',
-                                padding: '12px 8px'
+                                fontSize: '1.1rem',
+                                padding: '6px 4px',
+                                background: '#e9ecef',
+                                textAlign: 'center',
+                                verticalAlign: 'middle'
                               }}
                             >
                               {mediaFinalMateria !== null ? mediaFinalMateria : '-'}
                             </td>
-                          );
-                        })}
-                      </tr>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </Table>
                 ) : (
@@ -1875,68 +2842,71 @@ export default function Turmas() {
               <div className="d-block d-md-none">
                 {historicoAluno?.dadosBoletim ? (
                   <div>
-                    {historicoAluno.dadosBoletim.bimestres.map((bimestre: string) => (
-                      <Card key={bimestre} className="mb-3">
+                    {/* Agrupar por matéria, mostrando bimestres como colunas */}
+                    {historicoAluno.dadosBoletim.materias.map((materia: string) => (
+                      <Card key={materia} className="mb-3">
                         <Card.Header className="bg-primary text-white">
-                          <h6 className="mb-0">{bimestre} Bimestre</h6>
+                          <h6 className="mb-0">{materia}</h6>
                         </Card.Header>
                         <Card.Body className="p-2">
-                          {historicoAluno.dadosBoletim.materias.map((materia: string) => {
-                            const nota = historicoAluno.dadosBoletim.notas[bimestre]?.[materia];
-                            const mediaFinal = nota?.mediaFinal;
-                            const getNotaColor = (valor: number | null | undefined) => {
-                              if (valor === null || valor === undefined) return 'text-muted';
-                              if (valor >= 7) return 'text-success';
-                              if (valor >= 5) return 'text-warning';
-                              return 'text-danger';
-                            };
+                          <div className="row g-2">
+                            {historicoAluno.dadosBoletim.bimestres.map((bimestre: string) => {
+                              const nota = historicoAluno.dadosBoletim.notas[bimestre]?.[materia];
+                              const mediaFinal = nota?.mediaFinal;
+                              const getNotaColor = (valor: number | null | undefined) => {
+                                if (valor === null || valor === undefined) return 'text-muted';
+                                if (valor >= 7) return 'text-success';
+                                if (valor >= 5) return 'text-warning';
+                                return 'text-danger';
+                              };
 
-                            return (
-                              <div key={materia} className="d-flex justify-content-between align-items-center py-2 border-bottom">
-                                <span className="fw-semibold">{materia}</span>
-                                <span className={`fw-bold fs-5 ${getNotaColor(mediaFinal)}`}>
-                                  {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal : '-'}
-                                </span>
-                              </div>
-                            );
-                          })}
+                              return (
+                                <div key={bimestre} className="col-6">
+                                  <div className="border rounded p-2 text-center">
+                                    <small className="text-muted d-block">{bimestre} Bim</small>
+                                    <span className={`fw-bold fs-5 ${getNotaColor(mediaFinal)}`}>
+                                      {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal : '-'}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {/* Média Final da Matéria */}
+                          <div className="mt-2 pt-2 border-top">
+                            <div className="d-flex justify-content-between align-items-center">
+                              <span className="fw-bold">Média Final:</span>
+                              <span className={`fw-bold fs-4 ${(() => {
+                                const notasBimestres = historicoAluno.dadosBoletim.bimestres
+                                  .map((bim: string) => historicoAluno.dadosBoletim.notas[bim]?.[materia]?.mediaFinal)
+                                  .filter((n: number | null | undefined) => n !== null && n !== undefined);
+
+                                const mediaFinalMateria = notasBimestres.length > 0
+                                  ? parseFloat((notasBimestres.reduce((sum: number, n: number) => sum + n, 0) / notasBimestres.length).toFixed(1))
+                                  : null;
+
+                                if (mediaFinalMateria === null) return 'text-muted';
+                                if (mediaFinalMateria >= 6) return 'text-success';
+                                if (mediaFinalMateria >= 5) return 'text-warning';
+                                return 'text-danger';
+                              })()}`}>
+                                {(() => {
+                                  const notasBimestres = historicoAluno.dadosBoletim.bimestres
+                                    .map((bim: string) => historicoAluno.dadosBoletim.notas[bim]?.[materia]?.mediaFinal)
+                                    .filter((n: number | null | undefined) => n !== null && n !== undefined);
+
+                                  const mediaFinalMateria = notasBimestres.length > 0
+                                    ? (notasBimestres.reduce((sum: number, n: number) => sum + n, 0) / notasBimestres.length).toFixed(1)
+                                    : null;
+
+                                  return mediaFinalMateria !== null ? mediaFinalMateria : '-';
+                                })()}
+                              </span>
+                            </div>
+                          </div>
                         </Card.Body>
                       </Card>
                     ))}
-                    {/* Card de Média Final - Mobile */}
-                    <Card className="mb-3" style={{ background: '#e9ecef', border: '2px solid #dee2e6' }}>
-                      <Card.Header style={{ background: '#6c757d', color: 'white' }}>
-                        <h6 className="mb-0 fw-bold">Média Final do Ano</h6>
-                      </Card.Header>
-                      <Card.Body className="p-2">
-                        {historicoAluno.dadosBoletim.materias.map((materia: string) => {
-                          // Calcular média final da matéria
-                          const notasBimestres = historicoAluno.dadosBoletim.bimestres
-                            .map((bim: string) => historicoAluno.dadosBoletim.notas[bim]?.[materia]?.mediaFinal)
-                            .filter((n: number | null | undefined) => n !== null && n !== undefined);
-
-                          const mediaFinalMateria = notasBimestres.length > 0
-                            ? (notasBimestres.reduce((sum: number, n: number) => sum + n, 0) / notasBimestres.length).toFixed(1)
-                            : null;
-
-                          const getNotaColor = (valor: number | null) => {
-                            if (valor === null) return 'text-muted';
-                            if (valor >= 6) return 'text-success';
-                            if (valor >= 5) return 'text-warning';
-                            return 'text-danger';
-                          };
-
-                          return (
-                            <div key={materia} className="d-flex justify-content-between align-items-center py-2 border-bottom">
-                              <span className="fw-bold">{materia}</span>
-                              <span className={`fw-bold fs-4 ${getNotaColor(mediaFinalMateria ? parseFloat(mediaFinalMateria) : null)}`}>
-                                {mediaFinalMateria !== null ? mediaFinalMateria : '-'}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </Card.Body>
-                    </Card>
                   </div>
                 ) : (
                   <div className="text-center py-4">
@@ -1946,8 +2916,8 @@ export default function Turmas() {
                 )}
               </div>
 
-              {/* Versão Mobile */}
-              <div className="d-block d-md-none">
+              {/* Remover versão mobile duplicada antiga */}
+              <div className="d-none">
                 {historicoAluno?.notas.length ? (
                   <div className="historico-mobile-cards">
                     {['1º', '2º', '3º', '4º'].map(bim => {
@@ -2136,6 +3106,222 @@ export default function Turmas() {
           </Modal>
 
         </div>
+
+        {/* Modal de Confirmação de Ações */}
+        <Modal
+          show={showModalConfirmacao}
+          onHide={() => setShowModalConfirmacao(false)}
+          centered
+        >
+          <Modal.Header closeButton>
+            <Modal.Title>
+              <CheckSquare size={24} className="me-2" />
+              Confirmar Promoção
+            </Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <p className="text-muted mb-3">
+              Você está prestes a realizar a promoção da turma <strong>{turmas.find(t => t.id === turmaFiltroRematricula)?.nome}</strong>.
+            </p>
+
+            <Card className="border-0 shadow-sm">
+              <Card.Body>
+                <h6 className="mb-3">Resumo:</h6>
+                <div className="d-flex flex-column gap-2">
+                  {resumoDestinos.promovidos.length > 0 && (
+                    <div className="d-flex align-items-start gap-2">
+                      <CheckSquare size={18} className="text-success mt-1" />
+                      <span>
+                        <strong>{resumoDestinos.promovidos.length}</strong> aluno{resumoDestinos.promovidos.length > 1 ? 's' : ''} será{resumoDestinos.promovidos.length > 1 ? 'ão' : ''} promovido{resumoDestinos.promovidos.length > 1 ? 's' : ''} para <strong>{resumoDestinos.promovidos[0]?.turmaDestino}</strong>
+                      </span>
+                    </div>
+                  )}
+
+                  {resumoDestinos.reprovados.length > 0 && (
+                    <div className="d-flex align-items-start gap-2">
+                      <XSquare size={18} className="text-danger mt-1" />
+                      <span>
+                        <strong>{resumoDestinos.reprovados.length}</strong> aluno{resumoDestinos.reprovados.length > 1 ? 's' : ''} será{resumoDestinos.reprovados.length > 1 ? 'ão' : ''} reprovado{resumoDestinos.reprovados.length > 1 ? 's' : ''}
+                        {resumoDestinos.reprovados.length > 0 && (
+                          <>
+                            {' '}para{' '}
+                            {Array.from(new Set(resumoDestinos.reprovados.map(r => r.turmaDestino))).map((turma, idx, arr) => (
+                              <span key={idx}>
+                                <strong>{turma}</strong>{idx < arr.length - 1 ? ', ' : ''}
+                              </span>
+                            ))}
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  )}
+
+                  {resumoDestinos.transferidos.length > 0 && (
+                    <div className="d-flex align-items-start gap-2">
+                      <ArrowRight size={18} className="text-primary mt-1" />
+                      <span>
+                        <strong>{resumoDestinos.transferidos.length}</strong> aluno{resumoDestinos.transferidos.length > 1 ? 's' : ''} será{resumoDestinos.transferidos.length > 1 ? 'ão' : ''} transferido{resumoDestinos.transferidos.length > 1 ? 's' : ''}
+                        {resumoDestinos.transferidos.length > 0 && (
+                          <>
+                            {' '}para{' '}
+                            {Array.from(new Set(resumoDestinos.transferidos.map(t => t.turmaDestino))).map((turma, idx, arr) => (
+                              <span key={idx}>
+                                <strong>{turma}</strong>{idx < arr.length - 1 ? ', ' : ''}
+                              </span>
+                            ))}
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </Card.Body>
+            </Card>
+
+            <p className="text-muted small mt-3 mb-0">
+              Esta ação não poderá ser desfeita facilmente. Deseja continuar?
+            </p>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowModalConfirmacao(false)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" onClick={handleConfirmarAcoes}>
+              Confirmar Promoção
+            </Button>
+          </Modal.Footer>
+        </Modal>
+
+        {/* Modal de Transferência Individual */}
+        <Modal
+          show={showModalTransferencia}
+          onHide={handleFecharModalTransferencia}
+          centered
+        >
+          <Modal.Header closeButton>
+            <Modal.Title>
+              <ArrowRight size={24} className="me-2" />
+              Transferir Aluno
+            </Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            {alunoTransferencia && (
+              <>
+                <Card className="border-0 shadow-sm mb-3">
+                  <Card.Body>
+                    <h5 className="mb-3">Informações do Aluno</h5>
+
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold text-muted">Nome</label>
+                      <div className="p-2 bg-light rounded">
+                        <strong>{alunoTransferencia.nome}</strong>
+                      </div>
+                    </div>
+
+                    <div className="row">
+                      <div className="col-md-6">
+                        <div className="mb-3">
+                          <label className="form-label fw-semibold text-muted">Turma Atual</label>
+                          <div className="p-2 bg-light rounded">
+                            {turmas.find(t => t.id === getTurmaAlunoNoAno(alunoTransferencia, anoLetivoRematricula))?.nome || 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="mb-3">
+                          <label className="form-label fw-semibold text-muted">Média Final</label>
+                          <div className="p-2 bg-light rounded">
+                            <span className={`fw-bold ${mediasAlunos[alunoTransferencia.id] !== null && mediasAlunos[alunoTransferencia.id] !== undefined
+                              ? mediasAlunos[alunoTransferencia.id]! >= 7 ? 'text-success'
+                                : mediasAlunos[alunoTransferencia.id]! >= 5 ? 'text-warning'
+                                  : 'text-danger'
+                              : 'text-muted'
+                              }`}>
+                              {mediasAlunos[alunoTransferencia.id] !== null && mediasAlunos[alunoTransferencia.id] !== undefined
+                                ? mediasAlunos[alunoTransferencia.id]!.toFixed(1)
+                                : '-'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold text-muted">Situação Atual</label>
+                      <div className="p-2 bg-light rounded">
+                        {getStatusBadge(alunoTransferencia.id)}
+                      </div>
+                    </div>
+                  </Card.Body>
+                </Card>
+
+                <div className="mb-3">
+                  <label className="form-label fw-semibold">Selecione a Turma de Destino</label>
+                  <Form.Select
+                    value={turmaDestinoTransferencia}
+                    onChange={(e) => setTurmaDestinoTransferencia(e.target.value)}
+                  >
+                    <option value="">Selecione uma turma...</option>
+                    {getTurmasAnoAtual().length > 0 ? (
+                      getTurmasAnoAtual().map(turma => (
+                        <option key={turma.id} value={turma.id}>
+                          {turma.nome}
+                        </option>
+                      ))
+                    ) : (
+                      <option disabled>Nenhuma turma disponível</option>
+                    )}
+                  </Form.Select>
+                  <Form.Text className="text-muted">
+                    Transferir para outra turma do mesmo ano letivo ({anoLetivoRematricula})
+                  </Form.Text>
+                </div>
+              </>
+            )}
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={handleFecharModalTransferencia}>
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleConfirmarTransferenciaIndividual}
+              disabled={!turmaDestinoTransferencia}
+            >
+              <ArrowRight size={18} className="me-1" />
+              Confirmar Transferência
+            </Button>
+          </Modal.Footer>
+        </Modal>
+
+        {/* Botão flutuante de confirmar - só aparece na aba de rematrícula */}
+        {activeTab === 'rematricula' && (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleAbrirModalConfirmacao}
+            style={{
+              position: 'fixed',
+              bottom: '2rem',
+              right: '2rem',
+              zIndex: 1000,
+              borderRadius: '8px',
+              padding: '0.5rem 1.25rem',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              fontWeight: '600'
+            }}
+            disabled={
+              Object.keys(statusPromocao).filter(id => statusPromocao[id] !== null).length === 0 &&
+              Object.keys(alunosTransferencia).length === 0
+            }
+          >
+            <Check size={16} />
+            Confirmar
+          </Button>
+        )}
 
         <ToastContainer position="bottom-end" className="p-3">
           <Toast bg={toast.variant} show={toast.show} onClose={() => setToast(prev => ({ ...prev, show: false }))} delay={3000} autohide>
