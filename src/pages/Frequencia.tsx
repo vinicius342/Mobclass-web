@@ -89,7 +89,7 @@ export default function Frequencia(): JSX.Element {
       let materiasList: Materia[] = [];
 
       if (isAdmin) {
-        const turmaSnap = await getDocs(collection(db, 'turmas'));
+        const turmaSnap = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())));
         turmaDocs = turmaSnap.docs;
 
         const snap = await getDocs(collection(db, 'materias'));
@@ -102,7 +102,9 @@ export default function Frequencia(): JSX.Element {
         setVinculos(vincList);
 
         const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-        turmaDocs = await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))));
+        // Buscar apenas turmas do ano letivo atual
+  const turmaDocsAll = await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))));
+  turmaDocs = turmaDocsAll.filter(d => d.exists() && d.data()?.anoLetivo?.toString() === anoLetivo.toString());
 
         materiaIds = [...new Set(vincList.map(v => v.materiaId))];
         const materiasSnap = await Promise.all(materiaIds.map(async id => {
@@ -120,7 +122,7 @@ export default function Frequencia(): JSX.Element {
       setMaterias(materiasList);
     }
     fetchData();
-  }, [userData]);
+  }, [userData, anoLetivo]);
 
   useEffect(() => {
     if (turmaId && materiaId) {

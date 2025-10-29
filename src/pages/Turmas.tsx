@@ -1045,6 +1045,27 @@ export default function Turmas() {
 
       console.log(`✅ Vínculos copiados com sucesso`);
 
+      // NOVO: Copiar documentos da agenda para o novo turmaId
+      console.log(`📚 Copiando aulas (agenda) para o novo turmaId: ${turmaRealId}`);
+      
+      const agendasOriginaisQuery = query(
+        collection(db, 'agenda'),
+        where('turmaId', '==', turmaVirtual.turmaOriginalId)
+      );
+
+      const agendasOriginaisSnap = await getDocs(agendasOriginaisQuery);
+      console.log(`📋 Aulas encontradas: ${agendasOriginaisSnap.docs.length}`);
+
+      for (const agendaDoc of agendasOriginaisSnap.docs) {
+        const agendaData = agendaDoc.data();
+        await addDoc(collection(db, 'agenda'), {
+          ...agendaData,
+          turmaId: turmaRealId
+        });
+      }
+
+      console.log(`✅ Aulas copiadas com sucesso`);
+
       // Marcar turma original como não virtualizável
       await updateDoc(doc(db, 'turmas', turmaVirtual.turmaOriginalId), {
         isVirtual: false

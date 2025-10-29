@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import Paginacao from '../components/Paginacao';
 import { Megaphone, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -49,6 +50,7 @@ interface Vinculo {
 export default function Comunicados() {
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
+  const { anoLetivo } = useAnoLetivoAtual();
 
   // Componente CustomDateInput para usar com DatePicker
   type CustomDateInputProps = {
@@ -113,7 +115,7 @@ export default function Comunicados() {
 
   useEffect(() => {
     fetchData();
-  }, [userData]);
+  }, [userData, anoLetivo]);
 
   useEffect(() => {
     if (showModal) {
@@ -126,14 +128,16 @@ export default function Comunicados() {
   const fetchData = async () => {
     let turmaDocs = [];
     if (isAdmin) {
-      const turmaSnap = await getDocs(collection(db, 'turmas'));
+      const turmaSnap = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())));
       turmaDocs = turmaSnap.docs;
     } else {
       const vincSnap = await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userData?.uid)));
       const vincList = vincSnap.docs.map(d => d.data() as Vinculo);
       setVinculos(vincList);
       const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-      turmaDocs = await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))));
+      const turmaDocsTemp = await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))));
+      // Filtrar apenas turmas do ano letivo atual
+      turmaDocs = turmaDocsTemp.filter(d => d.data()?.anoLetivo?.toString() === anoLetivo.toString());
     }
 
     const listaTurmas = turmaDocs

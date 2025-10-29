@@ -8,6 +8,7 @@ import {
 import { db } from '../services/firebase';
 import AppLayout from '../components/AppLayout';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import Paginacao from '../components/Paginacao';
 import { useUrlValidator } from '../hooks/useUrlValidator';
 
@@ -73,6 +74,7 @@ interface Vinculo {
 export default function Tarefas() {
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
+  const { anoLetivo } = useAnoLetivoAtual();
 
   // Novo sistema de validação de URLs com segurança avançada
   const { validateUrl } = useUrlValidator();
@@ -158,7 +160,7 @@ export default function Tarefas() {
     if (!userData) return;
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userData]);
+  }, [userData, anoLetivo]);
 
   const exportarPDF = () => {
     if (!atividadeSelecionada) return;
@@ -233,7 +235,7 @@ export default function Tarefas() {
 
     let turmaDocs: any[] = [];
     if (isAdmin) {
-      turmaDocs = (await getDocs(collection(db, 'turmas'))).docs;
+      turmaDocs = (await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())))).docs;
     } else {
       if (!userData) {
         setLoading(false);
@@ -244,9 +246,11 @@ export default function Tarefas() {
       setVinculos(vincList);
 
       const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-      turmaDocs = await Promise.all(
+      const turmaDocsTemp = await Promise.all(
         turmaIds.map(async id => await getDoc(doc(db, 'turmas', id)))
       );
+      // Filtrar apenas turmas do ano letivo atual
+      turmaDocs = turmaDocsTemp.filter(d => d.data()?.anoLetivo?.toString() === anoLetivo.toString());
     }
     setTurmas(turmaDocs.map(d => ({ id: d.id, nome: d.data()?.nome || '-' })));
 

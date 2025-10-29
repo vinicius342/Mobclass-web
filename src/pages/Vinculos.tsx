@@ -8,10 +8,11 @@ import { PlusCircle } from 'react-bootstrap-icons';
 import { Link2, Trash2 } from 'lucide-react';
 import Paginacao from '../components/Paginacao';
 import {
-  collection, getDocs, addDoc, deleteDoc, doc
+  collection, getDocs, addDoc, deleteDoc, doc, query, where
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 
 interface Professor { id: string; nome: string; }
 interface Turma { id: string; nome: string; }
@@ -21,6 +22,7 @@ interface Vinculo { id: string; professorId: string; materiaId: string; turmaId:
 export default function Vinculos() {
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
+  const { anoLetivo } = useAnoLetivoAtual();
 
   const [vinculos, setVinculos] = useState<Vinculo[]>([]);
   const [professores, setProfessores] = useState<Professor[]>([]);
@@ -45,21 +47,29 @@ export default function Vinculos() {
   useEffect(() => {
     if (!isAdmin) return;
     fetchData();
-  }, []);
+  }, [anoLetivo]);
 
   const fetchData = async () => {
     setLoading(true);
     const [profSnap, turmaSnap, matSnap, vincSnap] = await Promise.all([
       getDocs(collection(db, 'professores')),
-      getDocs(collection(db, 'turmas')),
+      getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString()))),
       getDocs(collection(db, 'materias')),
       getDocs(collection(db, 'professores_materias')),
     ]);
 
+    const turmasDoAno = turmaSnap.docs.map(d => ({ id: d.id, nome: d.data().nome })).sort((a, b) => a.nome.localeCompare(b.nome));
+    const turmaIdsDoAno = new Set(turmasDoAno.map(t => t.id));
+    
+    // Filtrar apenas vínculos que têm turmas do ano letivo atual
+    const vinculosFiltrados = vincSnap.docs
+      .map(d => ({ id: d.id, ...(d.data() as any) }))
+      .filter(v => turmaIdsDoAno.has(v.turmaId));
+
     setProfessores(profSnap.docs.map(d => ({ id: d.id, nome: d.data().nome })).sort((a, b) => a.nome.localeCompare(b.nome)));
-    setTurmas(turmaSnap.docs.map(d => ({ id: d.id, nome: d.data().nome })).sort((a, b) => a.nome.localeCompare(b.nome)));
+    setTurmas(turmasDoAno);
     setMaterias(matSnap.docs.map(d => ({ id: d.id, nome: d.data().nome })).sort((a, b) => a.nome.localeCompare(b.nome)));
-    setVinculos(vincSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    setVinculos(vinculosFiltrados);
     setLoading(false);
   };
 

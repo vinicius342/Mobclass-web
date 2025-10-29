@@ -9,10 +9,11 @@ import { PlusCircle, Person } from 'react-bootstrap-icons';
 import Paginacao from '../components/Paginacao';
 import { db } from '../services/firebase';
 import {
-  collection, getDocs, updateDoc, deleteDoc, doc, writeBatch
+  collection, getDocs, updateDoc, deleteDoc, doc, writeBatch, query, where
 } from 'firebase/firestore';
 import UsuarioForm, { FormValues, AlunoOption } from '../components/UsuarioForm';
 import { GraduationCap, Download } from 'lucide-react';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 
 // PDF
 import jsPDF from 'jspdf';
@@ -29,6 +30,7 @@ interface Responsavel extends UsuarioBase { filhos?: string[]; }
 interface Administrador extends UsuarioBase { }
 
 export default function Usuarios(): JSX.Element {
+  const { anoLetivo } = useAnoLetivoAtual();
   const [activeTab, setActiveTab] = useState<'todos' | 'professores' | 'alunos' | 'responsaveis' | 'administradores'>('todos');
   const [search, setSearch] = useState('');
   const [professores, setProfessores] = useState<Professor[]>([]);
@@ -36,6 +38,7 @@ export default function Usuarios(): JSX.Element {
   const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
   const [administradores, setAdministradores] = useState<Administrador[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
+  const [todasTurmas, setTodasTurmas] = useState<Turma[]>([]); // Todas as turmas (sem filtro de ano)
   const [alunosOptions, setAlunosOptions] = useState<AlunoOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -149,7 +152,7 @@ export default function Usuarios(): JSX.Element {
             usuario.tipoUsuario === 'responsaveis' ? 'Responsável' : 'Administrador';
 
         if (usuario.tipoUsuario === 'professores' && usuario.turmas) {
-          info = usuario.turmas.map((id: string) => turmas.find(t => t.id === id)?.nome || id).join(', ');
+          info = usuario.turmas.map((id: string) => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ');
         } else if (usuario.tipoUsuario === 'alunos' && usuario.turmaId) {
           info = turmas.find(t => t.id === usuario.turmaId)?.nome || '';
         } else if (usuario.tipoUsuario === 'responsaveis' && usuario.filhos) {
@@ -157,7 +160,7 @@ export default function Usuarios(): JSX.Element {
         }
       } else {
         if (activeTab === 'professores' && (usuario as Professor).turmas) {
-          info = (usuario as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome || id).join(', ');
+          info = (usuario as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ');
         } else if (activeTab === 'alunos' && (usuario as Aluno).turmaId) {
           info = turmas.find(t => t.id === (usuario as Aluno).turmaId)?.nome || '';
         } else if (activeTab === 'responsaveis' && (usuario as Responsavel).filhos) {
@@ -218,7 +221,7 @@ export default function Usuarios(): JSX.Element {
             usuario.tipoUsuario === 'responsaveis' ? 'Responsável' : 'Administrador';
 
         if (usuario.tipoUsuario === 'professores' && usuario.turmas) {
-          info = usuario.turmas.map((id: string) => turmas.find(t => t.id === id)?.nome || id).join(', ');
+          info = usuario.turmas.map((id: string) => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ');
         } else if (usuario.tipoUsuario === 'alunos' && usuario.turmaId) {
           info = turmas.find(t => t.id === usuario.turmaId)?.nome || '';
         } else if (usuario.tipoUsuario === 'responsaveis' && usuario.filhos) {
@@ -226,7 +229,7 @@ export default function Usuarios(): JSX.Element {
         }
       } else {
         if (activeTab === 'professores' && (usuario as Professor).turmas) {
-          info = (usuario as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome || id).join(', ');
+          info = (usuario as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ');
         } else if (activeTab === 'alunos' && (usuario as Aluno).turmaId) {
           info = turmas.find(t => t.id === (usuario as Aluno).turmaId)?.nome || '';
         } else if (activeTab === 'responsaveis' && (usuario as Responsavel).filhos) {
@@ -430,7 +433,15 @@ export default function Usuarios(): JSX.Element {
       setAlunos(alunosList);
       setResponsaveis(responsaveisList);
       setAdministradores(administradoresList);
-      setTurmas(tSnap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome })));
+      
+      // Guardar todas as turmas
+      const todasTurmasList = tSnap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome, anoLetivo: (d.data() as any).anoLetivo }));
+      setTodasTurmas(todasTurmasList);
+      
+      // Filtrar turmas apenas do ano letivo selecionado
+      const turmasAnoAtual = todasTurmasList.filter(t => (t as any).anoLetivo?.toString() === anoLetivo.toString());
+      setTurmas(turmasAnoAtual);
+      
       setLoading(false);
       setAlunosOptions(
         alunosList
@@ -454,7 +465,7 @@ export default function Usuarios(): JSX.Element {
       }
     }
     fetchData();
-  }, []);
+  }, [anoLetivo]);
 
   const handleSearch = (e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value);
 
@@ -471,14 +482,17 @@ export default function Usuarios(): JSX.Element {
   };
 
   const renderTurmasBadges = (turmasIds: string[], userId: string, maxVisible: number = 2) => {
+    // Filtrar apenas turmas do ano letivo atual
+    const turmasDoAnoAtual = turmasIds.filter(id => turmas.some(t => t.id === id));
     const isExpanded = expandedTurmas.has(userId);
-    const turmasToShow = isExpanded ? turmasIds : turmasIds.slice(0, maxVisible);
-    const remainingCount = turmasIds.length - maxVisible;
+    const turmasToShow = isExpanded ? turmasDoAnoAtual : turmasDoAnoAtual.slice(0, maxVisible);
+    const remainingCount = turmasDoAnoAtual.length - maxVisible;
 
     return (
       <>
         {turmasToShow.map(id => {
-          const turmaNome = turmas.find(t => t.id === id)?.nome || id;
+          const turmaNome = turmas.find(t => t.id === id)?.nome;
+          if (!turmaNome) return null; // Não renderizar se a turma não for do ano atual
           return (
             <span
               key={id}
@@ -1164,13 +1178,13 @@ export default function Usuarios(): JSX.Element {
                         <div className="usuarios-info-details">
                           {activeTab === 'todos' ? (
                             <>
-                              {user.tipoUsuario === 'professores' && (user as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome || id).join(', ')}
+                              {user.tipoUsuario === 'professores' && (user as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ')}
                               {user.tipoUsuario === 'alunos' && turmas.find(t => t.id === (user as Aluno).turmaId)?.nome}
                               {user.tipoUsuario === 'responsaveis' && (user as Responsavel).filhos?.map(filhoId => alunos.find(a => a.id === filhoId)?.nome).join(', ')}
                             </>
                           ) : (
                             <>
-                              {activeTab === 'professores' && (user as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome || id).join(', ')}
+                              {activeTab === 'professores' && (user as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ')}
                               {activeTab === 'alunos' && turmas.find(t => t.id === (user as Aluno).turmaId)?.nome}
                               {activeTab === 'responsaveis' && (user as Responsavel).filhos?.map(filhoId => alunos.find(a => a.id === filhoId)?.nome).join(', ')}
                             </>

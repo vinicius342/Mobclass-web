@@ -7,9 +7,10 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   LineChart, Line, Cell
 } from 'recharts';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import { FaUserGraduate, FaChalkboardTeacher, FaUsers, FaClipboardList } from 'react-icons/fa';
 import { BarChart3, Filter } from 'lucide-react';
 
@@ -29,6 +30,7 @@ interface NotaMediaPorTurma {
 }
 
 export default function Dashboard(): JSX.Element {
+  const { anoLetivo } = useAnoLetivoAtual();
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
 
@@ -64,8 +66,8 @@ export default function Dashboard(): JSX.Element {
         const [alunosSnap, profSnap, turmasSnap, tarefasSnap, freqSnap, notasSnap, materiasSnap] = await Promise.all([
           getDocs(collection(db, 'alunos')),
           getDocs(collection(db, 'professores')),
-          getDocs(collection(db, 'turmas')),
-          getDocs(collection(db, 'tarefas')),
+          getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString()))),
+          getDocs(query(collection(db, 'tarefas'), where('anoLetivo', '==', anoLetivo.toString()))),
           getDocs(collection(db, 'frequencias')),
           getDocs(collection(db, 'notas')),
           getDocs(collection(db, 'materias')),
@@ -85,10 +87,10 @@ export default function Dashboard(): JSX.Element {
           alunos: alunosSnap.size,
           professores: profSnap.size,
           turmas: turmas.length,
-          atividades: tarefasSnap.size,
+          atividades: tarefasSnap.docs.filter(doc => doc.data()?.anoLetivo?.toString() === anoLetivo.toString()).length,
         });
 
-        const freqDocs = freqSnap.docs.map(d => d.data());
+        const freqDocs = freqSnap.docs.map(d => d.data()).filter((f: any) => turmas.some(t => t.id === f.turmaId));
         setFreqDataOriginal(freqDocs);
 
         const freqResults: FreqPorTurma[] = turmas.map(turma => {
@@ -100,7 +102,7 @@ export default function Dashboard(): JSX.Element {
         });
         setFreqData(freqResults);
 
-        const notaDocs = notasSnap.docs.map(d => d.data());
+        const notaDocs = notasSnap.docs.map(d => d.data()).filter((n: any) => turmas.some(t => t.id === n.turmaId));
 
         // Salvar dados originais das notas para filtragem posterior
         setNotaDataOriginal(notaDocs);
@@ -137,7 +139,7 @@ export default function Dashboard(): JSX.Element {
     }
 
     fetchData();
-  }, [isAdmin]);
+  }, [isAdmin, anoLetivo, disciplinaSelecionada]);
 
   // Seleciona automaticamente o grupo de turmas com melhor taxa de frequência média
   useEffect(() => {

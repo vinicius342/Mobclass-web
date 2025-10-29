@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button, Modal, Form, Badge, Table, Spinner, Dropdown } from 'react-bootstrap';
-import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import AppLayout from '../components/AppLayout';
 import { toast } from 'react-toastify';
 import {
@@ -62,6 +63,7 @@ interface Turma {
 export default function Ocorrencias() {
   const authContext = useAuth();
   const userData = authContext?.userData;
+  const { anoLetivo } = useAnoLetivoAtual();
   
   // Verificar se o usuário tem acesso à página
   const temAcesso = userData?.tipo === 'administradores' || userData?.tipo === 'professores';
@@ -121,7 +123,7 @@ export default function Ocorrencias() {
 
   useEffect(() => {
     carregarDados();
-  }, []);
+  }, [anoLetivo]);
 
   const carregarDados = async () => {
     try {
@@ -163,7 +165,7 @@ export default function Ocorrencias() {
   };
 
   const carregarTurmas = async () => {
-    const snapshot = await getDocs(collection(db, 'turmas'));
+    const snapshot = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())));
     const dados = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()

@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import Paginacao from '../components/Paginacao';
 
 // PDF
@@ -32,6 +33,9 @@ interface AgendaItem {
 interface Turma {
   id: string;
   nome: string;
+  anoLetivo?: string | number;
+  isVirtualizada?: boolean;
+  turmaOriginalId?: string;
 }
 interface Materia {
   id: string;
@@ -46,6 +50,7 @@ const diasSemana = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-fei
 const diasIndexMap = Object.fromEntries(diasSemana.map((d, i) => [d, i]));
 
 export default function Agenda() {
+  const { anoLetivo } = useAnoLetivoAtual();
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
 
@@ -109,9 +114,67 @@ export default function Agenda() {
       const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
       const materiaIds = [...new Set(vincList.map(v => v.materiaId))];
 
-      const turmaDocs = isAdmin
-        ? (await getDocs(collection(db, 'turmas'))).docs
-        : await Promise.all(turmaIds.map(id => getDoc(doc(db, 'turmas', id))));
+      // Buscar turmas do ano atual
+      let turmaDocs;
+      if (isAdmin) {
+        turmaDocs = (await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())))).docs;
+      } else {
+        const turmaDocsTemp = await Promise.all(
+          turmaIds.map(async id => {
+            const turmaDoc = await getDoc(doc(db, 'turmas', id));
+            return turmaDoc.data()?.anoLetivo?.toString() === anoLetivo.toString() ? turmaDoc : null;
+          })
+        );
+        turmaDocs = turmaDocsTemp.filter((d): d is typeof turmaDocsTemp[0] & { id: string } => !!d);
+      }
+
+      // Buscar turmas do ano anterior para virtualização
+      const anoAnterior = anoLetivo - 1;
+      let turmasAnoAnteriorSnap;
+      if (isAdmin) {
+        turmasAnoAnteriorSnap = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoAnterior.toString())));
+      } else {
+        const turmaDocsTemp = await Promise.all(
+          turmaIds.map(async id => {
+            const turmaDoc = await getDoc(doc(db, 'turmas', id));
+            return turmaDoc.data()?.anoLetivo?.toString() === anoAnterior.toString() ? turmaDoc : null;
+          })
+        );
+        turmasAnoAnteriorSnap = { docs: turmaDocsTemp.filter((d): d is typeof turmaDocsTemp[0] & { id: string } => !!d) };
+      }
+
+
+      // Processar turmas do ano atual
+      const turmasAtuais = turmaDocs.map(d => ({ id: d.id, ...(d.data() as any) }));
+
+      // Processar turmas do ano anterior
+      const turmasAnteriores = turmasAnoAnteriorSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+
+      // Verificar quais turmas do ano anterior podem ser virtualizadas
+      const turmasVirtualizadas: Turma[] = [];
+      for (const turmaAnterior of turmasAnteriores) {
+        const podeVirtualizar = (turmaAnterior as any).isVirtual !== false;
+        // Normalizar nomes para comparação (remover espaços extras e case-insensitive)
+        const nomeAnterior = (turmaAnterior.nome || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const jaExisteAtual = turmasAtuais.some(t => {
+          const nomeAtual = (t.nome || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          return nomeAtual === nomeAnterior;
+        });
+
+        if (podeVirtualizar && !jaExisteAtual) {
+          turmasVirtualizadas.push({
+            ...turmaAnterior,
+            id: `virtual_${turmaAnterior.id}`,
+            anoLetivo: anoLetivo,
+            isVirtualizada: true,
+            turmaOriginalId: turmaAnterior.id
+          });
+        }
+      }
+
+      // Combinar turmas reais + virtualizadas
+      const turmasFinais = [...turmasAtuais, ...turmasVirtualizadas].sort((a, b) => a.nome.localeCompare(b.nome));
+
 
       const materiaDocs = isAdmin
         ? (await getDocs(collection(db, 'materias'))).docs
@@ -119,15 +182,15 @@ export default function Agenda() {
 
       setProfessores(profSnap.docs.map(d => ({ id: d.id, nome: d.data().nome })));
       setMaterias(materiaDocs.map(d => ({ id: d.id, nome: d.data()?.nome || '-' })));
-      setTurmas(turmaDocs.map(d => ({ id: d.id, nome: d.data()?.nome || '-' })));
+      setTurmas(turmasFinais);
       setLoading(false);
     };
     fetchInitial();
-  }, [userData]);
+  }, [userData, anoLetivo]);
 
   useEffect(() => {
-    if (!loading) fetchAgendaPorTurma();
-  }, [loading]);
+    if (!loading && turmas.length > 0) fetchAgendaPorTurma();
+  }, [loading, turmas]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -136,10 +199,42 @@ export default function Agenda() {
   const fetchAgendaPorTurma = async () => {
     const snap = await getDocs(collection(db, 'agenda'));
     const data = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as AgendaItem[];
+
+    // Criar conjunto de IDs válidos incluindo turmas reais e virtualizadas
+    const turmaIdsValidos = new Set<string>();
+    turmas.forEach(t => {
+      if (t.isVirtualizada && t.turmaOriginalId) {
+        // Para turmas virtualizadas, o ID original é válido
+        turmaIdsValidos.add(t.turmaOriginalId);
+      } else {
+        // Para turmas reais, o ID normal é válido
+        turmaIdsValidos.add(t.id);
+      }
+    });
+
+    const dataFiltrada = data.filter(item => {
+      // Verificar se a turma da aula está no conjunto de turmas válidas
+      return turmaIdsValidos.has(item.turmaId);
+    });
+
     const agrupado: Record<string, AgendaItem[]> = {};
-    data.forEach(item => {
-      if (!agrupado[item.turmaId]) agrupado[item.turmaId] = [];
-      agrupado[item.turmaId].push(item);
+    dataFiltrada.forEach(item => {
+      // Para agrupar, precisamos encontrar a turma correspondente
+      const turma = turmas.find(t => {
+        if (t.isVirtualizada && t.turmaOriginalId) {
+          // Para turmas virtualizadas, comparar com o ID original
+          return t.turmaOriginalId === item.turmaId;
+        }
+        // Para turmas reais, comparar diretamente
+        return t.id === item.turmaId;
+      });
+      
+      if (turma) {
+        // Usar o ID da turma no estado como chave (pode ser ID real ou virtual_xxx)
+        const turmaKey = turma.id;
+        if (!agrupado[turmaKey]) agrupado[turmaKey] = [];
+        agrupado[turmaKey].push(item);
+      }
     });
     setAgendaPorTurma(agrupado);
   };
@@ -267,7 +362,7 @@ export default function Agenda() {
 
   const downloadPDF = () => {
     const doc = new jsPDF('landscape', 'mm', 'a4'); // Orientação paisagem
-    
+
     // Agrupar dados por turma
     const dadosPorTurma: Record<string, AgendaItem[]> = {};
     dadosFiltrados.forEach(item => {
@@ -306,7 +401,7 @@ export default function Agenda() {
         if (!gradeHorarios[aula.diaSemana]) {
           gradeHorarios[aula.diaSemana] = {};
         }
-        
+
         const materia = materias.find(m => m.id === aula.materiaId);
         const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
         const professor = professores.find(p => p.id === vinculo?.professorId);
@@ -315,7 +410,7 @@ export default function Agenda() {
           materia: materia?.nome || '-',
           professor: professor?.nome || '---'
         };
-        
+
         horariosUnicos.add(aula.horario);
       });
 
@@ -324,10 +419,10 @@ export default function Agenda() {
 
       // Preparar dados para a tabela da grade
       const bodyData: string[][] = [];
-      
+
       horariosOrdenados.forEach(horario => {
         const linha: string[] = [];
-        
+
         diasSemana.forEach(dia => {
           const aulaInfo = gradeHorarios[dia]?.[horario];
           if (aulaInfo) {
@@ -336,7 +431,7 @@ export default function Agenda() {
             linha.push('------');
           }
         });
-        
+
         bodyData.push(linha);
       });
 
@@ -345,13 +440,13 @@ export default function Agenda() {
         startY: currentY,
         head: [diasSemana],
         body: bodyData,
-        styles: { 
+        styles: {
           fontSize: 8,
           cellPadding: 2,
           valign: 'middle',
           halign: 'center'
         },
-        headStyles: { 
+        headStyles: {
           fillColor: [60, 60, 60],
           textColor: [255, 255, 255],
           fontStyle: 'bold',
@@ -435,7 +530,7 @@ export default function Agenda() {
           1: { cellWidth: 45 }
         },
         tableWidth: horariosTableWidth,
-        didDrawPage: () => {}
+        didDrawPage: () => { }
       });
       autoTable(doc, {
         startY: tableTopY,
@@ -585,7 +680,21 @@ export default function Agenda() {
       if (turnoAula !== filtroTurnoVisualizacao) return false;
 
       // Aplica o filtro de turma da visualização se existir
-      if (filtroVisualizacaoTurma && item.turmaId !== filtroVisualizacaoTurma) return false;
+      if (filtroVisualizacaoTurma) {
+        // Considerar turmas virtualizadas
+        const turma = turmas.find(t => t.id === filtroVisualizacaoTurma);
+        if (turma?.isVirtualizada && turma.turmaOriginalId) {
+          // Se a turma do filtro é virtualizada, comparar com o ID original
+          if (item.turmaId !== turma.turmaOriginalId && item.turmaId !== filtroVisualizacaoTurma) {
+            return false;
+          }
+        } else {
+          // Turma normal
+          if (item.turmaId !== filtroVisualizacaoTurma) {
+            return false;
+          }
+        }
+      }
 
       // Aplica o filtro de professor da visualização se existir
       if (filtroProfessorVisualizacao) {
@@ -612,8 +721,22 @@ export default function Agenda() {
 
   const dadosOrdenados = Object.values(agendaPorTurma).flat()
     .sort((a, b) => {
-      const nomeTurmaA = turmas.find(t => t.id === a.turmaId)?.nome || '';
-      const nomeTurmaB = turmas.find(t => t.id === b.turmaId)?.nome || '';
+      // Buscar turma, considerando turmas virtualizadas
+      const turmaA = turmas.find(t => {
+        if (t.isVirtualizada && t.turmaOriginalId) {
+          return t.turmaOriginalId === a.turmaId || t.id === a.turmaId;
+        }
+        return t.id === a.turmaId;
+      });
+      const turmaB = turmas.find(t => {
+        if (t.isVirtualizada && t.turmaOriginalId) {
+          return t.turmaOriginalId === b.turmaId || t.id === b.turmaId;
+        }
+        return t.id === b.turmaId;
+      });
+      
+      const nomeTurmaA = turmaA?.nome || '';
+      const nomeTurmaB = turmaB?.nome || '';
       const nomeDiff = nomeTurmaA.localeCompare(nomeTurmaB);
       if (nomeDiff !== 0) return nomeDiff;
       const diaDiff = diasIndexMap[a.diaSemana] - diasIndexMap[b.diaSemana];
@@ -621,7 +744,14 @@ export default function Agenda() {
     });
 
   const dadosFiltrados = dadosOrdenados.filter(item => {
-    const turma = turmas.find(t => t.id === item.turmaId);
+    // Buscar turma, considerando turmas virtualizadas
+    const turma = turmas.find(t => {
+      if (t.isVirtualizada && t.turmaOriginalId) {
+        return t.turmaOriginalId === item.turmaId || t.id === item.turmaId;
+      }
+      return t.id === item.turmaId;
+    });
+    
     const materia = materias.find(m => m.id === item.materiaId);
     const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
     const professor = professores.find(p => p.id === vinculo?.professorId);
@@ -638,8 +768,21 @@ export default function Agenda() {
       if (!contemBusca) return false;
     }
 
-    // Filtro de turma específica
-    if (filtroTurma && item.turmaId !== filtroTurma) return false;
+    // Filtro de turma específica - considerar turmas virtualizadas
+    if (filtroTurma) {
+      const turmaFiltro = turmas.find(t => t.id === filtroTurma);
+      if (turmaFiltro?.isVirtualizada && turmaFiltro.turmaOriginalId) {
+        // Se a turma do filtro é virtualizada, comparar com o ID original
+        if (item.turmaId !== turmaFiltro.turmaOriginalId && item.turmaId !== filtroTurma) {
+          return false;
+        }
+      } else {
+        // Turma normal
+        if (item.turmaId !== filtroTurma) {
+          return false;
+        }
+      }
+    }
 
     // Filtro de professor
     if (filtroProfessor && vinculo?.professorId !== filtroProfessor) return false;
@@ -923,6 +1066,18 @@ export default function Agenda() {
                       const professor = professores.find(p => p.id === vinculo?.professorId);
                       const turnoStyle = getShiftColor(turno);
 
+                      // Buscar turma correspondente ao turmaId da aula
+
+                      // Buscar turma pelo id exato, se não encontrar, buscar virtualizada pelo turmaOriginalId
+                      let turma = turmas.find(t => t.id === item.turmaId);
+                      let nomeTurma = turma?.nome;
+                      if (!turma) {
+                        // Procurar turma virtualizada que tenha turmaOriginalId igual ao turmaId da aula
+                        turma = turmas.find(t => t.isVirtualizada && t.turmaOriginalId === item.turmaId);
+                        nomeTurma = turma?.nome;
+                      }
+                      if (!nomeTurma) nomeTurma = '-';
+
                       return (
                         <tr key={item.id} className='align-middle linha-agenda' style={{ textAlign: 'center' }}>
                           <td className='nothing-in-mobile'>
@@ -942,7 +1097,7 @@ export default function Agenda() {
                           <td>{formatarNomeProfessor(professor?.nome)}</td>
                           <td>
                             <span className="badge badge-turma px-2 py-1">
-                              {turmas.find(t => t.id === item.turmaId)?.nome}
+                              {nomeTurma}
                             </span>
                           </td>
                           <td>
@@ -1282,7 +1437,7 @@ export default function Agenda() {
                                   1: { cellWidth: 45 }
                                 },
                                 tableWidth: horariosTableWidth,
-                                didDrawPage: () => {}
+                                didDrawPage: () => { }
                               });
                               autoTable(doc, {
                                 startY: tableTopY,
