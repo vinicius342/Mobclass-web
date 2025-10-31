@@ -1264,8 +1264,13 @@ export default function Turmas() {
             historicoTurmas[turmaDestino.anoLetivo] = turmaDestinoId;
             historicoStatus[anoAtualStr] = 'transferido';
 
+            // Encontrar o maior ano no histórico para definir a turma atual
+            const anosHistorico = Object.keys(historicoTurmas).map(ano => parseInt(ano));
+            const maiorAno = Math.max(...anosHistorico);
+            const turmaIdAtual = historicoTurmas[maiorAno.toString()];
+
             const updateData = {
-              turmaId: turmaDestinoId, // USAR TURMA MATERIALIZADA
+              turmaId: turmaIdAtual, // Sempre usar a turma do maior ano do histórico
               historicoTurmas: historicoTurmas,
               historicoStatus: historicoStatus,
               ultimaAtualizacao: new Date()
@@ -1285,7 +1290,15 @@ export default function Turmas() {
           // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO
           const turmaDestinoId = await materializarTurmaVirtual(proximaTurma);
 
-          const turmaDestino = turmas.find(t => t.id === proximaTurma);
+          // Buscar turma destino (pode ser real ou virtual)
+          let turmaDestino = turmas.find(t => t.id === proximaTurma);
+          
+          // Se não encontrou nas turmas reais, buscar nas virtualizadas
+          if (!turmaDestino) {
+            const turmasProximas = getTurmasProximas();
+            turmaDestino = turmasProximas.find(t => t.id === proximaTurma);
+          }
+          
           if (turmaDestino) {
             // IMPORTANTE: Preservar a turma atual no histórico do ano atual
             const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivoRematricula);
@@ -1298,8 +1311,13 @@ export default function Turmas() {
             historicoTurmas[anoProximoStr] = turmaDestinoId;
             historicoStatus[anoAtualStr] = 'promovido';
 
+            // Encontrar o maior ano no histórico para definir a turma atual
+            const anosHistorico = Object.keys(historicoTurmas).map(ano => parseInt(ano));
+            const maiorAno = Math.max(...anosHistorico);
+            const turmaIdAtual = historicoTurmas[maiorAno.toString()];
+
             const updateData = {
-              turmaId: turmaDestinoId, // USAR TURMA MATERIALIZADA
+              turmaId: turmaIdAtual, // Sempre usar a turma do maior ano do histórico
               historicoTurmas: historicoTurmas,
               historicoStatus: historicoStatus,
               ultimaAtualizacao: new Date()
@@ -1373,8 +1391,13 @@ export default function Turmas() {
           historicoTurmas[anoProximoStr] = turmaDestinoIdFinal;
           historicoStatus[anoAtualStr] = 'reprovado';
 
+          // Encontrar o maior ano no histórico para definir a turma atual
+          const anosHistorico = Object.keys(historicoTurmas).map(ano => parseInt(ano));
+          const maiorAno = Math.max(...anosHistorico);
+          const turmaIdAtual = historicoTurmas[maiorAno.toString()];
+
           const updateData = {
-            turmaId: turmaDestinoIdFinal, // USAR TURMA MATERIALIZADA
+            turmaId: turmaIdAtual, // Sempre usar a turma do maior ano do histórico
             historicoTurmas: historicoTurmas,
             historicoStatus: historicoStatus,
             ultimaAtualizacao: new Date()
@@ -2137,18 +2160,20 @@ export default function Turmas() {
                           <Spinner animation="border" />
                         </div>
                       ) : (
-                        <Table hover className="mb-0">
-                          <thead className="thead-sticky">
-                            <tr style={{ textAlign: 'center' }}>
-                              <th className='text-muted' style={{ width: '35%' }}>Aluno</th>
-                              <th className='text-muted'>Média Final</th>
-                              <th className='text-muted'>Situação</th>
-                              <th className='text-muted'>Ações</th>
-                              <th className='text-muted'>Boletim</th>
-                            </tr>
-                          </thead>
-                          <tbody className=''>
-                            {getAlunosFiltrados().length > 0 ? getAlunosFiltrados().map(aluno => {
+                        <>
+                          {/* Tabela Desktop */}
+                          <Table hover className="mb-0 turmas-table-desktop">
+                            <thead className="thead-sticky">
+                              <tr style={{ textAlign: 'center' }}>
+                                <th className='text-muted' style={{ width: '35%' }}>Aluno</th>
+                                <th className='text-muted'>Média Final</th>
+                                <th className='text-muted'>Situação</th>
+                                <th className='text-muted'>Ações</th>
+                                <th className='text-muted'>Boletim</th>
+                              </tr>
+                            </thead>
+                            <tbody className=''>
+                              {getAlunosFiltrados().length > 0 ? getAlunosFiltrados().map(aluno => {
                               const mediaFinal = mediasAlunos[aluno.id];
                               const corMedia = mediaFinal !== null && mediaFinal !== undefined
                                 ? mediaFinal >= 7 ? 'text-success' : mediaFinal >= 5 ? 'text-warning' : 'text-danger'
@@ -2319,6 +2344,168 @@ export default function Turmas() {
                             )}
                           </tbody>
                         </Table>
+
+                        {/* Cards Mobile */}
+                        <div className="turmas-mobile-cards">
+                          {getAlunosFiltrados().length > 0 ? getAlunosFiltrados().map(aluno => {
+                            const mediaFinal = mediasAlunos[aluno.id];
+                            
+                            return (
+                              <div key={aluno.id} className="turmas-aluno-card">
+                                <div className="turmas-aluno-header">
+                                  <div className="d-flex align-items-center gap-2">
+                                    <User size={18} />
+                                    <strong>{aluno.nome}</strong>
+                                  </div>
+                                </div>
+                                
+                                <div className="turmas-aluno-info">
+                                  <div className="info-row">
+                                    <span className="info-label">Média Final:</span>
+                                    <span style={{
+                                      fontWeight: '600',
+                                      color: mediaFinal !== null && mediaFinal !== undefined
+                                        ? mediaFinal >= 7 ? '#22c55e' : mediaFinal >= 5 ? '#eab308' : '#ef4444'
+                                        : '#6c757d'
+                                    }}>
+                                      {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal.toFixed(1) : '-'}
+                                    </span>
+                                  </div>
+                                  
+                                  <div className="info-row">
+                                    <span className="info-label">Situação:</span>
+                                    {getStatusBadge(aluno.id)}
+                                  </div>
+                                </div>
+                                
+                                <div className="turmas-acoes-mobile">
+                                  {acaoFinalizada[aluno.id] ? (
+                                    <div className="d-flex justify-content-center">
+                                      {acaoFinalizada[aluno.id] === 'promovido' && (
+                                        <span className="badge bg-success px-3 py-2 w-100" style={{ fontSize: '0.85rem' }}>
+                                          <Check size={14} className="me-1" />
+                                          Promovido
+                                        </span>
+                                      )}
+                                      {acaoFinalizada[aluno.id] === 'reprovado' && (
+                                        <span className="badge bg-danger px-3 py-2 w-100" style={{ fontSize: '0.85rem' }}>
+                                          <X size={14} className="me-1" />
+                                          Reprovado
+                                        </span>
+                                      )}
+                                      {acaoFinalizada[aluno.id] === 'transferido' && (
+                                        <span className="badge bg-primary px-3 py-2 w-100" style={{ fontSize: '0.85rem' }}>
+                                          <ArrowRight size={14} className="me-1" />
+                                          Transferido
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="d-flex gap-2 justify-content-center flex-wrap">
+                                      <Button
+                                        className="btn-mobile-acao"
+                                        size="sm"
+                                        onClick={() => {
+                                          setStatusPromocao(prev => {
+                                            if (prev[aluno.id] === 'promovido') {
+                                              const { [aluno.id]: _, ...rest } = prev;
+                                              return rest;
+                                            }
+                                            return { ...prev, [aluno.id]: 'promovido' };
+                                          });
+                                          if (alunosTransferencia[aluno.id]) {
+                                            const novaTransferencia = { ...alunosTransferencia };
+                                            delete novaTransferencia[aluno.id];
+                                            setAlunosTransferencia(novaTransferencia);
+                                          }
+                                        }}
+                                        title="Aprovar"
+                                        style={{
+                                          backgroundColor: statusPromocao[aluno.id] === 'promovido' ? '#22c55e' : 'white',
+                                          color: statusPromocao[aluno.id] === 'promovido' ? 'white' : 'black',
+                                          border: '1px solid #cbd5e1',
+                                          flex: 1
+                                        }}
+                                      >
+                                        <Check size={16} strokeWidth={2.5} />
+                                        <span className="ms-1">Aprovar</span>
+                                      </Button>
+                                      <Button
+                                        className="btn-mobile-acao"
+                                        size="sm"
+                                        onClick={() => {
+                                          setStatusPromocao(prev => {
+                                            if (prev[aluno.id] === 'reprovado') {
+                                              const { [aluno.id]: _, ...rest } = prev;
+                                              return rest;
+                                            }
+                                            return { ...prev, [aluno.id]: 'reprovado' };
+                                          });
+                                          if (alunosTransferencia[aluno.id]) {
+                                            const novaTransferencia = { ...alunosTransferencia };
+                                            delete novaTransferencia[aluno.id];
+                                            setAlunosTransferencia(novaTransferencia);
+                                          }
+                                        }}
+                                        title="Reprovar"
+                                        style={{
+                                          backgroundColor: statusPromocao[aluno.id] === 'reprovado' ? '#ef4444' : 'white',
+                                          color: statusPromocao[aluno.id] === 'reprovado' ? 'white' : 'black',
+                                          border: '1px solid #cbd5e1',
+                                          flex: 1
+                                        }}
+                                      >
+                                        <X size={16} strokeWidth={2.5} />
+                                        <span className="ms-1">Reprovar</span>
+                                      </Button>
+                                      <Button
+                                        className="btn-mobile-acao"
+                                        size="sm"
+                                        onClick={() => handleAbrirModalTransferencia(aluno)}
+                                        title="Transferir"
+                                        style={{
+                                          backgroundColor: alunosTransferencia[aluno.id] ? '#3b82f6' : 'white',
+                                          color: alunosTransferencia[aluno.id] ? 'white' : 'black',
+                                          border: '1px solid #cbd5e1',
+                                          flex: 1
+                                        }}
+                                      >
+                                        <ArrowLeftRight size={16} strokeWidth={2.5} />
+                                        <span className="ms-1">Transferir</span>
+                                      </Button>
+                                    </div>
+                                  )}
+                                  
+                                  <Button
+                                    variant="primary"
+                                    size="sm"
+                                    className="d-flex align-items-center justify-content-center gap-2 mt-2"
+                                    onClick={() => handleAbrirBoletim(aluno)}
+                                    style={{
+                                      width: '100%',
+                                      color: 'black',
+                                      background: 'white',
+                                      border: '1px solid #cbd5e1',
+                                    }}
+                                    title="Ver Boletim"
+                                  >
+                                    <BookText size={16} />
+                                    <span>Ver Boletim</span>
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          }) : (
+                            <div className="text-center py-4">
+                              <div className="agenda-empty-state">
+                                <div className="empty-icon">👥</div>
+                                <h5>Nenhum aluno encontrado</h5>
+                                <p className="text-muted">Tente ajustar os filtros ou verifique se há alunos cadastrados.</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </>
                       )}
                     </Card.Body>
                   </Card>
