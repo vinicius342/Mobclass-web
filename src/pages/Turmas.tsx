@@ -163,7 +163,7 @@ export default function Turmas() {
   // Carregar ações finalizadas do Firebase
   useEffect(() => {
     const carregarAcoesFinalizadas = () => {
-      const anoAtualStr = anoLetivo.toString();
+      const anoAtualStr = anoLetivoRematricula.toString();
       const novasAcoesFinalizadas: Record<string, 'promovido' | 'reprovado' | 'transferido'> = {};
 
       alunos.forEach(aluno => {
@@ -178,7 +178,7 @@ export default function Turmas() {
     if (alunos.length > 0) {
       carregarAcoesFinalizadas();
     }
-  }, [alunos, anoLetivo]);
+  }, [alunos, anoLetivoRematricula]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -978,26 +978,31 @@ export default function Turmas() {
   // Função auxiliar para materializar turma virtual
   const materializarTurmaVirtual = async (turmaIdOuObjeto: string | Turma): Promise<string> => {
     // Aceitar tanto ID quanto objeto turma
-    const turmaVirtual = typeof turmaIdOuObjeto === 'string'
-      ? turmas.find(t => t.id === turmaIdOuObjeto)
-      : turmaIdOuObjeto;
+    let turmaVirtual: Turma | undefined;
+    
+    if (typeof turmaIdOuObjeto === 'string') {
+      // Buscar primeiro nas turmas reais
+      turmaVirtual = turmas.find(t => t.id === turmaIdOuObjeto);
+      
+      // Se não encontrou, buscar nas turmas virtualizadas geradas
+      if (!turmaVirtual) {
+        const turmasProximas = getTurmasProximas();
+        turmaVirtual = turmasProximas.find(t => t.id === turmaIdOuObjeto);
+      }
+    } else {
+      turmaVirtual = turmaIdOuObjeto;
+    }
 
     const turmaId = typeof turmaIdOuObjeto === 'string' ? turmaIdOuObjeto : turmaIdOuObjeto.id;
 
-    console.log(`🔄 Verificando se turma ${turmaId} precisa ser materializada...`);
-
     if (!turmaVirtual) {
-      console.log(`❌ Turma ${turmaId} não encontrada`);
       return turmaId;
     }
 
     // Se não é virtual, retornar o próprio ID
     if (!turmaVirtual.isVirtualizada || !turmaVirtual.turmaOriginalId) {
-      console.log(`ℹ️ Turma ${turmaVirtual.nome} não é virtual - usando diretamente`);
       return turmaId;
     }
-
-    console.log(`🔄 Turma ${turmaVirtual.nome} é VIRTUAL - materializando...`);
 
     // Verificar se já existe uma turma real com o mesmo nome no ano atual
     const turmasReaisQuery = query(
@@ -1010,8 +1015,6 @@ export default function Turmas() {
 
     if (turmasReaisSnap.empty) {
       // Materializar a turma virtual
-      console.log(`📝 Criando turma real: ${turmaVirtual.nome}`);
-
       const novaTurmaData = {
         nome: turmaVirtual.nome,
         anoLetivo: turmaVirtual.anoLetivo,
@@ -1021,18 +1024,13 @@ export default function Turmas() {
       const novaTurmaRef = await addDoc(collection(db, 'turmas'), novaTurmaData);
       const turmaRealId = novaTurmaRef.id;
 
-      console.log(`✅ Turma real criada com ID: ${turmaRealId}`);
-
       // Copiar vínculos professor-matéria da turma original
-      console.log(`🔗 Copiando vínculos da turma original: ${turmaVirtual.turmaOriginalId}`);
-
       const vinculosOriginaisQuery = query(
         collection(db, 'professores_materias'),
         where('turmaId', '==', turmaVirtual.turmaOriginalId)
       );
 
       const vinculosOriginaisSnap = await getDocs(vinculosOriginaisQuery);
-      console.log(`📋 Vínculos encontrados: ${vinculosOriginaisSnap.docs.length}`);
 
       for (const vinculoDoc of vinculosOriginaisSnap.docs) {
         const vinculoData = vinculoDoc.data();
@@ -1043,18 +1041,13 @@ export default function Turmas() {
         });
       }
 
-      console.log(`✅ Vínculos copiados com sucesso`);
-
       // NOVO: Copiar documentos da agenda para o novo turmaId
-      console.log(`📚 Copiando aulas (agenda) para o novo turmaId: ${turmaRealId}`);
-      
       const agendasOriginaisQuery = query(
         collection(db, 'agenda'),
         where('turmaId', '==', turmaVirtual.turmaOriginalId)
       );
 
       const agendasOriginaisSnap = await getDocs(agendasOriginaisQuery);
-      console.log(`📋 Aulas encontradas: ${agendasOriginaisSnap.docs.length}`);
 
       for (const agendaDoc of agendasOriginaisSnap.docs) {
         const agendaData = agendaDoc.data();
@@ -1064,40 +1057,26 @@ export default function Turmas() {
         });
       }
 
-      console.log(`✅ Aulas copiadas com sucesso`);
-
       // Marcar turma original como não virtualizável
       await updateDoc(doc(db, 'turmas', turmaVirtual.turmaOriginalId), {
         isVirtual: false
       });
 
-      console.log(`✅ Turma original marcada como não virtualizável`);
-
       return turmaRealId;
     } else {
       // Turma real já existe, usar ela
       const turmaRealId = turmasReaisSnap.docs[0].id;
-      console.log(`✅ Turma real já existe com ID: ${turmaRealId}`);
       return turmaRealId;
     }
   };
 
   // Função para abrir modal de confirmação
   const handleAbrirModalConfirmacao = () => {
-    console.log('🔘 BOTÃO CONFIRMAR AÇÕES CLICADO');
-
     const alunosComAcao = Object.keys(statusPromocao).filter(
       alunoId => statusPromocao[alunoId] !== null || alunosTransferencia[alunoId]
     );
 
-    console.log('📋 Verificando ações selecionadas...');
-    console.log('   statusPromocao:', statusPromocao);
-    console.log('   alunosTransferencia:', alunosTransferencia);
-    console.log('   alunosComAcao:', alunosComAcao);
-    console.log('   proximaTurma:', proximaTurma);
-
     if (alunosComAcao.length === 0) {
-      console.log('⚠️ Nenhuma ação selecionada - mostrando toast');
       setToast({ show: true, message: 'Nenhuma ação selecionada', variant: 'danger' });
       return;
     }
@@ -1106,12 +1085,7 @@ export default function Turmas() {
     const temPromovido = alunosComAcao.some(id => statusPromocao[id] === 'promovido');
     const temTransferido = Object.keys(alunosTransferencia).length > 0;
 
-    console.log('🔍 Validações:');
-    console.log('   temPromovido:', temPromovido);
-    console.log('   temTransferido:', temTransferido);
-
     if ((temPromovido || temTransferido) && !proximaTurma) {
-      console.log('⚠️ Próxima turma não selecionada - mostrando toast');
       setToast({ show: true, message: 'Selecione a próxima turma antes de confirmar', variant: 'danger' });
       return;
     }
@@ -1129,20 +1103,12 @@ export default function Turmas() {
         turmaProxima = turmasProximas.find(t => t.id === proximaTurma);
       }
 
-      console.log('🔍 Validando série da próxima turma:');
-      console.log('   turmaAtual:', turmaAtual?.nome, '- Ano:', turmaAtual?.anoLetivo);
-      console.log('   turmaProxima:', turmaProxima?.nome, '- Ano:', turmaProxima?.anoLetivo, '- Virtual:', turmaProxima?.isVirtualizada);
-
       if (turmaAtual && turmaProxima) {
         const serieAtual = extrairNumeroSerie(turmaAtual.nome);
         const serieProxima = extrairNumeroSerie(turmaProxima.nome);
 
-        console.log('   serieAtual:', serieAtual);
-        console.log('   serieProxima:', serieProxima);
-
         // VALIDAÇÃO: Para promover, a série da próxima turma DEVE ser maior
         if (serieProxima <= serieAtual) {
-          console.log('⚠️ Bloqueando: série próxima não é superior à atual');
           setToast({
             show: true,
             message: 'Para promover alunos, a próxima turma deve ser de uma série superior à atual',
@@ -1150,8 +1116,6 @@ export default function Turmas() {
           });
           return;
         }
-
-        console.log('✅ Validação de série passou - série próxima é superior');
       }
     }
 
@@ -1169,7 +1133,15 @@ export default function Turmas() {
 
       // Promovidos
       if (statusPromocao[alunoId] === 'promovido' && proximaTurma) {
-        const turmaDestino = turmas.find(t => t.id === proximaTurma);
+        // Buscar primeiro nas turmas reais
+        let turmaDestino = turmas.find(t => t.id === proximaTurma);
+        
+        // Se não encontrou, buscar nas turmas virtualizadas do próximo ano
+        if (!turmaDestino) {
+          const turmasProximas = getTurmasProximas();
+          turmaDestino = turmasProximas.find(t => t.id === proximaTurma);
+        }
+        
         promovidos.push({
           alunoNome: aluno.nome,
           turmaDestino: turmaDestino?.nome || 'Desconhecida'
@@ -1178,7 +1150,7 @@ export default function Turmas() {
 
       // Reprovados
       if (statusPromocao[alunoId] === 'reprovado') {
-        const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(aluno, anoLetivo));
+        const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(aluno, anoLetivoRematricula));
         const nomeAtualAluno = turmaAtualAluno?.nome || '';
 
         // Gerar turmas virtualizadas (mesmo código da confirmação)
@@ -1224,111 +1196,74 @@ export default function Turmas() {
 
     setResumoDestinos({ promovidos, reprovados, transferidos });
 
-    console.log('✅ Todas validações passaram - abrindo modal de confirmação');
     setShowModalConfirmacao(true);
   };  // Função para confirmar ações de promoção, reprovação e transferência
   const handleConfirmarAcoes = async () => {
     try {
-      console.log('🚀 INICIANDO handleConfirmarAcoes');
       setShowModalConfirmacao(false);
 
       const alunosComAcao = Object.keys(statusPromocao).filter(
         alunoId => statusPromocao[alunoId] !== null || alunosTransferencia[alunoId]
       );
 
-      console.log('📋 Alunos com ação:', alunosComAcao);
-      console.log('📊 statusPromocao:', statusPromocao);
-      console.log('🔄 alunosTransferencia:', alunosTransferencia);
-      console.log('🎯 proximaTurma:', proximaTurma);
-
       if (alunosComAcao.length === 0) {
-        console.log('⚠️ Nenhum aluno com ação definida');
         return;
       }
 
-      const anoAtualStr = anoLetivo.toString();
-      const anoProximoStr = (anoLetivo + 1).toString();
-      console.log(`📅 Ano atual: ${anoAtualStr}, Ano próximo: ${anoProximoStr}`);
+      const anoAtualStr = anoLetivoRematricula.toString();
+      const anoProximoStr = (anoLetivoRematricula + 1).toString();
 
       // Processar cada aluno
       for (const alunoId of alunosComAcao) {
-        console.log(`\n🔍 ====== PROCESSANDO ALUNO ${alunoId} ======`);
-
         const aluno = alunos.find(a => a.id === alunoId);
         if (!aluno) {
-          console.log(`❌ Aluno ${alunoId} não encontrado na lista`);
           continue;
         }
-
-        console.log(`👤 Aluno encontrado: ${aluno.nome}`);
 
         const alunoRef = doc(db, 'alunos', alunoId);
         const alunoDoc = await getDoc(alunoRef);
 
         if (!alunoDoc.exists()) {
-          console.log(`❌ Documento do aluno ${alunoId} não existe no Firestore`);
           continue;
         }
 
-        console.log(`✅ Documento do aluno existe no Firestore`);
-
         const alunoData = alunoDoc.data();
-        console.log(`📄 Dados atuais do aluno:`, alunoData);
 
         const historicoTurmas = alunoData?.historicoTurmas || {};
         const historicoStatus = alunoData?.historicoStatus || {};
 
-        console.log(`📚 Histórico de turmas atual:`, historicoTurmas);
-        console.log(`📊 Histórico de status atual:`, historicoStatus);
-
 
         // Se for transferência
         if (alunosTransferencia[alunoId]) {
-          console.log(`🔄 TRANSFERÊNCIA detectada para aluno ${alunoId}`);
           const turmaDestinoIdOriginal = alunosTransferencia[alunoId];
-          console.log(`🎯 Turma destino ID (original): ${turmaDestinoIdOriginal}`);
 
           // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO
           const turmaDestinoId = await materializarTurmaVirtual(turmaDestinoIdOriginal);
-          console.log(`🎯 Turma destino ID (após materialização): ${turmaDestinoId}`);
 
           const turmaDestino = turmas.find(t => t.id === turmaDestinoIdOriginal);
 
           if (turmaDestino) {
-            console.log(`✅ Turma destino encontrada: ${turmaDestino.nome}`);
-            console.log(`   isVirtualizada: ${turmaDestino.isVirtualizada}`);
-
-            const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(aluno, anoLetivo));
+            const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(aluno, anoLetivoRematricula));
             const serieAtual = extrairNumeroSerie(turmaAtualAluno?.nome || '');
             const serieDestino = extrairNumeroSerie(turmaDestino.nome);
 
-            console.log(`📊 Série atual: ${serieAtual}, Série destino: ${serieDestino}`);
-
             // Verificar se é série superior (não permitido para transferência)
             if (serieDestino > serieAtual + 1) {
-              console.log(`❌ Transferência bloqueada: série destino muito superior`);
               setToast({ show: true, message: `Aluno ${aluno.nome} não pode ser transferido para série superior`, variant: 'danger' });
               continue;
             }
 
             // IMPORTANTE: Preservar a turma atual no histórico do ano atual
-            const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivo);
-            console.log(`📚 Turma atual do aluno: ${turmaAtualId}`);
+            const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivoRematricula);
 
             if (!historicoTurmas[anoAtualStr]) {
               historicoTurmas[anoAtualStr] = turmaAtualId;
-              console.log(`✅ Salvando turma atual no histórico de ${anoAtualStr}`);
-            } else {
-              console.log(`ℹ️ Histórico de ${anoAtualStr} já existe`);
             }
 
             // Adicionar a turma de destino no histórico do ano da turma de destino (USAR TURMA MATERIALIZADA)
             historicoTurmas[turmaDestino.anoLetivo] = turmaDestinoId;
             historicoStatus[anoAtualStr] = 'transferido';
 
-            console.log(`📚 Histórico de turmas atualizado:`, historicoTurmas);
-            console.log(`📊 Histórico de status atualizado:`, historicoStatus);
-
             const updateData = {
               turmaId: turmaDestinoId, // USAR TURMA MATERIALIZADA
               historicoTurmas: historicoTurmas,
@@ -1336,54 +1271,33 @@ export default function Turmas() {
               ultimaAtualizacao: new Date()
             };
 
-            console.log(`💾 Dados que serão salvos no Firestore:`, updateData);
-
             await updateDoc(alunoRef, updateData);
 
-            console.log(`✅ Documento atualizado no Firestore com sucesso!`);
-
             setAcaoFinalizada(prev => ({ ...prev, [alunoId]: 'transferido' }));
-          } else {
-            console.log(`❌ Turma destino não encontrada`);
           }
         }
         // Se for promoção
         else if (statusPromocao[alunoId] === 'promovido') {
-          console.log(`✅ PROMOÇÃO detectada para aluno ${alunoId}`);
-          console.log(`🎯 Próxima turma ID (original): ${proximaTurma}`);
-
           if (!proximaTurma) {
-            console.log(`❌ Próxima turma não selecionada - abortando promoção`);
             continue;
           }
 
           // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO
           const turmaDestinoId = await materializarTurmaVirtual(proximaTurma);
-          console.log(`🎯 Turma destino ID (após materialização): ${turmaDestinoId}`);
 
           const turmaDestino = turmas.find(t => t.id === proximaTurma);
           if (turmaDestino) {
-            console.log(`✅ Turma destino encontrada: ${turmaDestino.nome}`);
-            console.log(`   isVirtualizada: ${turmaDestino.isVirtualizada}`);
-
             // IMPORTANTE: Preservar a turma atual no histórico do ano atual
-            const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivo);
-            console.log(`📚 Turma atual do aluno: ${turmaAtualId}`);
+            const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivoRematricula);
 
             if (!historicoTurmas[anoAtualStr]) {
               historicoTurmas[anoAtualStr] = turmaAtualId;
-              console.log(`✅ Salvando turma atual no histórico de ${anoAtualStr}`);
-            } else {
-              console.log(`ℹ️ Histórico de ${anoAtualStr} já existe:`, historicoTurmas[anoAtualStr]);
             }
 
             // Adicionar a nova turma no histórico do ano seguinte (USAR TURMA MATERIALIZADA)
             historicoTurmas[anoProximoStr] = turmaDestinoId;
             historicoStatus[anoAtualStr] = 'promovido';
 
-            console.log(`📚 Histórico de turmas atualizado:`, historicoTurmas);
-            console.log(`📊 Histórico de status atualizado:`, historicoStatus);
-
             const updateData = {
               turmaId: turmaDestinoId, // USAR TURMA MATERIALIZADA
               historicoTurmas: historicoTurmas,
@@ -1391,25 +1305,16 @@ export default function Turmas() {
               ultimaAtualizacao: new Date()
             };
 
-            console.log(`💾 Dados que serão salvos no Firestore:`, updateData);
-
             await updateDoc(alunoRef, updateData);
 
-            console.log(`✅ Documento atualizado no Firestore com sucesso!`);
-
             setAcaoFinalizada(prev => ({ ...prev, [alunoId]: 'promovido' }));
-          } else {
-            console.log(`❌ Turma destino não encontrada para ID ${proximaTurma}`);
           }
         }
         // Se for reprovação
         else if (statusPromocao[alunoId] === 'reprovado') {
-          console.log(`❌ REPROVAÇÃO detectada para aluno ${alunoId}`);
-
           // Para reprovados: sempre buscar turma da mesma série no ano seguinte
-          const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(aluno, anoLetivo));
+          const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(aluno, anoLetivoRematricula));
           const serieAtual = extrairNumeroSerie(turmaAtualAluno?.nome || '');
-          console.log(`📊 Turma atual: ${turmaAtualAluno?.nome}, Série: ${serieAtual}`);
 
           // GERAR TURMAS VIRTUALIZADAS PARA O ANO SEGUINTE
           const turmasReaisProximoAno = turmas.filter(t =>
@@ -1444,10 +1349,8 @@ export default function Turmas() {
           const turmasMesmaSerie = todasTurmasProximoAno.filter(t =>
             extrairNumeroSerie(t.nome) === serieAtual
           );
-          console.log(`🔍 Turmas da mesma série encontradas:`, turmasMesmaSerie.map(t => `${t.nome} (${t.isVirtualizada ? 'Virtual' : 'Real'})`));
 
           if (turmasMesmaSerie.length === 0) {
-            console.log(`❌ Nenhuma turma destino encontrada para reprovado`);
             setToast({ show: true, message: `Nenhuma turma da mesma série encontrada para ${aluno.nome}`, variant: 'danger' });
             continue;
           }
@@ -1456,30 +1359,19 @@ export default function Turmas() {
           const nomeAtualAluno = turmaAtualAluno?.nome || '';
           const turmaDestino = turmasMesmaSerie.find(t => t.nome === nomeAtualAluno) || turmasMesmaSerie[0];
 
-          console.log(`✅ Usando turma: ${turmaDestino.nome} (${turmaDestino.isVirtualizada ? 'Virtual - será materializada' : 'Real'})`);
-
           // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO (passar objeto completo)
-          console.log(`🎯 Turma destino ID (antes de materializar): ${turmaDestino.id}`);
           const turmaDestinoIdFinal = await materializarTurmaVirtual(turmaDestino);
-          console.log(`🎯 Turma destino ID (após materialização): ${turmaDestinoIdFinal}`);
 
           // IMPORTANTE: Preservar a turma atual no histórico do ano atual
-          const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivo);
-          console.log(`📚 Turma atual do aluno: ${turmaAtualId}`);
+          const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivoRematricula);
 
           if (!historicoTurmas[anoAtualStr]) {
             historicoTurmas[anoAtualStr] = turmaAtualId;
-            console.log(`✅ Salvando turma atual no histórico de ${anoAtualStr}`);
-          } else {
-            console.log(`ℹ️ Histórico de ${anoAtualStr} já existe`);
           }
 
           // Adicionar a turma de destino no histórico do ano seguinte (USAR TURMA MATERIALIZADA)
           historicoTurmas[anoProximoStr] = turmaDestinoIdFinal;
           historicoStatus[anoAtualStr] = 'reprovado';
-
-          console.log(`📚 Histórico de turmas atualizado:`, historicoTurmas);
-          console.log(`📊 Histórico de status atualizado:`, historicoStatus);
 
           const updateData = {
             turmaId: turmaDestinoIdFinal, // USAR TURMA MATERIALIZADA
@@ -1488,18 +1380,11 @@ export default function Turmas() {
             ultimaAtualizacao: new Date()
           };
 
-          console.log(`💾 Dados que serão salvos no Firestore:`, updateData);
-
           await updateDoc(alunoRef, updateData);
-
-          console.log(`✅ Documento atualizado no Firestore com sucesso!`);
 
           setAcaoFinalizada(prev => ({ ...prev, [alunoId]: 'reprovado' }));
         }
       }
-
-      console.log(`\n🎉 ====== PROCESSAMENTO CONCLUÍDO ======`);
-      console.log(`✅ Total de alunos processados: ${alunosComAcao.length}`);
 
       setToast({
         show: true,
@@ -2222,7 +2107,7 @@ export default function Turmas() {
                     <Card.Body className="pb-0">
                       <div className="d-flex align-items-center justify-content-between px-2 mb-2">
                         <h3 className="mb-0 d-flex align-items-center gap-2">
-                          Lista de Alunos - {turmas.find(t => t.id === turmaFiltroRematricula)?.nome}
+                          Lista de Alunos - {turmas.find(t => t.id === turmaFiltroRematricula)?.nome} - {anoLetivoRematricula}
                         </h3>
                         <div className="d-flex gap-2">
                           <Button
