@@ -114,13 +114,6 @@ export default function Turmas() {
   // Estado para status dos alunos (cache para página atual)
   const [statusAlunos, setStatusAlunos] = useState<Map<string, string>>(new Map());
 
-  // Estado para modal de rematrícula
-  const [showRematricula, setShowRematricula] = useState(false);
-  const [alunoRematricula, setAlunoRematricula] = useState<Aluno | null>(null);
-  const [turmasDisponiveis, setTurmasDisponiveis] = useState<Turma[]>([]);
-  const [turmaSelecionada, setTurmaSelecionada] = useState<string>('');
-  const [processandoRematricula, setProcessandoRematricula] = useState(false);
-
   // Estado para modal de confirmação de ações
   const [showModalConfirmacao, setShowModalConfirmacao] = useState(false);
   const [resumoDestinos, setResumoDestinos] = useState<{
@@ -133,6 +126,7 @@ export default function Turmas() {
   const [showModalTransferencia, setShowModalTransferencia] = useState(false);
   const [alunoTransferencia, setAlunoTransferencia] = useState<Aluno | null>(null);
   const [turmaDestinoTransferencia, setTurmaDestinoTransferencia] = useState<string>('');
+  const [processandoTransferencia, setProcessandoTransferencia] = useState(false);
 
   useEffect(() => {
     if (!userData || carregandoAnos) return;
@@ -747,38 +741,6 @@ export default function Turmas() {
     return resultado;
   };
 
-  // Função para obter turmas do ano atual (para transferência)
-  const getTurmasAnoAtual = (): Turma[] => {
-    const anoAtualStr = anoLetivoRematricula.toString();
-
-    // Filtrar turmas do ano atual (reais, não virtualizadas)
-    const turmasAnoAtual = turmas.filter(t =>
-      t.anoLetivo === anoAtualStr && t.isVirtualizada !== true
-    );
-
-    return turmasAnoAtual.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
-  };
-
-  // Função para extrair série completa (com sufixo)
-  const extrairSerieDaTurma = (nomeTurma: string): string => {
-    // Exemplos: "1º A", "2º B", "3º C", "6ª Ano B" -> extrai "1º", "2º", "3º", "6ª"
-    const patterns = [
-      /^(\d+º)/,     // 1º, 2º, 3º
-      /^(\d+ª)/,     // 6ª, 7ª, 8ª, 9ª
-      /^(\d+)/       // Fallback: apenas o número
-    ];
-
-    for (const pattern of patterns) {
-      const match = nomeTurma.match(pattern);
-      if (match) {
-        const serie = match[1];
-        return serie;
-      }
-    }
-
-    return '';
-  };
-
   // Função para calcular média final do aluno (soma de todas as médias finais / total de matérias)
   const calcularMediaFinalAluno = async (alunoId: string, anoParaCalculo: number = anoLetivo): Promise<number | null> => {
     try {
@@ -857,133 +819,15 @@ export default function Turmas() {
     }
   }, [turmaFiltroRematricula, alunos, anoLetivoRematricula]);
 
-  // Função para executar a rematrícula
-  const executarRematricula = async () => {
-    if (!alunoRematricula || !turmaSelecionada) {
-      alert('Selecione uma turma para rematrícula');
-      return;
-    }
-
-    setProcessandoRematricula(true);
-
-    try {
-      let turmaFinalId = turmaSelecionada;
-
-      // Verificar se a turma selecionada é virtual
-      const turmaVirtual = turmasDisponiveis.find(t => t.id === turmaSelecionada);
-
-      if (turmaVirtual?.isVirtualizada && turmaVirtual.turmaOriginalId) {
-        // Verificar se já existe uma turma real com o mesmo nome no ano atual
-        const turmasReaisQuery = query(
-          collection(db, 'turmas'),
-          where('nome', '==', turmaVirtual.nome),
-          where('anoLetivo', '==', turmaVirtual.anoLetivo)
-        );
-
-        const turmasReaisSnap = await getDocs(turmasReaisQuery);
-
-        if (turmasReaisSnap.empty) {
-          // Materializar a turma virtual
-
-          const novaTurmaData = {
-            nome: turmaVirtual.nome,
-            anoLetivo: turmaVirtual.anoLetivo,
-            turno: turmaVirtual.turno
-          };
-
-          const novaTurmaRef = await addDoc(collection(db, 'turmas'), novaTurmaData);
-          turmaFinalId = novaTurmaRef.id;
-
-          // Copiar vínculos professor-matéria da turma original
-          const vinculosOriginaisQuery = query(
-            collection(db, 'professores_materias'),
-            where('turmaId', '==', turmaVirtual.turmaOriginalId)
-          );
-
-          const vinculosOriginaisSnap = await getDocs(vinculosOriginaisQuery);
-
-          for (const vinculoDoc of vinculosOriginaisSnap.docs) {
-            const vinculoData = vinculoDoc.data();
-            await addDoc(collection(db, 'professores_materias'), {
-              professorId: vinculoData.professorId,
-              materiaId: vinculoData.materiaId,
-              turmaId: turmaFinalId
-            });
-          }
-
-          // Marcar turma original como não virtualizável
-          await updateDoc(doc(db, 'turmas', turmaVirtual.turmaOriginalId), {
-            isVirtual: false
-          });
-        } else {
-          // Turma real já existe, usar ela
-          turmaFinalId = turmasReaisSnap.docs[0].id;
-        }
-      }
-
-      // Atualizar o documento do aluno com a nova turmaId
-      const alunoRef = doc(db, 'alunos', alunoRematricula.id);
-
-      // Buscar dados atuais do aluno para preservar histórico
-      const alunoDoc = await getDoc(alunoRef);
-      const alunoData = alunoDoc.data();
-
-      // Criar ou atualizar histórico de turmas
-      const historicoTurmas = alunoData?.historicoTurmas || {};
-
-      // IMPORTANTE: Preservar a turma atual no histórico do ano letivo atual
-      const anoLetivoAtualStr = anoLetivo.toString();
-      if (!historicoTurmas[anoLetivoAtualStr]) {
-        // Se ainda não tem histórico do ano atual, salvar a turma atual
-        historicoTurmas[anoLetivoAtualStr] = alunoData?.turmaId || alunoRematricula.turmaId;
-      }
-
-      // Adicionar a nova turma no histórico do ano letivo de destino
-      const anoLetivoTurmaDestino = (turmaVirtual?.anoLetivo || (anoLetivo + 1)).toString();
-      historicoTurmas[anoLetivoTurmaDestino] = turmaFinalId;
-
-      // Atualizar documento do aluno
-      await updateDoc(alunoRef, {
-        turmaId: turmaFinalId, // Manter compatibilidade (turma mais recente)
-        historicoTurmas: historicoTurmas, // Histórico completo por ano letivo
-        ultimaAtualizacao: new Date()
-      });
-
-      // Fechar modal e atualizar dados
-      setShowRematricula(false);
-      setAlunoRematricula(null);
-      setTurmaSelecionada('');
-
-      // Recarregar dados
-      await fetchData();
-
-      alert('Rematrícula realizada com sucesso!');
-
-    } catch (error) {
-      console.error('Erro ao executar rematrícula:', error);
-      alert('Erro ao executar rematrícula');
-    } finally {
-      setProcessandoRematricula(false);
-    }
-  };
-
-  // Função para fechar modal de rematrícula
-  const fecharModalRematricula = () => {
-    setShowRematricula(false);
-    setAlunoRematricula(null);
-    setTurmaSelecionada('');
-    setTurmasDisponiveis([]);
-  };
-
   // Função auxiliar para materializar turma virtual
   const materializarTurmaVirtual = async (turmaIdOuObjeto: string | Turma): Promise<string> => {
     // Aceitar tanto ID quanto objeto turma
     let turmaVirtual: Turma | undefined;
-    
+
     if (typeof turmaIdOuObjeto === 'string') {
       // Buscar primeiro nas turmas reais
       turmaVirtual = turmas.find(t => t.id === turmaIdOuObjeto);
-      
+
       // Se não encontrou, buscar nas turmas virtualizadas geradas
       if (!turmaVirtual) {
         const turmasProximas = getTurmasProximas();
@@ -1135,13 +979,13 @@ export default function Turmas() {
       if (statusPromocao[alunoId] === 'promovido' && proximaTurma) {
         // Buscar primeiro nas turmas reais
         let turmaDestino = turmas.find(t => t.id === proximaTurma);
-        
+
         // Se não encontrou, buscar nas turmas virtualizadas do próximo ano
         if (!turmaDestino) {
           const turmasProximas = getTurmasProximas();
           turmaDestino = turmasProximas.find(t => t.id === proximaTurma);
         }
-        
+
         promovidos.push({
           alunoNome: aluno.nome,
           turmaDestino: turmaDestino?.nome || 'Desconhecida'
@@ -1197,7 +1041,75 @@ export default function Turmas() {
     setResumoDestinos({ promovidos, reprovados, transferidos });
 
     setShowModalConfirmacao(true);
-  };  // Função para confirmar ações de promoção, reprovação e transferência
+  };
+
+  // Função para copiar notas e frequências de uma turma para outra
+  const copiarNotasEFrequencias = async (aluno: Aluno, turmaOrigemId: string, turmaDestinoId: string) => {
+    try {
+      const alunoUidParaBusca = aluno.uid || aluno.id;
+
+      // 1. COPIAR NOTAS
+      const notasQuery = query(
+        collection(db, 'notas'),
+        where('alunoUid', '==', alunoUidParaBusca),
+        where('turmaId', '==', turmaOrigemId)
+      );
+
+      const notasSnap = await getDocs(notasQuery);
+
+      for (const notaDoc of notasSnap.docs) {
+        const notaData = notaDoc.data();
+        
+        // Criar nova nota com o turmaId da turma de destino
+        const novaNota = {
+          alunoUid: notaData.alunoUid,
+          bimestre: notaData.bimestre,
+          dataLancamento: notaData.dataLancamento,
+          materiaId: notaData.materiaId,
+          notaGlobal: notaData.notaGlobal,
+          notaParcial: notaData.notaParcial,
+          notaParticipacao: notaData.notaParticipacao,
+          notaRecuperacao: notaData.notaRecuperacao,
+          turmaId: turmaDestinoId, // Nova turma
+          nomeAluno: notaData.nomeAluno || aluno.nome
+        };
+
+        await addDoc(collection(db, 'notas'), novaNota);
+      }
+
+      // 2. COPIAR FREQUÊNCIAS
+      const frequenciasQuery = query(
+        collection(db, 'frequencias'),
+        where('alunoId', '==', aluno.id),
+        where('turmaId', '==', turmaOrigemId)
+      );
+
+      const frequenciasSnap = await getDocs(frequenciasQuery);
+
+      for (const freqDoc of frequenciasSnap.docs) {
+        const freqData = freqDoc.data();
+        
+        // Criar nova frequência com o turmaId da turma de destino
+        const novaFrequencia = {
+          alunoId: freqData.alunoId,
+          data: freqData.data,
+          materiaId: freqData.materiaId,
+          presenca: freqData.presenca,
+          turmaId: turmaDestinoId // Nova turma
+        };
+
+        await addDoc(collection(db, 'frequencias'), novaFrequencia);
+      }
+
+      console.log(`✅ Notas e frequências copiadas para ${aluno.nome} - ${notasSnap.size} notas, ${frequenciasSnap.size} frequências`);
+
+    } catch (error) {
+      console.error('❌ Erro ao copiar notas e frequências:', error);
+      // Não bloquear a transferência por erro na cópia
+    }
+  };
+
+  // Função para confirmar ações de promoção, reprovação e transferência
   const handleConfirmarAcoes = async () => {
     try {
       setShowModalConfirmacao(false);
@@ -1278,6 +1190,9 @@ export default function Turmas() {
 
             await updateDoc(alunoRef, updateData);
 
+            // COPIAR NOTAS E FREQUÊNCIAS DA TURMA ANTIGA PARA A NOVA
+            await copiarNotasEFrequencias(aluno, turmaAtualId, turmaDestinoId);
+
             setAcaoFinalizada(prev => ({ ...prev, [alunoId]: 'transferido' }));
           }
         }
@@ -1292,13 +1207,13 @@ export default function Turmas() {
 
           // Buscar turma destino (pode ser real ou virtual)
           let turmaDestino = turmas.find(t => t.id === proximaTurma);
-          
+
           // Se não encontrou nas turmas reais, buscar nas virtualizadas
           if (!turmaDestino) {
             const turmasProximas = getTurmasProximas();
             turmaDestino = turmasProximas.find(t => t.id === proximaTurma);
           }
-          
+
           if (turmaDestino) {
             // IMPORTANTE: Preservar a turma atual no histórico do ano atual
             const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivoRematricula);
@@ -1538,23 +1453,88 @@ export default function Turmas() {
   };
 
   // Função para confirmar transferência individual
-  const handleConfirmarTransferenciaIndividual = () => {
+  const handleConfirmarTransferenciaIndividual = async () => {
     if (!alunoTransferencia || !turmaDestinoTransferencia) {
       setToast({ show: true, message: 'Selecione uma turma de destino', variant: 'danger' });
       return;
     }
 
-    // Adicionar ao estado de transferências
-    setAlunosTransferencia(prev => ({
-      ...prev,
-      [alunoTransferencia.id]: turmaDestinoTransferencia
-    }));
+    setProcessandoTransferencia(true);
 
-    // Limpar status de promoção/reprovação caso exista
-    setStatusPromocao(prev => ({ ...prev, [alunoTransferencia.id]: null }));
+    try {
+      // Executar a transferência imediatamente
+      const alunoRef = doc(db, 'alunos', alunoTransferencia.id);
+      const alunoDoc = await getDoc(alunoRef);
 
-    setToast({ show: true, message: `${alunoTransferencia.nome} marcado para transferência`, variant: 'success' });
-    handleFecharModalTransferencia();
+      if (!alunoDoc.exists()) {
+        setToast({ show: true, message: 'Aluno não encontrado', variant: 'danger' });
+        setProcessandoTransferencia(false);
+        return;
+      }
+
+      const alunoData = alunoDoc.data();
+      const historicoTurmas = alunoData?.historicoTurmas || {};
+      const historicoStatus = alunoData?.historicoStatus || {};
+      const anoAtualStr = anoLetivoRematricula.toString();
+
+      // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO
+      const turmaDestinoId = await materializarTurmaVirtual(turmaDestinoTransferencia);
+
+      const turmaDestino = turmas.find(t => t.id === turmaDestinoTransferencia);
+
+      if (turmaDestino) {
+        const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(alunoTransferencia, anoLetivoRematricula));
+        const serieAtual = extrairNumeroSerie(turmaAtualAluno?.nome || '');
+        const serieDestino = extrairNumeroSerie(turmaDestino.nome);
+
+        // Verificar se é série superior (não permitido para transferência)
+        if (serieDestino > serieAtual + 1) {
+          setToast({ show: true, message: `Não é permitido transferir para série superior`, variant: 'danger' });
+          setProcessandoTransferencia(false);
+          return;
+        }
+
+        // IMPORTANTE: Preservar a turma atual no histórico do ano atual
+        const turmaAtualId = getTurmaAlunoNoAno(alunoTransferencia, anoLetivoRematricula);
+
+        if (!historicoTurmas[anoAtualStr]) {
+          historicoTurmas[anoAtualStr] = turmaAtualId;
+        }
+
+        // Adicionar a turma de destino no histórico do ano da turma de destino (USAR TURMA MATERIALIZADA)
+        historicoTurmas[turmaDestino.anoLetivo] = turmaDestinoId;
+        historicoStatus[anoAtualStr] = 'transferido';
+
+        // Encontrar o maior ano no histórico para definir a turma atual
+        const anosHistorico = Object.keys(historicoTurmas).map(ano => parseInt(ano));
+        const maiorAno = Math.max(...anosHistorico);
+        const turmaIdAtual = historicoTurmas[maiorAno.toString()];
+
+        const updateData = {
+          turmaId: turmaIdAtual, // Sempre usar a turma do maior ano do histórico
+          historicoTurmas: historicoTurmas,
+          historicoStatus: historicoStatus,
+          ultimaAtualizacao: new Date()
+        };
+
+        await updateDoc(alunoRef, updateData);
+
+        // COPIAR NOTAS E FREQUÊNCIAS DA TURMA ANTIGA PARA A NOVA
+        await copiarNotasEFrequencias(alunoTransferencia, turmaAtualId, turmaDestinoId);
+
+        setToast({ show: true, message: `${alunoTransferencia.nome} transferido com sucesso!`, variant: 'success' });
+        
+        // Atualizar a lista de alunos
+        await fetchData();
+        
+        handleFecharModalTransferencia();
+      }
+    } catch (error) {
+      console.error('❌ Erro ao transferir aluno:', error);
+      setToast({ show: true, message: 'Erro ao transferir aluno', variant: 'danger' });
+    } finally {
+      setProcessandoTransferencia(false);
+    }
   };
 
   // Função para aprovar todos os alunos
@@ -1563,7 +1543,8 @@ export default function Turmas() {
     const novosStatus: Record<string, 'promovido' | 'reprovado' | null> = {};
 
     alunosFiltrados.forEach(aluno => {
-      if (!acaoFinalizada[aluno.id]) {
+      // Permitir marcar se não tem ação finalizada OU se foi transferido
+      if (!acaoFinalizada[aluno.id] || acaoFinalizada[aluno.id] === 'transferido') {
         novosStatus[aluno.id] = 'promovido';
       }
     });
@@ -1584,7 +1565,8 @@ export default function Turmas() {
     const novosStatus: Record<string, 'promovido' | 'reprovado' | null> = {};
 
     alunosFiltrados.forEach(aluno => {
-      if (!acaoFinalizada[aluno.id]) {
+      // Permitir marcar se não tem ação finalizada OU se foi transferido
+      if (!acaoFinalizada[aluno.id] || acaoFinalizada[aluno.id] === 'transferido') {
         novosStatus[aluno.id] = 'reprovado';
       }
     });
@@ -2174,69 +2156,234 @@ export default function Turmas() {
                             </thead>
                             <tbody className=''>
                               {getAlunosFiltrados().length > 0 ? getAlunosFiltrados().map(aluno => {
-                              const mediaFinal = mediasAlunos[aluno.id];
-                              const corMedia = mediaFinal !== null && mediaFinal !== undefined
-                                ? mediaFinal >= 7 ? 'text-success' : mediaFinal >= 5 ? 'text-warning' : 'text-danger'
-                                : 'text-muted';
+                                const mediaFinal = mediasAlunos[aluno.id];
+                                const corMedia = mediaFinal !== null && mediaFinal !== undefined
+                                  ? mediaFinal >= 7 ? 'text-success' : mediaFinal >= 5 ? 'text-warning' : 'text-danger'
+                                  : 'text-muted';
 
-                              return (
-                                <tr key={aluno.id} className='align-middle linha-agenda' style={{ textAlign: 'center', height: '70px' }}>
-                                  <td style={{ textAlign: 'left' }}>
-                                    <div className="d-flex align-items-center gap-2">
-                                      <div className="user-icon-circle-frequencia">
-                                        <User size={24} color="#fff" />
+                                return (
+                                  <tr key={aluno.id} className='align-middle linha-agenda' style={{ textAlign: 'center', height: '70px' }}>
+                                    <td style={{ textAlign: 'left' }}>
+                                      <div className="d-flex align-items-center gap-2">
+                                        <div className="user-icon-circle-frequencia">
+                                          <User size={24} color="#fff" />
+                                        </div>
+                                        <strong>{aluno.nome}</strong>
                                       </div>
-                                      <strong>{aluno.nome}</strong>
+                                    </td>
+                                    <td>
+                                      <span className={`fw-bold ${corMedia}`} style={{ fontSize: '1.1rem' }}>
+                                        {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal.toFixed(1) : '-'}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      {getStatusBadge(aluno.id)}
+                                    </td>
+                                    <td>
+                                      {acaoFinalizada[aluno.id] && acaoFinalizada[aluno.id] !== 'transferido' ? (
+                                        // Mostrar badge quando ação foi finalizada (exceto transferido)
+                                        <div className="d-flex justify-content-center">
+                                          {acaoFinalizada[aluno.id] === 'promovido' && (
+                                            <span className="badge bg-success px-3 py-2" style={{ fontSize: '0.85rem' }}>
+                                              <Check size={14} className="me-1" />
+                                              Promovido
+                                            </span>
+                                          )}
+                                          {acaoFinalizada[aluno.id] === 'reprovado' && (
+                                            <span className="badge bg-danger px-3 py-2" style={{ fontSize: '0.85rem' }}>
+                                              <X size={14} className="me-1" />
+                                              Reprovado
+                                            </span>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        // Mostrar botões quando ação não foi finalizada OU quando foi transferido
+                                        <div className="d-flex gap-2 justify-content-center">
+                                          <Button
+                                            className='btn-acao-aprovado'
+                                            size="sm"
+                                            onClick={() => {
+                                              setStatusPromocao(prev => {
+                                                // Se já está promovido, desseleciona
+                                                if (prev[aluno.id] === 'promovido') {
+                                                  const { [aluno.id]: _, ...rest } = prev;
+                                                  return rest;
+                                                }
+                                                // Senão, marca como promovido
+                                                return { ...prev, [aluno.id]: 'promovido' };
+                                              });
+                                              // Limpar transferência se estava selecionada
+                                              if (alunosTransferencia[aluno.id]) {
+                                                const novaTransferencia = { ...alunosTransferencia };
+                                                delete novaTransferencia[aluno.id];
+                                                setAlunosTransferencia(novaTransferencia);
+                                              }
+                                            }}
+                                            title="Aprovar"
+                                            style={{
+                                              padding: '0.25rem 0.5rem',
+                                              borderRadius: '6px',
+                                              fontWeight: '500',
+                                              backgroundColor: statusPromocao[aluno.id] === 'promovido' ? '#22c55e' : 'white',
+                                              color: statusPromocao[aluno.id] === 'promovido' ? 'white' : 'black',
+                                              border: '1px solid #cbd5e1',
+                                              height: '32px',
+                                              minWidth: '32px'
+                                            }}
+                                          >
+                                            <Check size={16} strokeWidth={2.5} />
+                                          </Button>
+                                          <Button
+                                            className='btn-acao-reprovado'
+                                            size="sm"
+                                            onClick={() => {
+                                              setStatusPromocao(prev => {
+                                                // Se já está reprovado, desseleciona
+                                                if (prev[aluno.id] === 'reprovado') {
+                                                  const { [aluno.id]: _, ...rest } = prev;
+                                                  return rest;
+                                                }
+                                                // Senão, marca como reprovado
+                                                return { ...prev, [aluno.id]: 'reprovado' };
+                                              });
+                                              // Limpar transferência se estava selecionada
+                                              if (alunosTransferencia[aluno.id]) {
+                                                const novaTransferencia = { ...alunosTransferencia };
+                                                delete novaTransferencia[aluno.id];
+                                                setAlunosTransferencia(novaTransferencia);
+                                              }
+                                            }}
+                                            title="Reprovar"
+                                            style={{
+                                              padding: '0.25rem 0.5rem',
+                                              borderRadius: '6px',
+                                              fontWeight: '500',
+                                              backgroundColor: statusPromocao[aluno.id] === 'reprovado' ? '#ef4444' : 'white',
+                                              color: statusPromocao[aluno.id] === 'reprovado' ? 'white' : 'black',
+                                              border: '1px solid #cbd5e1',
+                                              height: '32px',
+                                              minWidth: '32px'
+                                            }}
+                                          >
+                                            <X size={16} strokeWidth={2.5} />
+                                          </Button>
+                                          <Button
+                                            className="btn-acao-transferencia d-flex align-items-center gap-1"
+                                            size="sm"
+                                            onClick={() => handleAbrirModalTransferencia(aluno)}
+                                            title="Transferir"
+                                            style={{
+                                              padding: '0.25rem 0.5rem',
+                                              borderRadius: '6px',
+                                              fontWeight: '500',
+                                              backgroundColor: alunosTransferencia[aluno.id] ? '#3b82f6' : 'white',
+                                              color: alunosTransferencia[aluno.id] ? 'white' : 'black',
+                                              border: '1px solid #cbd5e1',
+                                              height: '32px',
+                                              minWidth: '32px'
+                                            }}
+                                          >
+                                            <ArrowLeftRight size={18} strokeWidth={2.5} />
+                                          </Button>
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td>
+                                      <Button
+                                        variant="primary"
+                                        size="sm"
+                                        className="d-flex align-items-center gap-1"
+                                        onClick={() => handleAbrirBoletim(aluno)}
+                                        style={{
+                                          margin: '0 auto',
+                                          color: 'black',
+                                          background: 'white',
+                                          border: '1px solid #cbd5e1',
+                                        }}
+                                        title="Ver Boletim"
+                                      >
+                                        <BookText size={16} />
+                                      </Button>
+                                    </td>
+                                  </tr>
+                                );
+                              }) : (
+                                <tr>
+                                  <td colSpan={5} className="text-center py-4">
+                                    <div className="agenda-empty-state">
+                                      <div className="empty-icon">👥</div>
+                                      <h5>Nenhum aluno encontrado</h5>
+                                      <p className="text-muted">Tente ajustar os filtros ou verifique se há alunos cadastrados.</p>
                                     </div>
                                   </td>
-                                  <td>
-                                    <span className={`fw-bold ${corMedia}`} style={{ fontSize: '1.1rem' }}>
-                                      {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal.toFixed(1) : '-'}
-                                    </span>
-                                  </td>
-                                  <td>
-                                    {getStatusBadge(aluno.id)}
-                                  </td>
-                                  <td>
-                                    {acaoFinalizada[aluno.id] ? (
-                                      // Mostrar badge quando ação foi finalizada
+                                </tr>
+                              )}
+                            </tbody>
+                          </Table>
+
+                          {/* Cards Mobile */}
+                          <div className="turmas-mobile-cards">
+                            {getAlunosFiltrados().length > 0 ? getAlunosFiltrados().map(aluno => {
+                              const mediaFinal = mediasAlunos[aluno.id];
+
+                              return (
+                                <div key={aluno.id} className="turmas-aluno-card">
+                                  <div className="turmas-aluno-header">
+                                    <div className="d-flex align-items-center gap-2">
+                                      <User size={18} />
+                                      <strong>{aluno.nome}</strong>
+                                    </div>
+                                  </div>
+
+                                  <div className="turmas-aluno-info">
+                                    <div className="info-row">
+                                      <span className="info-label">Média Final:</span>
+                                      <span style={{
+                                        fontWeight: '600',
+                                        color: mediaFinal !== null && mediaFinal !== undefined
+                                          ? mediaFinal >= 7 ? '#22c55e' : mediaFinal >= 5 ? '#eab308' : '#ef4444'
+                                          : '#6c757d'
+                                      }}>
+                                        {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal.toFixed(1) : '-'}
+                                      </span>
+                                    </div>
+
+                                    <div className="info-row">
+                                      <span className="info-label">Situação:</span>
+                                      {getStatusBadge(aluno.id)}
+                                    </div>
+                                  </div>
+
+                                  <div className="turmas-acoes-mobile">
+                                    {acaoFinalizada[aluno.id] && acaoFinalizada[aluno.id] !== 'transferido' ? (
                                       <div className="d-flex justify-content-center">
                                         {acaoFinalizada[aluno.id] === 'promovido' && (
-                                          <span className="badge bg-success px-3 py-2" style={{ fontSize: '0.85rem' }}>
+                                          <span className="badge bg-success px-3 py-2 w-100" style={{ fontSize: '0.85rem' }}>
                                             <Check size={14} className="me-1" />
                                             Promovido
                                           </span>
                                         )}
                                         {acaoFinalizada[aluno.id] === 'reprovado' && (
-                                          <span className="badge bg-danger px-3 py-2" style={{ fontSize: '0.85rem' }}>
+                                          <span className="badge bg-danger px-3 py-2 w-100" style={{ fontSize: '0.85rem' }}>
                                             <X size={14} className="me-1" />
                                             Reprovado
                                           </span>
                                         )}
-                                        {acaoFinalizada[aluno.id] === 'transferido' && (
-                                          <span className="badge bg-primary px-3 py-2" style={{ fontSize: '0.85rem' }}>
-                                            <ArrowRight size={14} className="me-1" />
-                                            Transferido
-                                          </span>
-                                        )}
                                       </div>
                                     ) : (
-                                      // Mostrar botões quando ação não foi finalizada
-                                      <div className="d-flex gap-2 justify-content-center">
-                                        <Button
-                                          className='btn-acao-aprovado'
-                                          size="sm"
-                                          onClick={() => {
+                                      <>
+                                        <div className="d-flex gap-2 justify-content-center flex-wrap">
+                                          <Button
+                                            className="btn-mobile-acao"
+                                            size="sm"
+                                            onClick={() => {
                                             setStatusPromocao(prev => {
-                                              // Se já está promovido, desseleciona
                                               if (prev[aluno.id] === 'promovido') {
                                                 const { [aluno.id]: _, ...rest } = prev;
                                                 return rest;
                                               }
-                                              // Senão, marca como promovido
                                               return { ...prev, [aluno.id]: 'promovido' };
                                             });
-                                            // Limpar transferência se estava selecionada
                                             if (alunosTransferencia[aluno.id]) {
                                               const novaTransferencia = { ...alunosTransferencia };
                                               delete novaTransferencia[aluno.id];
@@ -2245,32 +2392,26 @@ export default function Turmas() {
                                           }}
                                           title="Aprovar"
                                           style={{
-                                            padding: '0.25rem 0.5rem',
-                                            borderRadius: '6px',
-                                            fontWeight: '500',
                                             backgroundColor: statusPromocao[aluno.id] === 'promovido' ? '#22c55e' : 'white',
                                             color: statusPromocao[aluno.id] === 'promovido' ? 'white' : 'black',
                                             border: '1px solid #cbd5e1',
-                                            height: '32px',
-                                            minWidth: '32px'
+                                            flex: 1
                                           }}
                                         >
                                           <Check size={16} strokeWidth={2.5} />
+                                          <span className="ms-1">Aprovar</span>
                                         </Button>
                                         <Button
-                                          className='btn-acao-reprovado'
+                                          className="btn-mobile-acao"
                                           size="sm"
                                           onClick={() => {
                                             setStatusPromocao(prev => {
-                                              // Se já está reprovado, desseleciona
                                               if (prev[aluno.id] === 'reprovado') {
                                                 const { [aluno.id]: _, ...rest } = prev;
                                                 return rest;
                                               }
-                                              // Senão, marca como reprovado
                                               return { ...prev, [aluno.id]: 'reprovado' };
                                             });
-                                            // Limpar transferência se estava selecionada
                                             if (alunosTransferencia[aluno.id]) {
                                               const novaTransferencia = { ...alunosTransferencia };
                                               delete novaTransferencia[aluno.id];
@@ -2279,233 +2420,64 @@ export default function Turmas() {
                                           }}
                                           title="Reprovar"
                                           style={{
-                                            padding: '0.25rem 0.5rem',
-                                            borderRadius: '6px',
-                                            fontWeight: '500',
                                             backgroundColor: statusPromocao[aluno.id] === 'reprovado' ? '#ef4444' : 'white',
                                             color: statusPromocao[aluno.id] === 'reprovado' ? 'white' : 'black',
                                             border: '1px solid #cbd5e1',
-                                            height: '32px',
-                                            minWidth: '32px'
+                                            flex: 1
                                           }}
                                         >
                                           <X size={16} strokeWidth={2.5} />
+                                          <span className="ms-1">Reprovar</span>
                                         </Button>
                                         <Button
-                                          className="btn-acao-transferencia d-flex align-items-center gap-1"
+                                          className="btn-mobile-acao"
                                           size="sm"
                                           onClick={() => handleAbrirModalTransferencia(aluno)}
                                           title="Transferir"
                                           style={{
-                                            padding: '0.25rem 0.5rem',
-                                            borderRadius: '6px',
-                                            fontWeight: '500',
                                             backgroundColor: alunosTransferencia[aluno.id] ? '#3b82f6' : 'white',
                                             color: alunosTransferencia[aluno.id] ? 'white' : 'black',
                                             border: '1px solid #cbd5e1',
-                                            height: '32px',
-                                            minWidth: '32px'
+                                            flex: 1
                                           }}
                                         >
-                                          <ArrowLeftRight size={18} strokeWidth={2.5} />
+                                          <ArrowLeftRight size={16} strokeWidth={2.5} />
+                                          <span className="ms-1">Transferir</span>
                                         </Button>
                                       </div>
+                                      
+                                      <Button
+                                        variant="primary"
+                                        size="sm"
+                                        className="d-flex align-items-center justify-content-center gap-2 mt-2"
+                                        onClick={() => handleAbrirBoletim(aluno)}
+                                        style={{
+                                          width: '100%',
+                                          color: 'black',
+                                          background: 'white',
+                                          border: '1px solid #cbd5e1',
+                                        }}
+                                        title="Ver Boletim"
+                                      >
+                                        <BookText size={16} />
+                                        <span>Ver Boletim</span>
+                                      </Button>
+                                    </>
                                     )}
-                                  </td>
-                                  <td>
-                                    <Button
-                                      variant="primary"
-                                      size="sm"
-                                      className="d-flex align-items-center gap-1"
-                                      onClick={() => handleAbrirBoletim(aluno)}
-                                      style={{
-                                        margin: '0 auto',
-                                        color: 'black',
-                                        background: 'white',
-                                        border: '1px solid #cbd5e1',
-                                      }}
-                                      title="Ver Boletim"
-                                    >
-                                      <BookText size={16} />
-                                    </Button>
-                                  </td>
-                                </tr>
+                                  </div>
+                                </div>
                               );
                             }) : (
-                              <tr>
-                                <td colSpan={5} className="text-center py-4">
-                                  <div className="agenda-empty-state">
-                                    <div className="empty-icon">👥</div>
-                                    <h5>Nenhum aluno encontrado</h5>
-                                    <p className="text-muted">Tente ajustar os filtros ou verifique se há alunos cadastrados.</p>
-                                  </div>
-                                </td>
-                              </tr>
+                              <div className="text-center py-4">
+                                <div className="agenda-empty-state">
+                                  <div className="empty-icon">👥</div>
+                                  <h5>Nenhum aluno encontrado</h5>
+                                  <p className="text-muted">Tente ajustar os filtros ou verifique se há alunos cadastrados.</p>
+                                </div>
+                              </div>
                             )}
-                          </tbody>
-                        </Table>
-
-                        {/* Cards Mobile */}
-                        <div className="turmas-mobile-cards">
-                          {getAlunosFiltrados().length > 0 ? getAlunosFiltrados().map(aluno => {
-                            const mediaFinal = mediasAlunos[aluno.id];
-                            
-                            return (
-                              <div key={aluno.id} className="turmas-aluno-card">
-                                <div className="turmas-aluno-header">
-                                  <div className="d-flex align-items-center gap-2">
-                                    <User size={18} />
-                                    <strong>{aluno.nome}</strong>
-                                  </div>
-                                </div>
-                                
-                                <div className="turmas-aluno-info">
-                                  <div className="info-row">
-                                    <span className="info-label">Média Final:</span>
-                                    <span style={{
-                                      fontWeight: '600',
-                                      color: mediaFinal !== null && mediaFinal !== undefined
-                                        ? mediaFinal >= 7 ? '#22c55e' : mediaFinal >= 5 ? '#eab308' : '#ef4444'
-                                        : '#6c757d'
-                                    }}>
-                                      {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal.toFixed(1) : '-'}
-                                    </span>
-                                  </div>
-                                  
-                                  <div className="info-row">
-                                    <span className="info-label">Situação:</span>
-                                    {getStatusBadge(aluno.id)}
-                                  </div>
-                                </div>
-                                
-                                <div className="turmas-acoes-mobile">
-                                  {acaoFinalizada[aluno.id] ? (
-                                    <div className="d-flex justify-content-center">
-                                      {acaoFinalizada[aluno.id] === 'promovido' && (
-                                        <span className="badge bg-success px-3 py-2 w-100" style={{ fontSize: '0.85rem' }}>
-                                          <Check size={14} className="me-1" />
-                                          Promovido
-                                        </span>
-                                      )}
-                                      {acaoFinalizada[aluno.id] === 'reprovado' && (
-                                        <span className="badge bg-danger px-3 py-2 w-100" style={{ fontSize: '0.85rem' }}>
-                                          <X size={14} className="me-1" />
-                                          Reprovado
-                                        </span>
-                                      )}
-                                      {acaoFinalizada[aluno.id] === 'transferido' && (
-                                        <span className="badge bg-primary px-3 py-2 w-100" style={{ fontSize: '0.85rem' }}>
-                                          <ArrowRight size={14} className="me-1" />
-                                          Transferido
-                                        </span>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="d-flex gap-2 justify-content-center flex-wrap">
-                                      <Button
-                                        className="btn-mobile-acao"
-                                        size="sm"
-                                        onClick={() => {
-                                          setStatusPromocao(prev => {
-                                            if (prev[aluno.id] === 'promovido') {
-                                              const { [aluno.id]: _, ...rest } = prev;
-                                              return rest;
-                                            }
-                                            return { ...prev, [aluno.id]: 'promovido' };
-                                          });
-                                          if (alunosTransferencia[aluno.id]) {
-                                            const novaTransferencia = { ...alunosTransferencia };
-                                            delete novaTransferencia[aluno.id];
-                                            setAlunosTransferencia(novaTransferencia);
-                                          }
-                                        }}
-                                        title="Aprovar"
-                                        style={{
-                                          backgroundColor: statusPromocao[aluno.id] === 'promovido' ? '#22c55e' : 'white',
-                                          color: statusPromocao[aluno.id] === 'promovido' ? 'white' : 'black',
-                                          border: '1px solid #cbd5e1',
-                                          flex: 1
-                                        }}
-                                      >
-                                        <Check size={16} strokeWidth={2.5} />
-                                        <span className="ms-1">Aprovar</span>
-                                      </Button>
-                                      <Button
-                                        className="btn-mobile-acao"
-                                        size="sm"
-                                        onClick={() => {
-                                          setStatusPromocao(prev => {
-                                            if (prev[aluno.id] === 'reprovado') {
-                                              const { [aluno.id]: _, ...rest } = prev;
-                                              return rest;
-                                            }
-                                            return { ...prev, [aluno.id]: 'reprovado' };
-                                          });
-                                          if (alunosTransferencia[aluno.id]) {
-                                            const novaTransferencia = { ...alunosTransferencia };
-                                            delete novaTransferencia[aluno.id];
-                                            setAlunosTransferencia(novaTransferencia);
-                                          }
-                                        }}
-                                        title="Reprovar"
-                                        style={{
-                                          backgroundColor: statusPromocao[aluno.id] === 'reprovado' ? '#ef4444' : 'white',
-                                          color: statusPromocao[aluno.id] === 'reprovado' ? 'white' : 'black',
-                                          border: '1px solid #cbd5e1',
-                                          flex: 1
-                                        }}
-                                      >
-                                        <X size={16} strokeWidth={2.5} />
-                                        <span className="ms-1">Reprovar</span>
-                                      </Button>
-                                      <Button
-                                        className="btn-mobile-acao"
-                                        size="sm"
-                                        onClick={() => handleAbrirModalTransferencia(aluno)}
-                                        title="Transferir"
-                                        style={{
-                                          backgroundColor: alunosTransferencia[aluno.id] ? '#3b82f6' : 'white',
-                                          color: alunosTransferencia[aluno.id] ? 'white' : 'black',
-                                          border: '1px solid #cbd5e1',
-                                          flex: 1
-                                        }}
-                                      >
-                                        <ArrowLeftRight size={16} strokeWidth={2.5} />
-                                        <span className="ms-1">Transferir</span>
-                                      </Button>
-                                    </div>
-                                  )}
-                                  
-                                  <Button
-                                    variant="primary"
-                                    size="sm"
-                                    className="d-flex align-items-center justify-content-center gap-2 mt-2"
-                                    onClick={() => handleAbrirBoletim(aluno)}
-                                    style={{
-                                      width: '100%',
-                                      color: 'black',
-                                      background: 'white',
-                                      border: '1px solid #cbd5e1',
-                                    }}
-                                    title="Ver Boletim"
-                                  >
-                                    <BookText size={16} />
-                                    <span>Ver Boletim</span>
-                                  </Button>
-                                </div>
-                              </div>
-                            );
-                          }) : (
-                            <div className="text-center py-4">
-                              <div className="agenda-empty-state">
-                                <div className="empty-icon">👥</div>
-                                <h5>Nenhum aluno encontrado</h5>
-                                <p className="text-muted">Tente ajustar os filtros ou verifique se há alunos cadastrados.</p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </>
+                          </div>
+                        </>
                       )}
                     </Card.Body>
                   </Card>
@@ -2949,130 +2921,6 @@ export default function Turmas() {
             </Modal.Body>
           </Modal>
 
-          {/* Modal de Rematrícula */}
-          <Modal show={showRematricula} onHide={fecharModalRematricula} size="lg">
-            <Modal.Header closeButton>
-              <Modal.Title>
-                <Edit size={20} className="me-2" />
-                Rematrícula de Aluno
-              </Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-              {alunoRematricula && (
-                <>
-                  {/* Informações do Aluno */}
-                  <div className="mb-4">
-                    <h5 className="mb-3">Informações do Aluno</h5>
-                    <div className="row">
-                      <div className="col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label fw-semibold text-muted">Nome Completo</label>
-                          <div className="p-2 bg-light rounded">
-                            <strong>{alunoRematricula.nome}</strong>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label fw-semibold text-muted">Turma Atual</label>
-                          <div className="p-2 bg-light rounded">
-                            {turmas.find(t => t.id === alunoRematricula.turmaId)?.nome}
-                            <span className="text-muted ms-1">({anoLetivo})</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="row">
-                      <div className="col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label fw-semibold text-muted">Situação Atual</label>
-                          <div className="p-2 bg-light rounded">
-                            {getStatusBadge(alunoRematricula.id)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <hr />
-
-                  {/* Seleção de Nova Turma */}
-                  <div className="mb-4">
-                    <h5 className="mb-3">Selecionar Nova Turma ({parseInt(anoLetivo.toString()) + 1})</h5>
-
-                    {turmasDisponiveis.length > 0 ? (
-                      <div className="mb-3">
-                        <label className="form-label fw-semibold">Turmas Disponíveis</label>
-                        <select
-                          className="form-select"
-                          value={turmaSelecionada}
-                          onChange={(e) => setTurmaSelecionada(e.target.value)}
-                        >
-                          <option value="">Selecione uma turma...</option>
-                          {turmasDisponiveis
-                            .slice() // para não mutar o array original
-                            .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }))
-                            .map(turma => (
-                              <option key={turma.id} value={turma.id}>
-                                {turma.nome} - {turma.turno}
-                                {turma.isVirtualizada && ' (Virtual)'}
-                                {!turma.isVirtualizada && ' (Materializada)'}
-                              </option>
-                            ))}
-                        </select>
-                        <div className="form-text">
-                          Turmas da mesma série e da seguinte estão disponíveis para rematrícula.
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="alert alert-warning">
-                        <i className="fas fa-exclamation-triangle me-2"></i>
-                        Nenhuma turma disponível encontrada para o próximo ano letivo.
-
-                        {/* Debug Info */}
-                        <details className="mt-2">
-                          <summary style={{ cursor: 'pointer' }} className="text-muted small">
-                            🔍 Informações de Debug (clique para expandir)
-                          </summary>
-                          <div className="mt-2 p-2 bg-light rounded small">
-                            <div><strong>Aluno:</strong> {alunoRematricula.nome}</div>
-                            <div><strong>Turma Atual:</strong> {turmas.find(t => t.id === alunoRematricula.turmaId)?.nome}</div>
-                            <div><strong>Série Atual:</strong> {extrairSerieDaTurma(turmas.find(t => t.id === alunoRematricula.turmaId)?.nome || '')}</div>
-                            <div><strong>Ano Atual:</strong> {anoLetivo}</div>
-                            <div><strong>Ano Próximo:</strong> {parseInt(anoLetivo.toString()) + 1}</div>
-                            <div><strong>Turmas Encontradas:</strong> {turmasDisponiveis.length}</div>
-                            <div className="text-muted mt-1">
-                              Verifique o console do navegador (F12) para logs detalhados.
-                            </div>
-                          </div>
-                        </details>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </Modal.Body>
-            <Modal.Footer>
-              <Button variant="secondary" onClick={fecharModalRematricula}>
-                Cancelar
-              </Button>
-              <Button
-                variant="primary"
-                onClick={executarRematricula}
-                disabled={!turmaSelecionada || processandoRematricula}
-              >
-                {processandoRematricula ? (
-                  <>
-                    <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                    Processando...
-                  </>
-                ) : (
-                  'Confirmar Rematrícula'
-                )}
-              </Button>
-            </Modal.Footer>
-          </Modal>
-
         </div>
 
         {/* Modal de Confirmação de Ações */}
@@ -3230,15 +3078,13 @@ export default function Turmas() {
                     onChange={(e) => setTurmaDestinoTransferencia(e.target.value)}
                   >
                     <option value="">Selecione uma turma...</option>
-                    {getTurmasAnoAtual().length > 0 ? (
-                      getTurmasAnoAtual().map(turma => (
-                        <option key={turma.id} value={turma.id}>
-                          {turma.nome}
-                        </option>
-                      ))
-                    ) : (
-                      <option disabled>Nenhuma turma disponível</option>
-                    )}
+                    {turmas.filter(t =>
+                      t.anoLetivo === anoLetivoRematricula.toString() && t.isVirtualizada !== true
+                    ).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true })).map(turma => (
+                      <option key={turma.id} value={turma.id}>
+                        {turma.nome}
+                      </option>
+                    ))}
                   </Form.Select>
                   <Form.Text className="text-muted">
                     Transferir para outra turma do mesmo ano letivo ({anoLetivoRematricula})
@@ -3248,16 +3094,25 @@ export default function Turmas() {
             )}
           </Modal.Body>
           <Modal.Footer>
-            <Button variant="secondary" onClick={handleFecharModalTransferencia}>
+            <Button variant="secondary" onClick={handleFecharModalTransferencia} disabled={processandoTransferencia}>
               Cancelar
             </Button>
             <Button
               variant="primary"
               onClick={handleConfirmarTransferenciaIndividual}
-              disabled={!turmaDestinoTransferencia}
+              disabled={!turmaDestinoTransferencia || processandoTransferencia}
             >
-              <ArrowRight size={18} className="me-1" />
-              Confirmar Transferência
+              {processandoTransferencia ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                  Transferindo...
+                </>
+              ) : (
+                <>
+                  <ArrowRight size={18} className="me-1" />
+                  Confirmar Transferência
+                </>
+              )}
             </Button>
           </Modal.Footer>
         </Modal>
