@@ -378,7 +378,13 @@ export default function Agenda() {
 
     // Para cada turma, criar uma grade de horários
     Object.keys(dadosPorTurma).forEach((turmaId, index) => {
-      const turma = turmas.find(t => t.id === turmaId);
+      // Buscar turma considerando turmas virtualizadas
+      const turma = turmas.find(t => {
+        if (t.isVirtualizada && t.turmaOriginalId) {
+          return t.turmaOriginalId === turmaId || t.id === turmaId;
+        }
+        return t.id === turmaId;
+      });
       const aulasDaTurma = dadosPorTurma[turmaId];
 
       // Se não for a primeira turma e não couber na página, criar nova página
@@ -459,13 +465,11 @@ export default function Agenda() {
           3: { cellWidth: (pageWidth - 40) / 5 },
           4: { cellWidth: (pageWidth - 40) / 5 }
         },
-        margin: { left: 20, right: 20 },
-        didDrawPage: () => {
-          // currentY is not updated here as data is unused
-        }
+        margin: { left: 20, right: 20 }
       });
 
-      currentY += 20;
+      // Atualizar currentY após a tabela da grade
+      currentY = (doc as any).lastAutoTable.finalY + 15;
 
       // Adicionar seção de horários das aulas em formato de tabela
       // Layout lado a lado: horários à esquerda, professores à direita
@@ -1317,7 +1321,13 @@ export default function Agenda() {
                             });
 
                             Object.keys(dadosPorTurma).forEach((turmaId, index) => {
-                              const turma = turmas.find(t => t.id === turmaId);
+                              // Buscar turma considerando turmas virtualizadas
+                              const turma = turmas.find(t => {
+                                if (t.isVirtualizada && t.turmaOriginalId) {
+                                  return t.turmaOriginalId === turmaId || t.id === turmaId;
+                                }
+                                return t.id === turmaId;
+                              });
                               const aulasDaTurma = dadosPorTurma[turmaId];
                               if (index > 0 && currentY > pageHeight - 100) {
                                 doc.addPage();
@@ -1372,12 +1382,11 @@ export default function Agenda() {
                                   3: { cellWidth: (pageWidth - 40) / 5 },
                                   4: { cellWidth: (pageWidth - 40) / 5 }
                                 },
-                                margin: { left: 20, right: 20 },
-                                didDrawPage: () => {
-                                  // currentY is not updated here as data is unused
-                                }
+                                margin: { left: 20, right: 20 }
                               });
-                              currentY += 20;
+                              
+                              // Atualizar currentY após a tabela da grade
+                              currentY = (doc as any).lastAutoTable.finalY + 15;
                               // Tabelas lado a lado: horários e professores
                               // Montar dados da tabela de horários
                               const horariosTable: string[][] = [];
