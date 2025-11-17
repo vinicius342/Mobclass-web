@@ -22,6 +22,6 @@ const app = initializeApp(firebaseConfig);
 // Exports principais
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const messaging = null; // getMessaging(app);
+export const messaging = getMessaging(app);
 
 
