@@ -228,7 +228,7 @@ export default function Agenda() {
         // Para turmas reais, comparar diretamente
         return t.id === item.turmaId;
       });
-      
+
       if (turma) {
         // Usar o ID da turma no estado como chave (pode ser ID real ou virtual_xxx)
         const turmaKey = turma.id;
@@ -738,7 +738,7 @@ export default function Agenda() {
         }
         return t.id === b.turmaId;
       });
-      
+
       const nomeTurmaA = turmaA?.nome || '';
       const nomeTurmaB = turmaB?.nome || '';
       const nomeDiff = nomeTurmaA.localeCompare(nomeTurmaB);
@@ -755,7 +755,7 @@ export default function Agenda() {
       }
       return t.id === item.turmaId;
     });
-    
+
     const materia = materias.find(m => m.id === item.materiaId);
     const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
     const professor = professores.find(p => p.id === vinculo?.professorId);
@@ -888,11 +888,12 @@ export default function Agenda() {
         {/* Navigation Tabs */}
         <div className="container px-0">
           <div className="d-flex py-3">
-            <div className="custom-tabs-container">
+            <div className="custom-tabs-container w-100">
               <button
                 className={`custom-tab ${activeTab === 'lancamento-notas' ? 'active' : ''}`}
                 onClick={() => setActiveTab('lancamento-notas')}
                 type="button"
+                style={{ flex: 1 }}
               >
                 Cadastro de Agendas
               </button>
@@ -900,6 +901,7 @@ export default function Agenda() {
                 className={`custom-tab ${activeTab === 'visualizacao-resultados' ? 'active' : ''}`}
                 onClick={() => setActiveTab('visualizacao-resultados')}
                 type="button"
+                style={{ flex: 1 }}
               >
                 Grade por Turnos
               </button>
@@ -957,7 +959,7 @@ export default function Agenda() {
                       onChange={e => setFiltroBusca(e.target.value)}
                     />
                   </Col>
-                  <Col md={3} className="d-flex align-items-center justify-content-end">
+                  <Col md={3} className="d-none d-md-flex align-items-center justify-content-end">
                     <Button
                       variant="link"
                       className="text-muted d-flex align-items-center gap-2 p-0 border-0"
@@ -972,39 +974,52 @@ export default function Agenda() {
               </Card.Body>
             </Card>
 
-            <Row className="align-items-center">
-              <Col md={6}>
-                <Card className="mb-3 mb-custom-mobile-0">
-                  <Card.Body className="py-3 px-3">
-                    <div className="d-flex align-items-center justify-content-between">
-                      <div className="d-flex align-items-center gap-2 px-3">
-                        <Download size={18} className='nothing-in-mobile' />
-                        <h6 className="text-dark fw-medium mb-0">Exportar Agenda</h6>
-                      </div>
-                      <div className="d-flex gap-2">
-                        <Button
-                          variant="outline-secondary"
-                          size="sm"
-                          onClick={downloadPDF}
-                        >
-                          Exportar PDF
-                        </Button>
-                        <Button
-                          variant="outline-success"
-                          size="sm"
-                          onClick={downloadExcel}
-                        >
-                          Exportar Excel
-                        </Button>
-                      </div>
-                    </div>
-                  </Card.Body>
-                </Card>
+            {/* Botão Limpar Filtros - Mobile (fora do Card) */}
+            <div className="d-block d-md-none mb-2">
+              <Button
+                // variant="white"
+                className="w-100 d-flex align-items-center justify-content-center gap-2 p-2"
+                onClick={limparFiltros}
+                style={{ backgroundColor: 'white', color: 'black', textDecoration: 'none', fontWeight: 500, border: '1px solid #e1e7ef' }}
+              >
+                <X size={16} />
+                <span>Limpar filtros</span>
+              </Button>
+            </div>
+
+            <Row className="align-items-center mb-2">
+              <Col md={6} className="mb-2 mb-md-0">
+                <Dropdown className="w-100">
+                  <Dropdown.Toggle
+                    className="w-100 d-flex align-items-center justify-content-center gap-2"
+                    style={{ border: '1px solid #e1e7ef', backgroundColor: 'white', color: 'black', fontWeight: 500 }}
+                    variant="light"
+                  >
+                    <Download size={18} />
+                    Exportar
+                  </Dropdown.Toggle>
+                  <Dropdown.Menu className="w-100">
+                    <Dropdown.Item onClick={downloadPDF}>
+                      Exportar PDF
+                    </Dropdown.Item>
+                    <Dropdown.Item onClick={downloadExcel}>
+                      Exportar Excel
+                    </Dropdown.Item>
+                  </Dropdown.Menu>
+                </Dropdown>
               </Col>
               <Col md={6} className="d-flex justify-content-end">
                 <Button
                   variant='outline-primary'
-                  className="d-flex align-items-center gap-2 mb-2"
+                  className="d-none d-md-flex align-items-center gap-2"
+                  onClick={handleShow}
+                >
+                  <Plus size={18} />
+                  <span>Adicionar Aula</span>
+                </Button>
+                <Button
+                  variant='primary'
+                  className="d-flex d-md-none w-100 align-items-center justify-content-center gap-2"
                   onClick={handleShow}
                 >
                   <Plus size={18} />
@@ -1240,7 +1255,7 @@ export default function Agenda() {
             {/* Filtros da visualização por turnos */}
             <Card className="mb-3">
               <Card.Body>
-                <Row className='mb-3'>
+                <Row>
                   <Col md={6}>
                     <Form.Select value={filtroVisualizacaoTurma} onChange={e => setFiltroVisualizacaoTurma(e.target.value)}>
                       <option value="">Todas as Turmas</option>
@@ -1262,11 +1277,12 @@ export default function Agenda() {
             </Card>
             <Row className='mb-3'>
               <Col md={12}>
-                <div className="custom-tabs-container">
+                <div className="custom-tabs-container w-100">
                   <button
                     className={`custom-tab ${filtroTurnoVisualizacao === 'manha' ? 'active' : ''}`}
                     onClick={() => setFiltroTurnoVisualizacao(filtroTurnoVisualizacao === 'manha' ? '' : 'manha')}
                     type="button"
+                    style={{ flex: 1 }}
                   >
                     <Sun size={18} />
                     Manhã
@@ -1275,6 +1291,7 @@ export default function Agenda() {
                     className={`custom-tab ${filtroTurnoVisualizacao === 'tarde' ? 'active' : ''}`}
                     onClick={() => setFiltroTurnoVisualizacao(filtroTurnoVisualizacao === 'tarde' ? '' : 'tarde')}
                     type="button"
+                    style={{ flex: 1 }}
                   >
                     <Sunset size={18} />
                     Tarde
@@ -1283,6 +1300,7 @@ export default function Agenda() {
                     className={`custom-tab ${filtroTurnoVisualizacao === 'noite' ? 'active' : ''}`}
                     onClick={() => setFiltroTurnoVisualizacao(filtroTurnoVisualizacao === 'noite' ? '' : 'noite')}
                     type="button"
+                    style={{ flex: 1 }}
                   >
                     <Moon size={18} />
                     Noite
@@ -1291,235 +1309,226 @@ export default function Agenda() {
               </Col>
             </Row>
 
-            {/* Card de Exportação - aparece quando um turno está selecionado */}
+            {/* Dropdown de Exportação - aparece quando um turno está selecionado */}
             {filtroTurnoVisualizacao && (
-              <Col md={6}>
-                <Card className="mb-3">
-                  <Card.Body className="py-3 px-3">
-                    <div className="d-flex align-items-center justify-content-between">
-                      <div className="d-flex align-items-center gap-2 px-3">
-                        <Download size={18} />
-                        <h6 className="text-dark fw-medium mb-0">Exportar Grade(s)</h6>
-                      </div>
-                      <div className="d-flex gap-2">
-                        <Button
-                          variant="outline-secondary"
-                          size="sm"
-                          onClick={() => {
-                            // Exportar PDF no mesmo padrão da agenda principal, por turma
-                            const doc = new jsPDF('landscape', 'mm', 'a4');
-                            const pageHeight = doc.internal.pageSize.height;
-                            const pageWidth = doc.internal.pageSize.width;
-                            let currentY = 20;
+              <Col md={6} className="mb-3">
+                <Dropdown className="w-100">
+                  <Dropdown.Toggle
+                    className="w-100 d-flex align-items-center justify-content-center gap-2"
+                    style={{ border: '1px solid #e1e7ef', backgroundColor: 'white', color: 'black', fontWeight: 500 }}
+                    variant="light"
+                  >
+                    <Download size={18} />
+                    Exportar Grade(s)
+                  </Dropdown.Toggle>
+                  <Dropdown.Menu className="w-100">
+                    <Dropdown.Item onClick={() => {
+                      const doc = new jsPDF('landscape', 'mm', 'a4');
+                      const pageHeight = doc.internal.pageSize.height;
+                      const pageWidth = doc.internal.pageSize.width;
+                      let currentY = 20;
 
-                            // Agrupar dados filtrados por turma
-                            const dadosGrade = obterDadosFiltradosParaGrade();
-                            const dadosPorTurma: Record<string, AgendaItem[]> = {};
-                            dadosGrade.forEach(item => {
-                              if (!dadosPorTurma[item.turmaId]) dadosPorTurma[item.turmaId] = [];
-                              dadosPorTurma[item.turmaId].push(item);
-                            });
+                      // Agrupar dados filtrados por turma
+                      const dadosGrade = obterDadosFiltradosParaGrade();
+                      const dadosPorTurma: Record<string, AgendaItem[]> = {};
+                      dadosGrade.forEach(item => {
+                        if (!dadosPorTurma[item.turmaId]) dadosPorTurma[item.turmaId] = [];
+                        dadosPorTurma[item.turmaId].push(item);
+                      });
 
-                            Object.keys(dadosPorTurma).forEach((turmaId, index) => {
-                              // Buscar turma considerando turmas virtualizadas
-                              const turma = turmas.find(t => {
-                                if (t.isVirtualizada && t.turmaOriginalId) {
-                                  return t.turmaOriginalId === turmaId || t.id === turmaId;
-                                }
-                                return t.id === turmaId;
-                              });
-                              const aulasDaTurma = dadosPorTurma[turmaId];
-                              if (index > 0 && currentY > pageHeight - 100) {
-                                doc.addPage();
-                                currentY = 20;
-                              }
-                              // Título da turma
-                              doc.setFontSize(16);
-                              doc.setFont('helvetica', 'bold');
-                              doc.text(turma?.nome || `Turma ${turmaId}`, pageWidth / 2, currentY, { align: 'center' });
-                              currentY += 15;
+                      Object.keys(dadosPorTurma).forEach((turmaId, index) => {
+                        // Buscar turma considerando turmas virtualizadas
+                        const turma = turmas.find(t => {
+                          if (t.isVirtualizada && t.turmaOriginalId) {
+                            return t.turmaOriginalId === turmaId || t.id === turmaId;
+                          }
+                          return t.id === turmaId;
+                        });
+                        const aulasDaTurma = dadosPorTurma[turmaId];
+                        if (index > 0 && currentY > pageHeight - 100) {
+                          doc.addPage();
+                          currentY = 20;
+                        }
+                        // Título da turma
+                        doc.setFontSize(16);
+                        doc.setFont('helvetica', 'bold');
+                        doc.text(turma?.nome || `Turma ${turmaId}`, pageWidth / 2, currentY, { align: 'center' });
+                        currentY += 15;
 
-                              // Organizar aulas por dia da semana e horário
-                              const gradeHorarios: Record<string, Record<string, { materia: string; professor: string }>> = {};
-                              const horariosUnicos = new Set<string>();
-                              aulasDaTurma.forEach(aula => {
-                                if (!gradeHorarios[aula.diaSemana]) gradeHorarios[aula.diaSemana] = {};
-                                const materia = materias.find(m => m.id === aula.materiaId);
-                                const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
-                                const professor = professores.find(p => p.id === vinculo?.professorId);
-                                gradeHorarios[aula.diaSemana][aula.horario] = {
-                                  materia: materia?.nome || '-',
-                                  professor: professor?.nome || '---'
-                                };
-                                horariosUnicos.add(aula.horario);
-                              });
-                              const horariosOrdenados = Array.from(horariosUnicos).sort();
-                              // Preparar dados para a tabela da grade
-                              const bodyData: string[][] = [];
-                              horariosOrdenados.forEach(horario => {
-                                const linha: string[] = [];
-                                diasSemana.forEach(dia => {
-                                  const aulaInfo = gradeHorarios[dia]?.[horario];
-                                  if (aulaInfo) {
-                                    linha.push(`${aulaInfo.materia} (${aulaInfo.professor})`);
-                                  } else {
-                                    linha.push('------');
-                                  }
-                                });
-                                bodyData.push(linha);
-                              });
-                              // Criar tabela da grade de horários
-                              autoTable(doc, {
-                                startY: currentY,
-                                head: [diasSemana],
-                                body: bodyData,
-                                styles: { fontSize: 8, cellPadding: 2, valign: 'middle', halign: 'center' },
-                                headStyles: { fillColor: [60, 60, 60], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
-                                columnStyles: {
-                                  0: { cellWidth: (pageWidth - 40) / 5 },
-                                  1: { cellWidth: (pageWidth - 40) / 5 },
-                                  2: { cellWidth: (pageWidth - 40) / 5 },
-                                  3: { cellWidth: (pageWidth - 40) / 5 },
-                                  4: { cellWidth: (pageWidth - 40) / 5 }
-                                },
-                                margin: { left: 20, right: 20 }
-                              });
-                              
-                              // Atualizar currentY após a tabela da grade
-                              currentY = (doc as any).lastAutoTable.finalY + 15;
-                              // Tabelas lado a lado: horários e professores
-                              // Montar dados da tabela de horários
-                              const horariosTable: string[][] = [];
-                              let aulaCount = 1;
-                              horariosOrdenados.forEach((horario) => {
-                                const temIntervalo = aulasDaTurma.some(a => a.horario === horario && (
-                                  (materias.find(m => m.id === a.materiaId)?.nome || '').toLowerCase().includes('intervalo')
-                                ));
-                                if (temIntervalo) {
-                                  horariosTable.push(['Intervalo', horario]);
-                                } else {
-                                  horariosTable.push([`${aulaCount}ª Aula`, horario]);
-                                  aulaCount++;
-                                }
-                              });
-                              // Professores
-                              const professoresDaTurma = new Map<string, string[]>();
-                              aulasDaTurma.forEach(aula => {
-                                const materia = materias.find(m => m.id === aula.materiaId);
-                                const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
-                                const professor = professores.find(p => p.id === vinculo?.professorId);
-                                if (professor && materia) {
-                                  if (!professoresDaTurma.has(professor.nome)) {
-                                    professoresDaTurma.set(professor.nome, []);
-                                  }
-                                  const materiasDoProf = professoresDaTurma.get(professor.nome)!;
-                                  if (!materiasDoProf.includes(materia.nome)) {
-                                    materiasDoProf.push(materia.nome);
-                                  }
-                                }
-                              });
-                              const professoresTable: string[][] = [];
-                              professoresDaTurma.forEach((materias, professor) => {
-                                professoresTable.push([professor, materias.join(', ')]);
-                              });
-                              // Definir largura das tabelas e margens
-                              const horariosTableWidth = 85;
-                              const professoresTableWidth = 130;
-                              const tableTopY = currentY + 4;
-                              const leftMargin = 20;
-                              const rightMargin = pageWidth - professoresTableWidth - 20;
-                              // Título das tabelas
-                              doc.setFontSize(10);
-                              doc.setFont('helvetica', 'bold');
-                              doc.text('Horários das Aulas:', leftMargin, currentY);
-                              doc.text(`Professores do ${turma?.nome || 'Turma'}:`, rightMargin, currentY);
-                              // Renderizar tabelas lado a lado
-                              autoTable(doc, {
-                                startY: tableTopY,
-                                margin: { left: leftMargin },
-                                head: [['Aula', 'Horário']],
-                                body: horariosTable,
-                                styles: { fontSize: 8, cellPadding: 2, valign: 'middle', halign: 'center' },
-                                headStyles: { fillColor: [60, 60, 60], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
-                                columnStyles: {
-                                  0: { cellWidth: 30 },
-                                  1: { cellWidth: 45 }
-                                },
-                                tableWidth: horariosTableWidth,
-                                didDrawPage: () => { }
-                              });
-                              autoTable(doc, {
-                                startY: tableTopY,
-                                margin: { left: rightMargin },
-                                head: [['Professor', 'Disciplinas']],
-                                body: professoresTable,
-                                styles: { fontSize: 8, cellPadding: 2, valign: 'middle', halign: 'center' },
-                                headStyles: { fillColor: [60, 60, 60], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
-                                columnStyles: {
-                                  0: { cellWidth: 50 },
-                                  1: { cellWidth: 80 }
-                                },
-                                tableWidth: professoresTableWidth,
-                                didDrawPage: () => {
-                                  // Atualiza currentY para o final da tabela mais longa
-                                  const horariosRows = horariosTable.length + 1;
-                                  const profRows = professoresTable.length + 1;
-                                  const rowHeight = 8;
-                                  const maxRows = Math.max(horariosRows, profRows);
-                                  currentY = tableTopY + maxRows * rowHeight + 10;
-                                }
-                              });
-                            });
-                            doc.save(`grade-${filtroTurnoVisualizacao}-${new Date().toISOString().split('T')[0]}.pdf`);
-                          }}
-                        >
-                          Exportar PDF
-                        </Button>
-                        <Button
-                          variant="outline-success"
-                          size="sm"
-                          onClick={() => {
-                            // Função para exportar Excel da grade selecionada
-                            const turnoNome = getTurnoNome(filtroTurnoVisualizacao);
+                        // Organizar aulas por dia da semana e horário
+                        const gradeHorarios: Record<string, Record<string, { materia: string; professor: string }>> = {};
+                        const horariosUnicos = new Set<string>();
+                        aulasDaTurma.forEach(aula => {
+                          if (!gradeHorarios[aula.diaSemana]) gradeHorarios[aula.diaSemana] = {};
+                          const materia = materias.find(m => m.id === aula.materiaId);
+                          const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
+                          const professor = professores.find(p => p.id === vinculo?.professorId);
+                          gradeHorarios[aula.diaSemana][aula.horario] = {
+                            materia: materia?.nome || '-',
+                            professor: professor?.nome || '---'
+                          };
+                          horariosUnicos.add(aula.horario);
+                        });
+                        const horariosOrdenados = Array.from(horariosUnicos).sort();
+                        // Preparar dados para a tabela da grade
+                        const bodyData: string[][] = [];
+                        horariosOrdenados.forEach(horario => {
+                          const linha: string[] = [];
+                          diasSemana.forEach(dia => {
+                            const aulaInfo = gradeHorarios[dia]?.[horario];
+                            if (aulaInfo) {
+                              linha.push(`${aulaInfo.materia} (${aulaInfo.professor})`);
+                            } else {
+                              linha.push('------');
+                            }
+                          });
+                          bodyData.push(linha);
+                        });
+                        // Criar tabela da grade de horários
+                        autoTable(doc, {
+                          startY: currentY,
+                          head: [diasSemana],
+                          body: bodyData,
+                          styles: { fontSize: 8, cellPadding: 2, valign: 'middle', halign: 'center' },
+                          headStyles: { fillColor: [60, 60, 60], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
+                          columnStyles: {
+                            0: { cellWidth: (pageWidth - 40) / 5 },
+                            1: { cellWidth: (pageWidth - 40) / 5 },
+                            2: { cellWidth: (pageWidth - 40) / 5 },
+                            3: { cellWidth: (pageWidth - 40) / 5 },
+                            4: { cellWidth: (pageWidth - 40) / 5 }
+                          },
+                          margin: { left: 20, right: 20 }
+                        });
 
-                            // Usar os dados filtrados que consideram todos os filtros aplicados
-                            const dadosGrade = obterDadosFiltradosParaGrade().map(item => {
-                              const turma = turmas.find(t => t.id === item.turmaId);
-                              const materia = materias.find(m => m.id === item.materiaId);
-                              const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
-                              const professor = professores.find(p => p.id === vinculo?.professorId);
+                        // Atualizar currentY após a tabela da grade
+                        currentY = (doc as any).lastAutoTable.finalY + 15;
+                        // Tabelas lado a lado: horários e professores
+                        // Montar dados da tabela de horários
+                        const horariosTable: string[][] = [];
+                        let aulaCount = 1;
+                        horariosOrdenados.forEach((horario) => {
+                          const temIntervalo = aulasDaTurma.some(a => a.horario === horario && (
+                            (materias.find(m => m.id === a.materiaId)?.nome || '').toLowerCase().includes('intervalo')
+                          ));
+                          if (temIntervalo) {
+                            horariosTable.push(['Intervalo', horario]);
+                          } else {
+                            horariosTable.push([`${aulaCount}ª Aula`, horario]);
+                            aulaCount++;
+                          }
+                        });
+                        // Professores
+                        const professoresDaTurma = new Map<string, string[]>();
+                        aulasDaTurma.forEach(aula => {
+                          const materia = materias.find(m => m.id === aula.materiaId);
+                          const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
+                          const professor = professores.find(p => p.id === vinculo?.professorId);
+                          if (professor && materia) {
+                            if (!professoresDaTurma.has(professor.nome)) {
+                              professoresDaTurma.set(professor.nome, []);
+                            }
+                            const materiasDoProf = professoresDaTurma.get(professor.nome)!;
+                            if (!materiasDoProf.includes(materia.nome)) {
+                              materiasDoProf.push(materia.nome);
+                            }
+                          }
+                        });
+                        const professoresTable: string[][] = [];
+                        professoresDaTurma.forEach((materias, professor) => {
+                          professoresTable.push([professor, materias.join(', ')]);
+                        });
+                        // Definir largura das tabelas e margens
+                        const horariosTableWidth = 85;
+                        const professoresTableWidth = 130;
+                        const tableTopY = currentY + 4;
+                        const leftMargin = 20;
+                        const rightMargin = pageWidth - professoresTableWidth - 20;
+                        // Título das tabelas
+                        doc.setFontSize(10);
+                        doc.setFont('helvetica', 'bold');
+                        doc.text('Horários das Aulas:', leftMargin, currentY);
+                        doc.text(`Professores do ${turma?.nome || 'Turma'}:`, rightMargin, currentY);
+                        // Renderizar tabelas lado a lado
+                        autoTable(doc, {
+                          startY: tableTopY,
+                          margin: { left: leftMargin },
+                          head: [['Aula', 'Horário']],
+                          body: horariosTable,
+                          styles: { fontSize: 8, cellPadding: 2, valign: 'middle', halign: 'center' },
+                          headStyles: { fillColor: [60, 60, 60], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
+                          columnStyles: {
+                            0: { cellWidth: 30 },
+                            1: { cellWidth: 45 }
+                          },
+                          tableWidth: horariosTableWidth,
+                          didDrawPage: () => { }
+                        });
+                        autoTable(doc, {
+                          startY: tableTopY,
+                          margin: { left: rightMargin },
+                          head: [['Professor', 'Disciplinas']],
+                          body: professoresTable,
+                          styles: { fontSize: 8, cellPadding: 2, valign: 'middle', halign: 'center' },
+                          headStyles: { fillColor: [60, 60, 60], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
+                          columnStyles: {
+                            0: { cellWidth: 50 },
+                            1: { cellWidth: 80 }
+                          },
+                          tableWidth: professoresTableWidth,
+                          didDrawPage: () => {
+                            // Atualiza currentY para o final da tabela mais longa
+                            const horariosRows = horariosTable.length + 1;
+                            const profRows = professoresTable.length + 1;
+                            const rowHeight = 8;
+                            const maxRows = Math.max(horariosRows, profRows);
+                            currentY = tableTopY + maxRows * rowHeight + 10;
+                          }
+                        });
+                      });
+                      doc.save(`grade-${filtroTurnoVisualizacao}-${new Date().toISOString().split('T')[0]}.pdf`);
+                    }}>
+                      Exportar PDF
+                    </Dropdown.Item>
+                    <Dropdown.Item onClick={() => {
+                      // Função para exportar Excel da grade selecionada
+                      const turnoNome = getTurnoNome(filtroTurnoVisualizacao);
 
-                              return {
-                                'Turma': turma?.nome || '-',
-                                'Dia da Semana': item.diaSemana,
-                                'Horário': item.horario,
-                                'Matéria': materia?.nome || '-',
-                                'Professor': professor?.nome || '---'
-                              };
-                            });
+                      // Usar os dados filtrados que consideram todos os filtros aplicados
+                      const dadosGrade = obterDadosFiltradosParaGrade().map(item => {
+                        const turma = turmas.find(t => t.id === item.turmaId);
+                        const materia = materias.find(m => m.id === item.materiaId);
+                        const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
+                        const professor = professores.find(p => p.id === vinculo?.professorId);
 
-                            const worksheet = XLSX.utils.json_to_sheet(dadosGrade);
+                        return {
+                          'Turma': turma?.nome || '-',
+                          'Dia da Semana': item.diaSemana,
+                          'Horário': item.horario,
+                          'Matéria': materia?.nome || '-',
+                          'Professor': professor?.nome || '---'
+                        };
+                      });
 
-                            worksheet['!cols'] = [
-                              { wch: 20 }, // Turma
-                              { wch: 20 }, // Dia da Semana
-                              { wch: 18 }, // Horário
-                              { wch: 25 }, // Matéria
-                              { wch: 25 }  // Professor
-                            ];
+                      const worksheet = XLSX.utils.json_to_sheet(dadosGrade);
 
-                            const workbook = XLSX.utils.book_new();
-                            XLSX.utils.book_append_sheet(workbook, worksheet, `Grade ${turnoNome}`);
+                      worksheet['!cols'] = [
+                        { wch: 20 }, // Turma
+                        { wch: 20 }, // Dia da Semana
+                        { wch: 18 }, // Horário
+                        { wch: 25 }, // Matéria
+                        { wch: 25 }  // Professor
+                      ];
 
-                            XLSX.writeFile(workbook, `grade-${filtroTurnoVisualizacao}-${new Date().toISOString().split('T')[0]}.xlsx`);
-                          }}
-                        >
-                          Exportar Excel
-                        </Button>
-                      </div>
-                    </div>
-                  </Card.Body>
-                </Card>
+                      const workbook = XLSX.utils.book_new();
+                      XLSX.utils.book_append_sheet(workbook, worksheet, `Grade ${turnoNome}`);
+
+                      XLSX.writeFile(workbook, `grade-${filtroTurnoVisualizacao}-${new Date().toISOString().split('T')[0]}.xlsx`);
+                    }}>
+                      Exportar Excel
+                    </Dropdown.Item>
+                  </Dropdown.Menu>
+                </Dropdown>
               </Col>
             )}
 

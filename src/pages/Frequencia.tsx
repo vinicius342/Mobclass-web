@@ -15,7 +15,7 @@ import {
   Query,
   DocumentData
 } from 'firebase/firestore';
-import { AlertTriangle, CalendarIcon, Check, CheckSquare, Info, Save, Undo, User, UserCheck, UserX, X} from "lucide-react";
+import { AlertTriangle, CalendarIcon, Check, CheckSquare, Info, Save, Undo, User, UserCheck, UserX, X } from "lucide-react";
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
@@ -103,8 +103,8 @@ export default function Frequencia(): JSX.Element {
 
         const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
         // Buscar apenas turmas do ano letivo atual
-  const turmaDocsAll = await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))));
-  turmaDocs = turmaDocsAll.filter(d => d.exists() && d.data()?.anoLetivo?.toString() === anoLetivo.toString());
+        const turmaDocsAll = await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))));
+        turmaDocs = turmaDocsAll.filter(d => d.exists() && d.data()?.anoLetivo?.toString() === anoLetivo.toString());
 
         materiaIds = [...new Set(vincList.map(v => v.materiaId))];
         const materiasSnap = await Promise.all(materiaIds.map(async id => {
@@ -161,8 +161,8 @@ export default function Frequencia(): JSX.Element {
         });
         const initial: Record<string, boolean | null> = {};
         listaAlunos.forEach(a => {
-          // Se houver registro anterior, usa ele. Caso contrário, marca como presente
-          initial[a.id] = presMap[a.id] !== undefined ? presMap[a.id] : true;
+          // Se houver registro anterior, usa ele. Caso contrário, deixa sem seleção (null)
+          initial[a.id] = presMap[a.id] !== undefined ? presMap[a.id] : null;
         });
         setAttendance(initial);
 
@@ -428,10 +428,10 @@ export default function Frequencia(): JSX.Element {
 
     // Filtra por turma (se selecionada) e matéria no frontend, e exclui registros de alunos inativos
     registros = registros.filter(
-      reg => (!turmaId || reg.turmaId === turmaId) && 
-      (materiaId === 'all' || reg.materiaId === materiaId) &&
-      // Verifica se o aluno ainda está ativo (presente na lista de alunos ativos)
-      listaAlunos.some(aluno => aluno.id === reg.alunoId)
+      reg => (!turmaId || reg.turmaId === turmaId) &&
+        (materiaId === 'all' || reg.materiaId === materiaId) &&
+        // Verifica se o aluno ainda está ativo (presente na lista de alunos ativos)
+        listaAlunos.some(aluno => aluno.id === reg.alunoId)
     );
 
     // --- Gráfico da turma ---
@@ -504,7 +504,7 @@ export default function Frequencia(): JSX.Element {
   //Lista Relatorio
   const [alunosRelatorio, setAlunosRelatorio] = useState<Aluno[]>([]);
   const [registrosRelatorio, setRegistrosRelatorio] = useState<any[]>([]);
-  
+
   // Paginação e ordenação dos relatórios
   const [paginaAtualRelatorio, setPaginaAtualRelatorio] = useState(1);
   const itensPorPaginaRelatorio = 10;
@@ -519,23 +519,23 @@ export default function Frequencia(): JSX.Element {
   const buscarHistoricoAluno = async (aluno: { nome: string; id: string }) => {
     setAlunoHistorico(aluno);
     setShowModalHistorico(true);
-    
+
     try {
       // Buscar registros de frequência do aluno
       let registrosQuery = query(
-        collection(db, 'frequencias'), 
+        collection(db, 'frequencias'),
         where('alunoId', '==', aluno.id)
       );
-      
+
       // Se não for "todas as matérias", filtrar pela matéria específica
       if (materiaId !== 'all') {
         registrosQuery = query(registrosQuery, where('materiaId', '==', materiaId));
       }
-      
+
       const registrosSnap = await getDocs(registrosQuery);
-      
+
       const registros = registrosSnap.docs.map(doc => doc.data());
-      
+
       // Agrupar por bimestre (assumindo que a data está no formato YYYY-MM-DD)
       const bimestres: Record<string, { presencas: number; faltas: number; total: number }> = {
         '1º Bimestre': { presencas: 0, faltas: 0, total: 0 },
@@ -543,17 +543,17 @@ export default function Frequencia(): JSX.Element {
         '3º Bimestre': { presencas: 0, faltas: 0, total: 0 },
         '4º Bimestre': { presencas: 0, faltas: 0, total: 0 }
       };
-      
+
       registros.forEach(reg => {
         const data = new Date(reg.data);
         const mes = data.getMonth() + 1; // Janeiro = 1
-        
+
         let bimestre = '';
         if (mes >= 2 && mes <= 4) bimestre = '1º Bimestre';
         else if (mes >= 5 && mes <= 7) bimestre = '2º Bimestre';
         else if (mes >= 8 && mes <= 10) bimestre = '3º Bimestre';
         else bimestre = '4º Bimestre';
-        
+
         if (bimestres[bimestre]) {
           bimestres[bimestre].total++;
           if (reg.presenca) {
@@ -563,14 +563,14 @@ export default function Frequencia(): JSX.Element {
           }
         }
       });
-      
+
       // Converter para array
       const historicoArray = Object.entries(bimestres).map(([nome, dados]) => ({
         bimestre: nome,
         ...dados,
         percentual: dados.total > 0 ? ((dados.presencas / dados.total) * 100).toFixed(1) : '0.0'
       }));
-      
+
       setHistoricoFrequencia(historicoArray);
     } catch (error) {
       console.error('Erro ao buscar histórico:', error);
@@ -611,13 +611,14 @@ export default function Frequencia(): JSX.Element {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="container px-0">
+        <div className="container px-0 d-none d-md-block">
           <div className="d-flex py-3">
-            <div className="custom-tabs-container">
+            <div className="w-100 custom-tabs-container">
               <button
                 className={`custom-tab ${activeTab === 'lancamento-frequencia' ? 'active' : ''}`}
                 onClick={() => setActiveTab('lancamento-frequencia')}
                 type="button"
+                style={{ flex: 1 }}
               >
                 Lançamento de Frequência
               </button>
@@ -625,8 +626,33 @@ export default function Frequencia(): JSX.Element {
                 className={`custom-tab ${activeTab === 'relatorios-frequencia' ? 'active' : ''}`}
                 onClick={() => setActiveTab('relatorios-frequencia')}
                 type="button"
+                style={{ flex: 1 }}
               >
                 Relatórios de Frequência
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile navigation Tabs */}
+        <div className="container px-0 d-block d-md-none">
+          <div className="d-flex py-3">
+            <div className="w-100 custom-tabs-container">
+              <button
+                className={`custom-tab ${activeTab === 'lancamento-frequencia' ? 'active' : ''}`}
+                onClick={() => setActiveTab('lancamento-frequencia')}
+                type="button"
+                style={{ flex: 1 }}
+              >
+                Lançamento
+              </button>
+              <button
+                className={`custom-tab ${activeTab === 'relatorios-frequencia' ? 'active' : ''}`}
+                onClick={() => setActiveTab('relatorios-frequencia')}
+                type="button"
+                style={{ flex: 1 }}
+              >
+                Relatórios
               </button>
             </div>
           </div>
@@ -636,7 +662,7 @@ export default function Frequencia(): JSX.Element {
         <div className="pb-0">
           {activeTab === 'lancamento-frequencia' ? (
             <Card className='shadow-sm p-3 mb-0'>
-              <Row className="mb-3 info-cards-frequencia">
+              <Row className="mb-3">
                 <Col md={4}>
                   <Form.Select
                     value={turmaId}
@@ -696,7 +722,7 @@ export default function Frequencia(): JSX.Element {
                   />
                 </Col>
               </Row>
-              <Row className="mb-2 justify-content-end">
+              <Row className="mb-2 justify-content-end d-none d-md-flex">
                 <Col className="d-flex gap-2 justify-content-end" md={7}>
                   <Button
                     variant="success"
@@ -726,8 +752,8 @@ export default function Frequencia(): JSX.Element {
               </Row>
             </Card>
           ) : (
-            <Card className='shadow-sm p-3'>
-              <Row className="mb-3 info-cards-frequencia">
+            <Card className='shadow-sm p-3 mb-3'>
+              <Row className="mb-3 mb-custom-mobile-0">
                 <Col md={3}>
                   <Form.Select
                     value={turmaId}
@@ -813,20 +839,10 @@ export default function Frequencia(): JSX.Element {
                     />
                   </Col>
                 )}
-
               </Row>
 
-              <Row className="mb-2 justify-content-between">
-                <Col md={5} className="d-flex align-items-center">
-                  <Form.Control
-                    type="search"
-                    placeholder="Buscar aluno..."
-                    value={buscaNome}
-                    onChange={e => setBuscaNome(e.target.value)}
-                    autoComplete="off"
-                  />
-                </Col>
-                <Col className="d-flex gap-3 justify-content-end" md={7}>
+              <Row className="mb-2 justify-content-end d-none d-md-flex">
+                <Col className="d-flex gap-2 justify-content-end" md={7}>
                   <Button
                     variant="primary"
                     className="d-flex align-items-center gap-2"
@@ -836,7 +852,6 @@ export default function Frequencia(): JSX.Element {
                   </Button>
                   <Button
                     className="d-flex align-items-center gap-2 text-secondary bg-transparent border-0 p-0"
-                    style={{ color: 'black' }}
                     onClick={limparFiltrosRelatorio}
                   >
                     Limpar Filtros
@@ -845,12 +860,42 @@ export default function Frequencia(): JSX.Element {
               </Row>
             </Card>
           )}
+
+          {activeTab === "relatorios-frequencia" && (
+            <>
+              <div className="w-100 my-2 d-block d-md-none">
+                <Row className="justify-content-center">
+                  <Col className="d-flex gap-2 justify-content-center">
+                    <Button
+                      variant="primary"
+                      className="w-100 d-flex align-items-center justify-content-center gap-2"
+                      onClick={aplicarFiltrosRelatorio}
+                    >
+                      Aplicar Filtros
+                    </Button>
+                  </Col>
+                </Row>
+                <Row>
+                  <Col>
+                    <Button
+                      className="mt-2 w-100 d-flex align-items-center justify-content-center gap-2 bg-white"
+                      style={{ color: 'black', border: '1px solid #e1e7ef', flex: 1 }}
+                      onClick={limparFiltrosRelatorio}
+                    >
+                      Limpar Filtros
+                    </Button>
+                  </Col>
+                </Row>
+              </div>
+            </>
+          )}
+
           {activeTab === "relatorios-frequencia" && frequenciaGrafico && (
             <Row className="info-cards-frequencia">
               <Col md={5}>
-                <Card className="shadow-md">
+                <Card className="shadow-md h-70 mb-3">
                   <Card.Body>
-                    <h3 className="fs-5 fw-bold text-dark mb-0 mb-1">Frequência da Turma</h3>
+                    <h3 className="fs-5 fw-bold text-dark mb-3">Frequência da Turma</h3>
                     <ResponsiveContainer width="100%" height={250}>
                       <PieChart>
                         <Pie
@@ -876,9 +921,9 @@ export default function Frequencia(): JSX.Element {
                 </Card>
               </Col>
               <Col md={7}>
-                <Card className="shadow-md">
+                <Card className="shadow-md h-70 mb-3">
                   <Card.Body>
-                    <h3 className="fs-5 fw-bold text-dark mb-0 mb-1">Top 5 Alunos - Presença (%)</h3>
+                    <h3 className="fs-5 fw-bold text-dark mb-3">Top 5 Alunos - Presença (%)</h3>
                     <ResponsiveContainer width="100%" height={250}>
                       <BarChart data={melhoresAlunosGrafico}>
                         <XAxis
@@ -900,7 +945,17 @@ export default function Frequencia(): JSX.Element {
 
         {/* Lista do relatorio */}
         {activeTab === "relatorios-frequencia" && frequenciaGrafico && (
-          <Card className="shadow-sm">
+          <>
+            <Card className='shadow-sm p-3 mb-3 mt-0'>
+              <Form.Control
+                type="search"
+                placeholder="Buscar aluno..."
+                value={buscaNome}
+                onChange={e => setBuscaNome(e.target.value)}
+                autoComplete="off"
+              />
+            </Card>
+            <Card className="shadow-sm">
             <Card.Body>
               <div className="d-flex justify-content-between align-items-center mb-3 px-3">
                 <h3 className="mb-0">
@@ -926,23 +981,26 @@ export default function Frequencia(): JSX.Element {
                   </Dropdown.Menu>
                 </Dropdown>
               </div>
-              <div className="d-flex flex-column gap-2">
-                <div className="d-flex justify-content-between px-3 py-2 border-bottom fw-bold text-muted">
-                  <div style={{ width: '22%', display: 'flex', justifyContent: 'center' }}>Aluno</div>
-                  <div style={{ width: '12%', display: 'flex', justifyContent: 'center' }}>Presenças</div>
-                  <div style={{ width: '12%', display: 'flex', justifyContent: 'center' }}>Faltas</div>
-                  <div style={{ width: '21%', display: 'flex', justifyContent: 'center' }} className="nothing-in-mobile">Frequência</div>
-                  <div style={{ width: '15%', display: 'flex', justifyContent: 'center' }}>Status</div>
-                  <div style={{ width: '8%', display: 'flex', justifyContent: 'center' }}>Ações</div>
-                </div>
-                {loadingRelatorio ? (
-                  <div className="d-flex justify-content-center align-items-center" style={{ height: '200px' }}>
-                    <Spinner animation="border" />
+
+              {/* Versão Desktop */}
+              <div className="d-none d-md-block">
+                <div className="d-flex flex-column gap-2">
+                  <div className="d-flex justify-content-between px-3 py-2 border-bottom fw-bold text-muted">
+                    <div style={{ width: '22%', display: 'flex', justifyContent: 'center' }}>Aluno</div>
+                    <div style={{ width: '12%', display: 'flex', justifyContent: 'center' }}>Presenças</div>
+                    <div style={{ width: '12%', display: 'flex', justifyContent: 'center' }}>Faltas</div>
+                    <div style={{ width: '21%', display: 'flex', justifyContent: 'center' }}>Frequência</div>
+                    <div style={{ width: '15%', display: 'flex', justifyContent: 'center' }}>Status</div>
+                    <div style={{ width: '8%', display: 'flex', justifyContent: 'center' }}>Ações</div>
                   </div>
-                ) : (
-                  (() => {
+                  {loadingRelatorio ? (
+                    <div className="d-flex justify-content-center align-items-center" style={{ height: '200px' }}>
+                      <Spinner animation="border" />
+                    </div>
+                  ) : (
+                    (() => {
                     // Filtrar alunos por busca
-                    let alunosFiltrados = alunosRelatorio.filter(a => 
+                    let alunosFiltrados = alunosRelatorio.filter(a =>
                       buscaNome.trim() === '' || a.nome.toLowerCase().includes(buscaNome.toLowerCase())
                     );
 
@@ -953,7 +1011,7 @@ export default function Frequencia(): JSX.Element {
                       const faltas = registrosAluno.filter(r => r.presenca === false).length;
                       const total = registrosAluno.length;
                       const percentual = total > 0 ? parseFloat(((presencas / total) * 100).toFixed(1)) : 0;
-                      
+
                       return {
                         aluno: a,
                         presencas,
@@ -1023,7 +1081,7 @@ export default function Frequencia(): JSX.Element {
                             <div style={{ width: '12%', textAlign: 'center' }}>
                               <span className="text-danger fw-bold">{faltas}</span>
                             </div>
-                            <div style={{ width: '21%', display: 'flex', alignItems: 'center', gap: '8px' }} className='nothing-in-mobile'>
+                            <div style={{ width: '21%', display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <div
                                 className="progress"
                                 style={{
@@ -1086,13 +1144,123 @@ export default function Frequencia(): JSX.Element {
                     });
                   })()
                 )}
+                </div>
+              </div>
+
+              {/* Versão Mobile */}
+              <div className="d-block d-md-none">
+                {loadingRelatorio ? (
+                  <div className="d-flex justify-content-center align-items-center" style={{ height: '200px' }}>
+                    <Spinner animation="border" />
+                  </div>
+                ) : (
+                  (() => {
+                    // Filtrar alunos por busca
+                    let alunosFiltrados = alunosRelatorio.filter(a =>
+                      buscaNome.trim() === '' || a.nome.toLowerCase().includes(buscaNome.toLowerCase())
+                    );
+
+                    // Mapear dados com métricas
+                    let dadosComMetricas = alunosFiltrados.map(a => {
+                      const registrosAluno = registrosRelatorio.filter(r => r.alunoId === a.id);
+                      const presencas = registrosAluno.filter(r => r.presenca === true).length;
+                      const faltas = registrosAluno.filter(r => r.presenca === false).length;
+                      const total = registrosAluno.length;
+                      const percentual = total > 0 ? parseFloat(((presencas / total) * 100).toFixed(1)) : 0;
+
+                      return {
+                        aluno: a,
+                        presencas,
+                        faltas,
+                        percentual
+                      };
+                    });
+
+                    // Ordenar dados
+                    dadosComMetricas.sort((a, b) => {
+                      switch (ordenacaoRelatorio) {
+                        case 'nome':
+                          return a.aluno.nome.localeCompare(b.aluno.nome);
+                        case 'presencas':
+                          return b.presencas - a.presencas;
+                        case 'faltas':
+                          return b.faltas - a.faltas;
+                        case 'percentual':
+                          return b.percentual - a.percentual;
+                        default:
+                          return 0;
+                      }
+                    });
+
+                    // Aplicar paginação
+                    const inicioIndex = (paginaAtualRelatorio - 1) * itensPorPaginaRelatorio;
+                    const dadosPaginados = dadosComMetricas.slice(inicioIndex, inicioIndex + itensPorPaginaRelatorio);
+
+                    return dadosPaginados.map(({ aluno: a, presencas, faltas, percentual }) => {
+                      let status = null;
+                      let statusText = '';
+
+                      if (percentual >= 80) {
+                        status = 'success';
+                        statusText = 'OK';
+                      } else if (percentual >= 60) {
+                        status = 'warning';
+                        statusText = 'Regular';
+                      } else {
+                        status = 'danger';
+                        statusText = 'Crítico';
+                      }
+
+                      return (
+                        <div key={a.id} className="notas-resultado-card mb-2">
+                          <div className="notas-resultado-header">
+                            <div className="notas-resultado-nome">{a.nome}</div>
+                            <div className={`notas-resultado-media text-${status}`} style={{ fontSize: '1.1rem' }}>
+                              {percentual.toFixed(1)}%
+                            </div>
+                          </div>
+
+                          <div className="notas-resultado-body">
+                            <div className="notas-resultado-row">
+                              <span className="notas-resultado-label">Presenças:</span>
+                              <span className="notas-resultado-valor text-success fw-bold" style={{ fontSize: '0.95rem' }}>
+                                {presencas}
+                              </span>
+                            </div>
+
+                            <div className="notas-resultado-row">
+                              <span className="notas-resultado-label">Faltas:</span>
+                              <span className="notas-resultado-valor text-danger fw-bold" style={{ fontSize: '0.95rem' }}>
+                                {faltas}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="notas-resultado-footer">
+                            <span className={`badge bg-${status}`} style={{ fontSize: '0.85rem' }}>
+                              {statusText}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="outline-primary"
+                              className="notas-action-mobile d-flex align-items-center gap-1"
+                              onClick={() => buscarHistoricoAluno({ nome: a.nome, id: a.id })}
+                            >
+                              <FaClockRotateLeft /> Histórico
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()
+                )}
               </div>
             </Card.Body>
             {!loadingRelatorio && (
               <Paginacao
                 paginaAtual={paginaAtualRelatorio}
                 totalPaginas={Math.ceil(
-                  alunosRelatorio.filter(a => 
+                  alunosRelatorio.filter(a =>
                     buscaNome.trim() === '' || a.nome.toLowerCase().includes(buscaNome.toLowerCase())
                   ).length / itensPorPaginaRelatorio
                 )}
@@ -1100,6 +1268,7 @@ export default function Frequencia(): JSX.Element {
               />
             )}
           </Card>
+          </>
         )}
 
         {activeTab === "lancamento-frequencia" && alunos.length > 0 && (
@@ -1130,7 +1299,7 @@ export default function Frequencia(): JSX.Element {
                 </Card>
               </Col>
               <Col md={4}>
-                <Card className="shadow-sm p-3 text-center">
+                <Card className="shadow-sm p-3 text-center mb-2">
                   <div className="fs-4 text-secondary">
                     <FaUsers className="me-2" />
                     {totalAlunos}
@@ -1139,7 +1308,44 @@ export default function Frequencia(): JSX.Element {
                 </Card>
               </Col>
             </Row>
-            <Card className='shadow-sm p-3'>
+            <div className="w-100 my-2 d-block d-md-none">
+              <Row className="mb-2 justify-content-center px-1">
+                <Col className="d-flex gap-2 justify-content-center">
+                  <Button
+                    variant="success"
+                    onClick={marcarTodosComoPresente}
+                    className="d-flex align-items-center justify-content-center gap-2"
+                    style={{ flex: 1 }}
+                  >
+                    <UserCheck size={18} />
+                    Todos Presentes
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={marcarTodosComoAusente}
+                    className="d-flex align-items-center justify-content-center gap-2"
+                    style={{ flex: 1 }}
+                  >
+                    <UserX size={18} />
+                    Todos Ausentes
+                  </Button>
+                </Col>
+              </Row>
+              <Row className="justify-content-center px-1">
+                <Col className="d-flex justify-content-center">
+                  <Button
+                    onClick={desfazerAlteracao}
+                    disabled={history.length === 0}
+                    className="d-flex align-items-center justify-content-center gap-2 bg-white w-100"
+                    style={{ color: 'black', border: '1px solid #e1e7ef' }}
+                  >
+                    <Undo size={18} />
+                    Desfazer
+                  </Button>
+                </Col>
+              </Row>
+            </div>
+            <Card className='shadow-sm p-3 mb-3 mt-2'>
               <Col md={12} className="d-flex justify-content-end gap-3">
                 <Form.Control
                   type="search"
@@ -1375,49 +1581,112 @@ export default function Frequencia(): JSX.Element {
           </Modal.Header>
           <Modal.Body>
             {historicoFrequencia.length > 0 ? (
-              <div className="table-responsive">
-                <table className="table table-striped">
-                  <thead>
-                    <tr>
-                      <th>Bimestre</th>
-                      <th className="text-center">Presenças</th>
-                      <th className="text-center">Faltas</th>
-                      <th className="text-center">Total de Aulas</th>
-                      <th className="text-center">Frequência</th>
-                      <th className="text-center">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historicoFrequencia.map(bimestre => (
-                      <tr key={bimestre.bimestre}>
-                        <td className="fw-bold">{bimestre.bimestre}</td>
-                        <td className="text-center text-success fw-bold">{bimestre.presencas}</td>
-                        <td className="text-center text-danger fw-bold">{bimestre.faltas}</td>
-                        <td className="text-center">{bimestre.total}</td>
-                        <td className="text-center fw-bold">{bimestre.percentual}%</td>
-                        <td className="text-center">
-                          {parseFloat(bimestre.percentual) >= 80 ? (
-                            <span className="badge bg-success">
-                              <CheckCircle size={14} className="me-1" />
-                              OK
-                            </span>
-                          ) : parseFloat(bimestre.percentual) >= 60 ? (
-                            <span className="badge bg-warning text-dark">
-                              <AlertTriangle size={14} className="me-1" />
-                              Regular
-                            </span>
-                          ) : (
-                            <span className="badge bg-danger">
-                              <XCircle size={14} className="me-1" />
-                              Crítico
-                            </span>
-                          )}
-                        </td>
+              <>
+                {/* Versão Desktop */}
+                <div className="table-responsive d-none d-md-block">
+                  <table className="table table-striped">
+                    <thead>
+                      <tr>
+                        <th>Bimestre</th>
+                        <th className="text-center">Presenças</th>
+                        <th className="text-center">Faltas</th>
+                        <th className="text-center">Total de Aulas</th>
+                        <th className="text-center">Frequência</th>
+                        <th className="text-center">Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {historicoFrequencia.map(bimestre => (
+                        <tr key={bimestre.bimestre}>
+                          <td className="fw-bold">{bimestre.bimestre}</td>
+                          <td className="text-center text-success fw-bold">{bimestre.presencas}</td>
+                          <td className="text-center text-danger fw-bold">{bimestre.faltas}</td>
+                          <td className="text-center">{bimestre.total}</td>
+                          <td className="text-center fw-bold">{bimestre.percentual}%</td>
+                          <td className="text-center">
+                            {parseFloat(bimestre.percentual) >= 80 ? (
+                              <span className="badge bg-success">
+                                <CheckCircle size={14} className="me-1" />
+                                OK
+                              </span>
+                            ) : parseFloat(bimestre.percentual) >= 60 ? (
+                              <span className="badge bg-warning text-dark">
+                                <AlertTriangle size={14} className="me-1" />
+                                Regular
+                              </span>
+                            ) : (
+                              <span className="badge bg-danger">
+                                <XCircle size={14} className="me-1" />
+                                Crítico
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Versão Mobile */}
+                <div className="d-block d-md-none">
+                  {historicoFrequencia.map(bimestre => {
+                    const percentual = parseFloat(bimestre.percentual);
+                    let status = '';
+                    let statusText = '';
+                    
+                    if (percentual >= 80) {
+                      status = 'success';
+                      statusText = 'OK';
+                    } else if (percentual >= 60) {
+                      status = 'warning';
+                      statusText = 'Regular';
+                    } else {
+                      status = 'danger';
+                      statusText = 'Crítico';
+                    }
+
+                    return (
+                      <div key={bimestre.bimestre} className="notas-resultado-card mb-2">
+                        <div className="notas-resultado-header">
+                          <div className="notas-resultado-nome">{bimestre.bimestre}</div>
+                          <div className={`notas-resultado-media text-${status}`} style={{ fontSize: '1.1rem' }}>
+                            {bimestre.percentual}%
+                          </div>
+                        </div>
+
+                        <div className="notas-resultado-body">
+                          <div className="notas-resultado-row">
+                            <span className="notas-resultado-label">Presenças:</span>
+                            <span className="notas-resultado-valor text-success fw-bold" style={{ fontSize: '0.95rem' }}>
+                              {bimestre.presencas}
+                            </span>
+                          </div>
+
+                          <div className="notas-resultado-row">
+                            <span className="notas-resultado-label">Faltas:</span>
+                            <span className="notas-resultado-valor text-danger fw-bold" style={{ fontSize: '0.95rem' }}>
+                              {bimestre.faltas}
+                            </span>
+                          </div>
+
+                          <div className="notas-resultado-row">
+                            <span className="notas-resultado-label">Total de Aulas:</span>
+                            <span className="notas-resultado-valor fw-bold" style={{ fontSize: '0.95rem' }}>
+                              {bimestre.total}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="notas-resultado-footer">
+                          <span className={`badge bg-${status}`} style={{ fontSize: '0.85rem' }}>
+                            {statusText}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             ) : (
               <div className="text-center py-4">
                 <div className="mb-3">

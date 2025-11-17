@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import AppLayout from '../components/AppLayout';
 import {
-  Container, Table, Button, Modal, Form, Spinner, ToastContainer, Toast, Dropdown, Card
+  Container, Table, Button, Modal, Form, Spinner, ToastContainer, Toast, Dropdown, Card,
+  Col,
+  Row
 } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircleExclamation } from '@fortawesome/free-solid-svg-icons';
@@ -1059,7 +1061,7 @@ export default function Turmas() {
 
       for (const notaDoc of notasSnap.docs) {
         const notaData = notaDoc.data();
-        
+
         // Criar nova nota com o turmaId da turma de destino
         const novaNota = {
           alunoUid: notaData.alunoUid,
@@ -1088,7 +1090,7 @@ export default function Turmas() {
 
       for (const freqDoc of frequenciasSnap.docs) {
         const freqData = freqDoc.data();
-        
+
         // Criar nova frequência com o turmaId da turma de destino
         const novaFrequencia = {
           alunoId: freqData.alunoId,
@@ -1523,10 +1525,10 @@ export default function Turmas() {
         await copiarNotasEFrequencias(alunoTransferencia, turmaAtualId, turmaDestinoId);
 
         setToast({ show: true, message: `${alunoTransferencia.nome} transferido com sucesso!`, variant: 'success' });
-        
+
         // Atualizar a lista de alunos
         await fetchData();
-        
+
         handleFecharModalTransferencia();
       }
     } catch (error) {
@@ -1639,9 +1641,9 @@ export default function Turmas() {
           {activeTab === 'gerenciar' && (
             <>
               {/* Cards de resumo acima dos filtros */}
-              <div className="row mb-3 g-3">
+              <Row className='mb-3'>
                 {/* Card Total de Turmas */}
-                <div className="col-md-4">
+                <Col md={4}>
                   <Card className="shadow-sm card-sm border-left-primary mb-1">
                     <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
                       <span className="fw-bold" style={{ fontSize: '1.1rem', color: '#3b4861' }}>Total de Turmas</span>
@@ -1651,9 +1653,9 @@ export default function Turmas() {
                       <h3 className="mb-0 fw-bold" style={{ color: '#2563eb' }}>{turmasFiltradas.length}</h3>
                     </Card.Body>
                   </Card>
-                </div>
+                </Col>
                 {/* Card Média de Alunos */}
-                <div className="col-md-4">
+                <Col md={4}>
                   <Card className="shadow-sm card-sm border-left-success mb-1">
                     <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
                       <span className="fw-bold" style={{ fontSize: '1.1rem', color: '#3b4861' }}>Média de Alunos</span>
@@ -1663,9 +1665,9 @@ export default function Turmas() {
                       <h3 className="mb-0 fw-bold" style={{ color: '#22c55e' }}>{turmasFiltradas.length > 0 ? Math.round(turmasFiltradas.reduce((acc, t) => acc + totalAlunos(t.id), 0) / turmasFiltradas.length) : 0}</h3>
                     </Card.Body>
                   </Card>
-                </div>
+                </Col>
                 {/* Card Turnos Ativos */}
-                <div className="col-md-4">
+                <Col md={4}>
                   <Card className="shadow-sm card-sm border-left-purple mb-1" style={{ borderLeft: '4px solid #a78bfa' }}>
                     <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
                       <span className="fw-bold" style={{ fontSize: '1.1rem', color: '#3b4861' }}>Turnos Ativos</span>
@@ -1677,44 +1679,46 @@ export default function Turmas() {
                       <h3 className="mb-0 fw-bold" style={{ color: '#a78bfa' }}>{Array.from(new Set(turmasFiltradas.map(t => t.turno))).length}</h3>
                     </Card.Body>
                   </Card>
-                </div>
-              </div>
+                </Col>
+              </Row>
 
               {/* Filtros em um único card */}
               <Card className="mb-4">
                 <Card.Body>
-                  <div className="row g-3">
-                    <div className="col-md-4">
+                  <Row>
+                    <Col md={3} className='mb-1'>
                       <Form.Control
                         type="text"
                         placeholder="Buscar turma..."
                         value={turmaFiltro}
                         onChange={e => { setTurmaFiltro(e.target.value); setPaginaAtual(1); }}
                       />
-                    </div>
+                    </Col>
                     {/* Filtro de ano letivo removido pois agora é global pelo context */}
-                    <div className="col-md-3">
+                    <Col md={3} className='mb-1'>
                       <Form.Select value={turnoFiltro} onChange={e => { setTurnoFiltro(e.target.value); setPaginaAtual(1); }}>
                         <option value="">Todos os turnos</option>
                         {[...new Set(turmas.map(t => t.turno))].sort().map(turno => (
                           <option key={turno} value={turno}>{turno}</option>
                         ))}
                       </Form.Select>
-                    </div>
-                    <div className="col-md-3">
+                    </Col>
+                    <Col md={3} className='mb-1'>
                       <Form.Select value={numAlunosFiltro} onChange={e => { setNumAlunosFiltro(e.target.value); setPaginaAtual(1); }}>
                         <option value="">Nº de alunos</option>
                         <option value="ate19">Até 19</option>
                         <option value="20a30">20 a 30</option>
                         <option value="mais30">Mais de 30</option>
                       </Form.Select>
-                    </div>
-                    <div className="col-md-2">
-                      <Button variant="primary" onClick={() => openModal()}>
+                    </Col>
+                    <Col md={3} className='mb-1'>
+                      <Button
+                        className='w-100'
+                        variant="primary" onClick={() => openModal()}>
                         <PlusCircle className="me-2" size={18} /> Nova Turma
                       </Button>
-                    </div>
-                  </div>
+                    </Col>
+                  </Row>
                 </Card.Body>
               </Card>
 
@@ -1835,108 +1839,112 @@ export default function Turmas() {
 
                   {/* Versão Mobile */}
                   <div className="turmas-mobile-cards d-block d-md-none">
-                    <div className="turmas-header-mobile mb-3">
-                      <h3 className="mb-0">Turmas</h3>
-                    </div>
-
-                    {turmasPaginadas.length > 0 ? (
-                      <div className="turmas-grid-mobile">
-                        {turmasPaginadas.map(t => {
-                          const turnoStyle = getTurnoStyle(t.turno);
-                          return (
-                            <div key={t.id} className="turmas-card-mobile">
-                              <div className="turmas-card-header">
-                                <div className="turmas-card-info">
-                                  <div className="turmas-card-title d-flex align-items-center gap-2">
-                                    {t.nome}
-                                    {t.isVirtualizada && (
-                                      <Ghost size={14} className="text-info" />
-                                    )}
-                                  </div>
-                                  <div className="turmas-card-ano d-flex align-items-center gap-2">
-                                    Ano: {t.anoLetivo}
-                                    {t.isVirtualizada ? (
-                                      <span className="badge bg-info text-white" style={{ fontSize: '0.7rem' }}>Virtual</span>
-                                    ) : (
-                                      <span className="badge bg-success text-white" style={{ fontSize: '0.7rem' }}>Ativa</span>
-                                    )}
-                                  </div>
-                                </div>
-                                <span
-                                  className="badge px-2 py-1"
-                                  style={{
-                                    backgroundColor: turnoStyle.bg,
-                                    color: turnoStyle.color,
-                                    fontSize: '0.8rem'
-                                  }}
-                                >
-                                  {t.turno}
-                                </span>
-                              </div>
-
-                              <div className="turmas-card-body">
-                                <div className="turmas-alunos-info">
-                                  <Users size={18} className="text-muted me-2" />
-                                  <span className="fw-semibold">
-                                    {t.isVirtualizada ? 'Sem alunos (virtual)' : `${totalAlunos(t.id)} alunos`}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="turmas-card-actions">
-                                <button
-                                  className="turmas-action-btn turmas-detalhes-btn"
-                                  onClick={() => handleVerDetalhes(t)}
-                                >
-                                  <Eye size={16} />
-                                  Detalhes
-                                </button>
-                                {t.isVirtualizada ? (
-                                  <button
-                                    className="turmas-action-btn turmas-edit-btn"
-                                    onClick={() => handleMaterializarTurma(t)}
-                                    style={{ backgroundColor: '#22c55e', borderColor: '#22c55e' }}
-                                  >
-                                    <CheckCircle2 size={16} />
-                                    Materializar
-                                  </button>
-                                ) : (
-                                  <>
-                                    <button
-                                      className="turmas-action-btn turmas-edit-btn"
-                                      onClick={() => openModal(t)}
-                                    >
-                                      <Edit size={16} />
-                                      Editar
-                                    </button>
-                                    <button
-                                      className="turmas-action-btn turmas-delete-btn"
-                                      onClick={() => handleExcluirTurma(t.id)}
-                                    >
-                                      <Trash2 size={16} />
-                                      Excluir
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="turmas-empty-state">
-                        <div className="turmas-empty-icon">
-                          <Users size={48} />
+                    <Card className="shadow-sm">
+                      <Card.Body>
+                        <div className="turmas-header-mobile mb-3">
+                          <h3 className="mb-0">Turmas</h3>
                         </div>
-                        <h5 className="turmas-empty-title">Nenhuma turma encontrada</h5>
-                        <p className="turmas-empty-text">
-                          {turmaFiltro || anoLetivo || turnoFiltro || numAlunosFiltro
-                            ? 'Tente ajustar os filtros de busca.'
-                            : 'Comece adicionando sua primeira turma.'
-                          }
-                        </p>
-                      </div>
-                    )}
+
+                        {turmasPaginadas.length > 0 ? (
+                          <div className="turmas-grid-mobile px-0">
+                            {turmasPaginadas.map(t => {
+                              const turnoStyle = getTurnoStyle(t.turno);
+                              return (
+                                <div key={t.id} className="turmas-card-mobile">
+                                  <div className="turmas-card-header">
+                                    <div className="turmas-card-info">
+                                      <div className="turmas-card-title d-flex align-items-center gap-2">
+                                        {t.nome}
+                                        {t.isVirtualizada && (
+                                          <Ghost size={14} className="text-info" />
+                                        )}
+                                      </div>
+                                      <div className="turmas-card-ano d-flex align-items-center gap-2">
+                                        Ano: {t.anoLetivo}
+                                        {t.isVirtualizada ? (
+                                          <span className="badge bg-info text-white" style={{ fontSize: '0.7rem' }}>Virtual</span>
+                                        ) : (
+                                          <span className="badge bg-success text-white" style={{ fontSize: '0.7rem' }}>Ativa</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <span
+                                      className="badge px-2 py-1"
+                                      style={{
+                                        backgroundColor: turnoStyle.bg,
+                                        color: turnoStyle.color,
+                                        fontSize: '0.8rem'
+                                      }}
+                                    >
+                                      {t.turno}
+                                    </span>
+                                  </div>
+
+                                  <div className="turmas-card-body">
+                                    <div className="turmas-alunos-info">
+                                      <Users size={18} className="text-muted me-2" />
+                                      <span className="fw-semibold">
+                                        {t.isVirtualizada ? 'Sem alunos (virtual)' : `${totalAlunos(t.id)} alunos`}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="turmas-card-actions">
+                                    <button
+                                      className="turmas-action-btn turmas-detalhes-btn"
+                                      onClick={() => handleVerDetalhes(t)}
+                                    >
+                                      <Eye size={16} />
+                                      Detalhes
+                                    </button>
+                                    {t.isVirtualizada ? (
+                                      <button
+                                        className="turmas-action-btn turmas-edit-btn"
+                                        onClick={() => handleMaterializarTurma(t)}
+                                        style={{ backgroundColor: '#22c55e', borderColor: '#22c55e' }}
+                                      >
+                                        <CheckCircle2 size={16} />
+                                        Materializar
+                                      </button>
+                                    ) : (
+                                      <>
+                                        <button
+                                          className="turmas-action-btn turmas-edit-btn"
+                                          onClick={() => openModal(t)}
+                                        >
+                                          <Edit size={16} />
+                                          Editar
+                                        </button>
+                                        <button
+                                          className="turmas-action-btn turmas-delete-btn"
+                                          onClick={() => handleExcluirTurma(t.id)}
+                                        >
+                                          <Trash2 size={16} />
+                                          Excluir
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="turmas-empty-state">
+                            <div className="turmas-empty-icon">
+                              <Users size={48} />
+                            </div>
+                            <h5 className="turmas-empty-title">Nenhuma turma encontrada</h5>
+                            <p className="turmas-empty-text">
+                              {turmaFiltro || anoLetivo || turnoFiltro || numAlunosFiltro
+                                ? 'Tente ajustar os filtros de busca.'
+                                : 'Comece adicionando sua primeira turma.'
+                              }
+                            </p>
+                          </div>
+                        )}
+                      </Card.Body>
+                    </Card>
                   </div>
 
                   <Paginacao
@@ -2048,9 +2056,9 @@ export default function Turmas() {
               {turmaFiltroRematricula && (
                 <>
                   {/* Cards informativos */}
-                  <div className="row mb-3 g-3">
+                  <Row className='mb-3'>
                     {/* Card Total de Alunos */}
-                    <div className="col-md-6 col-lg-3">
+                    <Col md={3}>
                       <Card className="shadow-sm card-sm border-left-primary mb-1">
                         <Card.Body className="py-3 px-3">
                           <div className="d-flex align-items-center justify-content-between mb-1">
@@ -2060,10 +2068,10 @@ export default function Turmas() {
                           <h4 className="mb-0 fw-bold" style={{ color: '#2563eb' }}>{getAlunosFiltrados().length}</h4>
                         </Card.Body>
                       </Card>
-                    </div>
+                    </Col>
 
                     {/* Card Aprovados */}
-                    <div className="col-md-6 col-lg-3">
+                    <Col md={3}>
                       <Card className="shadow-sm card-sm border-left-success mb-1">
                         <Card.Body className="py-3 px-3">
                           <div className="d-flex align-items-center justify-content-between mb-1">
@@ -2075,10 +2083,10 @@ export default function Turmas() {
                           </h4>
                         </Card.Body>
                       </Card>
-                    </div>
+                    </Col>
 
                     {/* Card Reprovados */}
-                    <div className="col-md-6 col-lg-3">
+                    <Col md={3}>
                       <Card className="shadow-sm card-sm mb-1" style={{ borderLeft: '4px solid #ef4444' }}>
                         <Card.Body className="py-3 px-3">
                           <div className="d-flex align-items-center justify-content-between mb-1">
@@ -2090,10 +2098,10 @@ export default function Turmas() {
                           </h4>
                         </Card.Body>
                       </Card>
-                    </div>
+                    </Col>
 
                     {/* Card Transferidos */}
-                    <div className="col-md-6 col-lg-3">
+                    <Col md={3}>
                       <Card className="shadow-sm card-sm mb-1" style={{ borderLeft: '4px solid #3b82f6' }}>
                         <Card.Body className="py-3 px-3">
                           <div className="d-flex align-items-center justify-content-between mb-1">
@@ -2105,7 +2113,27 @@ export default function Turmas() {
                           </h4>
                         </Card.Body>
                       </Card>
-                    </div>
+                    </Col>
+                  </Row>
+
+                  {/* Botões mobile - Aprovar/Reprovar Todos */}
+                  <div className="d-flex d-md-none gap-2 mb-3">
+                    <Button
+                      variant="success"
+                      onClick={handleAprovarTodos}
+                      className="d-flex align-items-center justify-content-center gap-1 flex-fill"
+                    >
+                      <Check size={16} />
+                      Aprovar Todos
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={handleReprovarTodos}
+                      className="d-flex align-items-center justify-content-center gap-1 flex-fill"
+                    >
+                      <X size={16} />
+                      Reprovar Todos
+                    </Button>
                   </div>
 
                   <Card className="mb-4">
@@ -2114,7 +2142,7 @@ export default function Turmas() {
                         <h3 className="mb-0 d-flex align-items-center gap-2">
                           Lista de Alunos - {turmas.find(t => t.id === turmaFiltroRematricula)?.nome} - {anoLetivoRematricula}
                         </h3>
-                        <div className="d-flex gap-2">
+                        <div className="d-none d-md-flex gap-2">
                           <Button
                             variant="outline-success"
                             size="sm"
@@ -2377,92 +2405,92 @@ export default function Turmas() {
                                             className="btn-mobile-acao"
                                             size="sm"
                                             onClick={() => {
-                                            setStatusPromocao(prev => {
-                                              if (prev[aluno.id] === 'promovido') {
-                                                const { [aluno.id]: _, ...rest } = prev;
-                                                return rest;
+                                              setStatusPromocao(prev => {
+                                                if (prev[aluno.id] === 'promovido') {
+                                                  const { [aluno.id]: _, ...rest } = prev;
+                                                  return rest;
+                                                }
+                                                return { ...prev, [aluno.id]: 'promovido' };
+                                              });
+                                              if (alunosTransferencia[aluno.id]) {
+                                                const novaTransferencia = { ...alunosTransferencia };
+                                                delete novaTransferencia[aluno.id];
+                                                setAlunosTransferencia(novaTransferencia);
                                               }
-                                              return { ...prev, [aluno.id]: 'promovido' };
-                                            });
-                                            if (alunosTransferencia[aluno.id]) {
-                                              const novaTransferencia = { ...alunosTransferencia };
-                                              delete novaTransferencia[aluno.id];
-                                              setAlunosTransferencia(novaTransferencia);
-                                            }
-                                          }}
-                                          title="Aprovar"
-                                          style={{
-                                            backgroundColor: statusPromocao[aluno.id] === 'promovido' ? '#22c55e' : 'white',
-                                            color: statusPromocao[aluno.id] === 'promovido' ? 'white' : 'black',
-                                            border: '1px solid #cbd5e1',
-                                            flex: 1
-                                          }}
-                                        >
-                                          <Check size={16} strokeWidth={2.5} />
-                                          <span className="ms-1">Aprovar</span>
-                                        </Button>
-                                        <Button
-                                          className="btn-mobile-acao"
-                                          size="sm"
-                                          onClick={() => {
-                                            setStatusPromocao(prev => {
-                                              if (prev[aluno.id] === 'reprovado') {
-                                                const { [aluno.id]: _, ...rest } = prev;
-                                                return rest;
+                                            }}
+                                            title="Aprovar"
+                                            style={{
+                                              backgroundColor: statusPromocao[aluno.id] === 'promovido' ? '#22c55e' : 'white',
+                                              color: statusPromocao[aluno.id] === 'promovido' ? 'white' : 'black',
+                                              border: '1px solid #cbd5e1',
+                                              flex: 1
+                                            }}
+                                          >
+                                            <Check size={16} strokeWidth={2.5} />
+                                            <span className="ms-1">Aprovar</span>
+                                          </Button>
+                                          <Button
+                                            className="btn-mobile-acao"
+                                            size="sm"
+                                            onClick={() => {
+                                              setStatusPromocao(prev => {
+                                                if (prev[aluno.id] === 'reprovado') {
+                                                  const { [aluno.id]: _, ...rest } = prev;
+                                                  return rest;
+                                                }
+                                                return { ...prev, [aluno.id]: 'reprovado' };
+                                              });
+                                              if (alunosTransferencia[aluno.id]) {
+                                                const novaTransferencia = { ...alunosTransferencia };
+                                                delete novaTransferencia[aluno.id];
+                                                setAlunosTransferencia(novaTransferencia);
                                               }
-                                              return { ...prev, [aluno.id]: 'reprovado' };
-                                            });
-                                            if (alunosTransferencia[aluno.id]) {
-                                              const novaTransferencia = { ...alunosTransferencia };
-                                              delete novaTransferencia[aluno.id];
-                                              setAlunosTransferencia(novaTransferencia);
-                                            }
-                                          }}
-                                          title="Reprovar"
-                                          style={{
-                                            backgroundColor: statusPromocao[aluno.id] === 'reprovado' ? '#ef4444' : 'white',
-                                            color: statusPromocao[aluno.id] === 'reprovado' ? 'white' : 'black',
-                                            border: '1px solid #cbd5e1',
-                                            flex: 1
-                                          }}
-                                        >
-                                          <X size={16} strokeWidth={2.5} />
-                                          <span className="ms-1">Reprovar</span>
-                                        </Button>
+                                            }}
+                                            title="Reprovar"
+                                            style={{
+                                              backgroundColor: statusPromocao[aluno.id] === 'reprovado' ? '#ef4444' : 'white',
+                                              color: statusPromocao[aluno.id] === 'reprovado' ? 'white' : 'black',
+                                              border: '1px solid #cbd5e1',
+                                              flex: 1
+                                            }}
+                                          >
+                                            <X size={16} strokeWidth={2.5} />
+                                            <span className="ms-1">Reprovar</span>
+                                          </Button>
+                                          <Button
+                                            className="btn-mobile-acao"
+                                            size="sm"
+                                            onClick={() => handleAbrirModalTransferencia(aluno)}
+                                            title="Transferir"
+                                            style={{
+                                              backgroundColor: alunosTransferencia[aluno.id] ? '#3b82f6' : 'white',
+                                              color: alunosTransferencia[aluno.id] ? 'white' : 'black',
+                                              border: '1px solid #cbd5e1',
+                                              flex: 1
+                                            }}
+                                          >
+                                            <ArrowLeftRight size={16} strokeWidth={2.5} />
+                                            <span className="ms-1">Transferir</span>
+                                          </Button>
+                                        </div>
+
                                         <Button
-                                          className="btn-mobile-acao"
+                                          variant="primary"
                                           size="sm"
-                                          onClick={() => handleAbrirModalTransferencia(aluno)}
-                                          title="Transferir"
+                                          className="d-flex align-items-center justify-content-center gap-2 mt-2"
+                                          onClick={() => handleAbrirBoletim(aluno)}
                                           style={{
-                                            backgroundColor: alunosTransferencia[aluno.id] ? '#3b82f6' : 'white',
-                                            color: alunosTransferencia[aluno.id] ? 'white' : 'black',
+                                            width: '100%',
+                                            color: 'black',
+                                            background: 'white',
                                             border: '1px solid #cbd5e1',
-                                            flex: 1
                                           }}
+                                          title="Ver Boletim"
                                         >
-                                          <ArrowLeftRight size={16} strokeWidth={2.5} />
-                                          <span className="ms-1">Transferir</span>
+                                          <BookText size={16} />
+                                          <span>Ver Boletim</span>
                                         </Button>
-                                      </div>
-                                      
-                                      <Button
-                                        variant="primary"
-                                        size="sm"
-                                        className="d-flex align-items-center justify-content-center gap-2 mt-2"
-                                        onClick={() => handleAbrirBoletim(aluno)}
-                                        style={{
-                                          width: '100%',
-                                          color: 'black',
-                                          background: 'white',
-                                          border: '1px solid #cbd5e1',
-                                        }}
-                                        title="Ver Boletim"
-                                      >
-                                        <BookText size={16} />
-                                        <span>Ver Boletim</span>
-                                      </Button>
-                                    </>
+                                      </>
                                     )}
                                   </div>
                                 </div>

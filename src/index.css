@@ -537,7 +537,11 @@ button {
   }
 
   .info-cards-frequencia {
-    gap: 0.5rem !important;
+    gap: 0rem !important;
+  }
+
+  .mt-mobile-0 {
+    margin-top: 0 !important;
   }
 
   .row {
@@ -2744,7 +2748,7 @@ button {
 
   /* Grid mobile */
   .ocorrencias-grid-mobile {
-    padding: 0 15px;
+    padding: 0;
   }
 }
 

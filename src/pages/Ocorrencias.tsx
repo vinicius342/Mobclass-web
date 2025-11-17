@@ -64,10 +64,10 @@ export default function Ocorrencias() {
   const authContext = useAuth();
   const userData = authContext?.userData;
   const { anoLetivo } = useAnoLetivoAtual();
-  
+
   // Verificar se o usuário tem acesso à página
   const temAcesso = userData?.tipo === 'administradores' || userData?.tipo === 'professores';
-  
+
   const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>([]);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
@@ -470,15 +470,14 @@ export default function Ocorrencias() {
               resetForm();
               setShowModal(true);
             }}
-            className="d-flex align-items-center gap-2 flex-shrink-0"
-            style={{ 
+            className="d-none d-md-flex align-items-center gap-2 flex-shrink-0"
+            style={{
               minWidth: 'auto',
               whiteSpace: 'nowrap'
             }}
           >
             <Plus size={18} />
-            <span className="d-none d-sm-inline">Nova Ocorrência</span>
-            <span className="d-inline d-sm-none">Nova</span>
+            <span>Nova Ocorrência</span>
           </Button>
         </div>
 
@@ -497,7 +496,7 @@ export default function Ocorrencias() {
             </Card>
           </div>
           {/* Card Feitas este mês */}
-          <div className="col-md-6">
+          <div className="col-md-6 mt-mobile-0">
             <Card className="shadow-sm card-sm border-left-info mb-1" style={{ borderLeft: '4px solid #10b981' }}>
               <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
                 <span className="fw-bold" style={{ fontSize: '1.1rem', color: '#3b4861' }}>Feitas este mês</span>
@@ -511,10 +510,10 @@ export default function Ocorrencias() {
         </div>
 
         {/* Filtros */}
-        <Card className="mb-4">
+        <Card className="mb-3">
           <Card.Body>
             <Row>
-              <Col md={3} className="mb-3 mb-md-0">
+              <Col md={3} className=" mb-md-0">
                 <Form.Control
                   type="text"
                   placeholder="Buscar ocorrências por aluno, tipo, turma ou descrição"
@@ -522,7 +521,7 @@ export default function Ocorrencias() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </Col>
-              <Col md={3} className="mb-3 mb-md-0">
+              <Col md={3} className="mb-md-0">
                 <Form.Select
                   value={filtroTipo}
                   onChange={(e) => setFiltroTipo(e.target.value)}
@@ -533,7 +532,7 @@ export default function Ocorrencias() {
                   ))}
                 </Form.Select>
               </Col>
-              <Col md={3} className="mb-3 mb-md-0">
+              <Col md={3} className="mb-md-0">
                 <Form.Select
                   value={filtroTurma}
                   onChange={(e) => setFiltroTurma(e.target.value)}
@@ -570,6 +569,47 @@ export default function Ocorrencias() {
           </Card.Body>
         </Card>
 
+        {/* Botão Nova Ocorrência - Mobile */}
+        <div className="w-100 mb-3 d-md-none">
+          <Button
+            variant="primary"
+            onClick={() => {
+              resetForm();
+              setShowModal(true);
+            }}
+            className="w-100 d-flex align-items-center justify-content-center gap-2"
+          >
+            <Plus size={20} />
+            Nova Ocorrência
+          </Button>
+        </div>
+
+        {/* Dropdown de Exportar - Desktop */}
+        {ocorrenciasPaginadas.length > 0 && (
+          <Row className="mb-3 d-none d-md-flex">
+            <Col md={6}>
+              <Dropdown className="w-100">
+                <Dropdown.Toggle
+                  className="w-100 d-flex align-items-center justify-content-center gap-2"
+                  style={{ border: '1px solid #e1e7ef', backgroundColor: 'white', color: 'black', fontWeight: 500 }}
+                  variant="light"
+                >
+                  <Download size={18} />
+                  Exportar Ocorrências
+                </Dropdown.Toggle>
+                <Dropdown.Menu className="w-100">
+                  <Dropdown.Item onClick={downloadPDF}>
+                    Exportar PDF
+                  </Dropdown.Item>
+                  <Dropdown.Item onClick={downloadExcel}>
+                    Exportar Excel
+                  </Dropdown.Item>
+                </Dropdown.Menu>
+              </Dropdown>
+            </Col>
+          </Row>
+        )}
+
         {/* Lista de Ocorrências - Desktop styled like Usuarios */}
         <div className="ocorrencias-list-desktop d-none d-md-block">
           <Card className="mb-1">
@@ -577,14 +617,6 @@ export default function Ocorrencias() {
               {ocorrenciasPaginadas.length > 0 && (
                 <div className="d-flex align-items-center justify-content-between px-2 mb-2">
                   <h3 className="mb-0">Lista de Ocorrências</h3>
-                  <div className="d-flex gap-2">
-                    <Button size="sm" onClick={downloadPDF} className="d-flex align-items-center justify-content-center gap-2">
-                      <FileText size={16} className='me-1' /> Exportar PDF
-                    </Button>
-                    <Button size="sm" variant="success" onClick={downloadExcel} className="d-flex align-items-center justify-content-center gap-2">
-                      <Download size={16} className='me-1' /> Exportar Excel
-                    </Button>
-                  </div>
                 </div>
               )}
               <div className="ocorrencias-table-desktop w-100" style={{ overflowX: 'auto' }}>
@@ -604,11 +636,11 @@ export default function Ocorrencias() {
                         const isHovered = hoveredRow === ocorrencia.id;
                         const rowBg = isHovered ? '#f1f5f9' : '#fff';
                         return (
-                          <tr 
-                            key={ocorrencia.id} 
-                            className='align-middle linha-agenda' 
-                            onMouseEnter={() => setHoveredRow(ocorrencia.id)} 
-                            onMouseLeave={() => setHoveredRow(null)} 
+                          <tr
+                            key={ocorrencia.id}
+                            className='align-middle linha-agenda'
+                            onMouseEnter={() => setHoveredRow(ocorrencia.id)}
+                            onMouseLeave={() => setHoveredRow(null)}
                             style={{ overflow: 'visible', border: 'transparent' }}
                           >
                             <td className="text-start" style={{ paddingTop: '0.75rem', paddingBottom: '0.75rem', background: rowBg, borderTopLeftRadius: 8, borderBottomLeftRadius: 8, transition: 'all .15s ease' }}>
@@ -616,7 +648,7 @@ export default function Ocorrencias() {
                                 <div className="user-icon-circle-frequencia">
                                   <User size={20} color="#fff" />
                                 </div>
-                                <strong 
+                                <strong
                                   className="ms-2"
                                   style={{ cursor: 'pointer' }}
                                   onClick={() => openDetailModal(ocorrencia)}
@@ -688,97 +720,117 @@ export default function Ocorrencias() {
           </Card>
         </div>
 
+        {/* Dropdown de Exportar - Mobile */}
+        {ocorrenciasPaginadas.length > 0 && (
+          <Row className="mb-3 d-md-none">
+            <Col>
+              <Dropdown className="w-100">
+                <Dropdown.Toggle
+                  className="w-100 d-flex align-items-center justify-content-center gap-2"
+                  style={{ border: '1px solid #e1e7ef', backgroundColor: 'white', color: 'black', fontWeight: 500 }}
+                  variant="light"
+                >
+                  <Download size={18} />
+                  Exportar Ocorrências
+                </Dropdown.Toggle>
+                <Dropdown.Menu className="w-100">
+                  <Dropdown.Item onClick={downloadPDF}>
+                    Exportar PDF
+                  </Dropdown.Item>
+                  <Dropdown.Item onClick={downloadExcel}>
+                    Exportar Excel
+                  </Dropdown.Item>
+                </Dropdown.Menu>
+              </Dropdown>
+            </Col>
+          </Row>
+        )}
+
         {/* Versão Mobile - estrutura seguindo o padrão das outras páginas */}
         <div className="ocorrencias-mobile-cards d-md-none">
-          <div className="ocorrencias-header-mobile">
-            {ocorrenciasPaginadas.length > 0 && (
-              <>
-                <h3>Lista de Ocorrências</h3>
-                <div className="d-flex gap-2">
-                  <Button size="sm" onClick={downloadPDF} className="d-flex align-items-center gap-2">
-                    <FileText size={14} /> PDF
-                  </Button>
-                  <Button size="sm" variant="success" onClick={downloadExcel} className="d-flex align-items-center gap-2">
-                    <Download size={14} /> Excel
-                  </Button>
+          <Card className="shadow-sm">
+            <Card.Body>
+              {ocorrenciasPaginadas.length > 0 && (
+                <div className="ocorrencias-header-mobile mb-3">
+                  <h3 className="mb-0">Lista de Ocorrências</h3>
                 </div>
-              </>
-            )}
-          </div>
-          
-          {ocorrenciasPaginadas.length > 0 ? (
-            <div className="ocorrencias-grid-mobile">
-              {ocorrenciasPaginadas.map(ocorrencia => (
-                <div key={ocorrencia.id} className="ocorrencias-card-mobile">
-                  <div className="ocorrencias-card-header">
-                    <h6 className="ocorrencias-card-title">
-                      {getTipoLabel(ocorrencia.tipo)}
-                    </h6>
-                    <span className="ocorrencias-card-turma-badge">
-                      {ocorrencia.turmaNome}
-                    </span>
-                  </div>
+              )}
 
-                  <div className="ocorrencias-card-body">
-                    <div className="ocorrencias-aluno-info">
-                      <div className="user-icon-circle-frequencia">
-                        <User size={20} color="#fff" />
+              {ocorrenciasPaginadas.length > 0 ? (
+                <div className="ocorrencias-grid-mobile">
+                  {ocorrenciasPaginadas.map(ocorrencia => (
+                    <div key={ocorrencia.id} className="ocorrencias-card-mobile">
+                      <div className="ocorrencias-card-header">
+                        <h6 className="ocorrencias-card-title">
+                          {getTipoLabel(ocorrencia.tipo)}
+                        </h6>
+                        <span className="ocorrencias-card-turma-badge">
+                          {ocorrencia.turmaNome}
+                        </span>
                       </div>
-                      <span 
-                        className="ocorrencias-aluno-nome"
-                        onClick={() => openDetailModal(ocorrencia)}
-                      >
-                        {ocorrencia.alunoNome}
-                      </span>
-                    </div>
 
-                    <div className="ocorrencias-descricao">
-                      {ocorrencia.descricao.length > 100
-                        ? `${ocorrencia.descricao.substring(0, 100)}...`
-                        : ocorrencia.descricao
-                      }
-                    </div>
+                      <div className="ocorrencias-card-body">
+                        <div className="ocorrencias-aluno-info">
+                          <div className="user-icon-circle-frequencia">
+                            <User size={20} color="#fff" />
+                          </div>
+                          <span
+                            className="ocorrencias-aluno-nome"
+                            onClick={() => openDetailModal(ocorrencia)}
+                          >
+                            {ocorrencia.alunoNome}
+                          </span>
+                        </div>
 
-                    <div className="ocorrencias-data-info">
-                      <Calendar size={14} />
-                      {new Date(ocorrencia.dataOcorrencia).toLocaleDateString('pt-BR')}
-                    </div>
-                  </div>
+                        <div className="ocorrencias-descricao">
+                          {ocorrencia.descricao.length > 100
+                            ? `${ocorrencia.descricao.substring(0, 100)}...`
+                            : ocorrencia.descricao
+                          }
+                        </div>
 
-                  <div className="ocorrencias-card-actions">
-                    <button
-                      className="ocorrencias-action-btn ocorrencias-detalhes-btn"
-                      onClick={() => openDetailModal(ocorrencia)}
-                    >
-                      <Eye size={16} />
-                      Detalhes
-                    </button>
-                    <button
-                      className="ocorrencias-action-btn ocorrencias-edit-btn"
-                      onClick={() => openEditModal(ocorrencia)}
-                    >
-                      <Edit size={16} />
-                      Editar
-                    </button>
-                    <button
-                      className="ocorrencias-delete-btn"
-                      onClick={() => handleDelete(ocorrencia.id)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
+                        <div className="ocorrencias-data-info">
+                          <Calendar size={14} />
+                          {new Date(ocorrencia.dataOcorrencia).toLocaleDateString('pt-BR')}
+                        </div>
+                      </div>
+
+                      <div className="ocorrencias-card-actions">
+                        <button
+                          className="ocorrencias-action-btn ocorrencias-detalhes-btn"
+                          onClick={() => openDetailModal(ocorrencia)}
+                        >
+                          <Eye size={16} />
+                          Detalhes
+                        </button>
+                        <button
+                          className="ocorrencias-action-btn ocorrencias-edit-btn"
+                          onClick={() => openEditModal(ocorrencia)}
+                        >
+                          <Edit size={16} />
+                          Editar
+                        </button>
+                        <button
+                          className="ocorrencias-delete-btn"
+                          onClick={() => handleDelete(ocorrencia.id)}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="ocorrencias-empty-state">
-              <div className="ocorrencias-empty-icon">
-                <FaCircleExclamation size={48} />
-              </div>
-              <h5 className="ocorrencias-empty-title">Nenhuma ocorrência encontrada</h5>
-              <p className="ocorrencias-empty-text">Comece adicionando sua primeira ocorrência.</p>
-            </div>
-          )}
+              ) : (
+                <div className="ocorrencias-empty-state">
+                  <div className="ocorrencias-empty-icon">
+                    <FaCircleExclamation size={48} />
+                  </div>
+                  <h5 className="ocorrencias-empty-title">Nenhuma ocorrência encontrada</h5>
+                  <p className="ocorrencias-empty-text">Comece adicionando sua primeira ocorrência.</p>
+                </div>
+              )}
+            </Card.Body>
+          </Card>
         </div>
 
         {/* Paginação */}
@@ -932,7 +984,7 @@ export default function Ocorrencias() {
                 {selectedOcorrencia && selectedOcorrencia.alunoId && (
                   <Row>
                     <Col md={6}>
-                      <div style={{  fontWeight: 500 }}>
+                      <div style={{ fontWeight: 500 }}>
                         <strong>Total de ocorrências no ano:</strong> {
                           ocorrencias.filter(o => {
                             const data = new Date(o.dataCriacao || o.dataOcorrencia);

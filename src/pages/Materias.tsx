@@ -2,7 +2,9 @@ import { JSX, useEffect, useState } from 'react';
 import AppLayout from '../components/AppLayout';
 import {
   Container, Spinner, Button, Modal, Form,
-  ToastContainer, Toast, Pagination, Card, Dropdown, Badge
+  ToastContainer, Toast, Pagination, Card, Dropdown, Badge,
+  Col,
+  Row
 } from 'react-bootstrap';
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc, doc
@@ -82,16 +84,16 @@ export default function Materias(): JSX.Element {
       setToast({ show: true, message: 'Nome da matéria é obrigatório.', variant: 'danger' });
       return;
     }
-    
+
     if (!categoria) {
       setToast({ show: true, message: 'Categoria é obrigatória.', variant: 'danger' });
       return;
     }
 
     // Verificar duplicidade (mesmo nome e categoria)
-    const materiaDuplicada = materias.find(m => 
-      m.nome.toLowerCase().trim() === nome.toLowerCase().trim() && 
-      m.categoria === categoria && 
+    const materiaDuplicada = materias.find(m =>
+      m.nome.toLowerCase().trim() === nome.toLowerCase().trim() &&
+      m.categoria === categoria &&
       m.id !== editId
     );
 
@@ -104,10 +106,10 @@ export default function Materias(): JSX.Element {
       ? materias.find(m => m.id === editId)?.codigo || gerarCodigoMateria(nome)
       : gerarCodigoMateria(nome);
 
-    const payload = { 
-      nome: nome.trim(), 
-      codigo: codigoGerado, 
-      categoria 
+    const payload = {
+      nome: nome.trim(),
+      codigo: codigoGerado,
+      categoria
     };
 
     try {
@@ -141,7 +143,7 @@ export default function Materias(): JSX.Element {
   // Função para determinar categoria da matéria (usa a categoria salva ou fallback para cálculo automático)
   const getCategoria = (nome: string, categoriaSalva?: string): string => {
     if (categoriaSalva) return categoriaSalva;
-    
+
     if (/matemática|física|química|biologia|ciências|geometria|álgebra|exatas/i.test(nome)) {
       return 'Exatas';
     } else if (/história|geografia|filosofia|sociologia|humanas/i.test(nome)) {
@@ -203,7 +205,7 @@ export default function Materias(): JSX.Element {
                   Gestão de Matérias
                 </h1>
               </div>
-              <Button variant="primary" onClick={() => openModal()}>
+              <Button variant="primary" onClick={() => openModal()} className="d-none d-md-flex">
                 <PlusCircle className="me-2" />
                 Nova Matéria
               </Button>
@@ -214,10 +216,10 @@ export default function Materias(): JSX.Element {
           </div>
         </div>
 
-        <div className="row mb-4 align-items-stretch">
-          <div className="col-md-3 mb-3 mb-md-0">
-            <div className="card h-100">
-              <div className="px-3 py-1 h-100 d-flex flex-column justify-content-center">
+        <Row className='mb-3'>
+          <Col md={3}>
+            <Card className='py-3 px-2 mb-1'>
+              <div className="px-3 py-2 h-100 d-flex flex-column justify-content-center">
                 <div className="d-flex align-items-center justify-content-between">
                   <div>
                     <p className="text-sm mb-1" style={{ fontSize: '0.95rem', color: '#6b7280' }}>Total de Matérias</p>
@@ -228,10 +230,10 @@ export default function Materias(): JSX.Element {
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-          <div className="col-md-3 mb-3 mb-md-0">
-            <div className="card h-100">
+            </Card>
+          </Col>
+          <Col md={3}>
+            <Card className='py-3 px-2 mb-1'>
               <div className="px-3 py-2 h-100 d-flex flex-column justify-content-center">
                 <div className="d-flex align-items-center justify-content-between">
                   <div>
@@ -243,10 +245,10 @@ export default function Materias(): JSX.Element {
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-          <div className="col-md-3 mb-3 mb-md-0">
-            <div className="card h-100">
+            </Card>
+          </Col>
+          <Col md={3}>
+            <Card className='py-3 px-2 mb-1'>
               <div className="px-3 py-2 h-100 d-flex flex-column justify-content-center">
                 <div className="d-flex align-items-center justify-content-between">
                   <div>
@@ -258,10 +260,10 @@ export default function Materias(): JSX.Element {
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-          <div className="col-md-3">
-            <div className="card h-100">
+            </Card>
+          </Col>
+          <Col md={3}>
+            <Card className='py-3 px-2 mb-1'>
               <div className="px-3 py-2 h-100 d-flex flex-column justify-content-center">
                 <div className="d-flex align-items-center justify-content-between">
                   <div>
@@ -273,12 +275,12 @@ export default function Materias(): JSX.Element {
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
+            </Card>
+          </Col>
+        </Row>
 
         {/* Card de busca e filtro */}
-        <div className="card mb-4">
+        <div className="card mb-3">
           <div className="card-body d-flex flex-column flex-md-row align-items-md-center gap-3">
             <div className="flex-grow-1">
               <input
@@ -290,8 +292,8 @@ export default function Materias(): JSX.Element {
               />
             </div>
             <div>
-              <select 
-                className="form-select" 
+              <select
+                className="form-select"
                 style={{ minWidth: 180 }}
                 value={categoriaFiltro}
                 onChange={(e) => setCategoriaFiltro(e.target.value)}
@@ -304,6 +306,14 @@ export default function Materias(): JSX.Element {
               </select>
             </div>
           </div>
+        </div>
+
+        {/* Botão mobile Nova Matéria */}
+        <div className="d-block d-md-none mb-3">
+          <Button variant="primary" onClick={() => openModal()} className="w-100">
+            <PlusCircle className="me-2" />
+            Nova Matéria
+          </Button>
         </div>
 
         {loading ? (
@@ -375,57 +385,61 @@ export default function Materias(): JSX.Element {
 
             {/* Versão Mobile */}
             <div className="materias-mobile-cards d-block d-md-none">
-              <div className="materias-header-mobile mb-3">
-                <h3 className="mb-0">Matérias</h3>
-              </div>
-              
-              {materiasPaginadas.length > 0 ? (
-                <div className="materias-grid-mobile">
-                  {materiasPaginadas.map(item => (
-                    <div key={item.id} className="materias-card-mobile">
-                      <div className="materias-card-header">
-                        <div className="materias-card-info">
-                          <div className="materias-card-title">{item.nome}</div>
-                          <div className="materias-card-codigo">Código: {item.codigo}</div>
-                        </div>
-                        <Badge className={getCategoriaBadgeClass(getCategoria(item.nome, item.categoria))}>
-                          {getCategoria(item.nome, item.categoria)}
-                        </Badge>
-                      </div>
-                      
-                      <div className="materias-card-actions">
-                        <button 
-                          className="materias-action-btn materias-edit-btn"
-                          onClick={() => openModal(item)}
-                        >
-                          <PencilFill size={16} />
-                          Editar
-                        </button>
-                        <button 
-                          className="materias-action-btn materias-delete-btn"
-                          onClick={() => handleExcluir(item.id)}
-                        >
-                          <TrashFill size={16} />
-                          Excluir
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="materias-empty-state">
-                  <div className="materias-empty-icon">
-                    <Notebook size={48} />
+              <Card className="shadow-sm">
+                <Card.Body>
+                  <div className="materias-header-mobile mb-3">
+                    <h3 className="mb-0">Matérias</h3>
                   </div>
-                  <h5 className="materias-empty-title">Nenhuma matéria encontrada</h5>
-                  <p className="materias-empty-text">
-                    {termoBusca || categoriaFiltro 
-                      ? 'Tente ajustar os filtros de busca.'
-                      : 'Comece adicionando sua primeira matéria.'
-                    }
-                  </p>
-                </div>
-              )}
+
+                  {materiasPaginadas.length > 0 ? (
+                    <div className="materias-grid-mobile px-0">
+                      {materiasPaginadas.map(item => (
+                        <div key={item.id} className="materias-card-mobile">
+                          <div className="materias-card-header">
+                            <div className="materias-card-info">
+                              <div className="materias-card-title">{item.nome}</div>
+                              <div className="materias-card-codigo">Código: {item.codigo}</div>
+                            </div>
+                            <Badge className={getCategoriaBadgeClass(getCategoria(item.nome, item.categoria))}>
+                              {getCategoria(item.nome, item.categoria)}
+                            </Badge>
+                          </div>
+
+                          <div className="materias-card-actions">
+                            <button
+                              className="materias-action-btn materias-edit-btn"
+                              onClick={() => openModal(item)}
+                            >
+                              <PencilFill size={16} />
+                              Editar
+                            </button>
+                            <button
+                              className="materias-action-btn materias-delete-btn"
+                              onClick={() => handleExcluir(item.id)}
+                            >
+                              <TrashFill size={16} />
+                              Excluir
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="materias-empty-state">
+                      <div className="materias-empty-icon">
+                        <Notebook size={48} />
+                      </div>
+                      <h5 className="materias-empty-title">Nenhuma matéria encontrada</h5>
+                      <p className="materias-empty-text">
+                        {termoBusca || categoriaFiltro
+                          ? 'Tente ajustar os filtros de busca.'
+                          : 'Comece adicionando sua primeira matéria.'
+                        }
+                      </p>
+                    </div>
+                  )}
+                </Card.Body>
+              </Card>
             </div>
           </>
         )}
@@ -457,19 +471,19 @@ export default function Materias(): JSX.Element {
             <Form>
               <Form.Group className="mb-3">
                 <Form.Label>Nome da Matéria</Form.Label>
-                <Form.Control 
-                  id="nome-materia" 
-                  type="text" 
-                  value={nome} 
+                <Form.Control
+                  id="nome-materia"
+                  type="text"
+                  value={nome}
                   onChange={e => setNome(e.target.value)}
                   placeholder="Digite o nome da matéria..."
                 />
               </Form.Group>
-              
+
               <Form.Group className="mb-3">
                 <Form.Label>Categoria</Form.Label>
-                <Form.Select 
-                  value={categoria} 
+                <Form.Select
+                  value={categoria}
                   onChange={e => setCategoria(e.target.value)}
                 >
                   <option value="">Selecione uma categoria</option>
@@ -483,8 +497,8 @@ export default function Materias(): JSX.Element {
           </Modal.Body>
           <Modal.Footer>
             <Button variant="secondary" onClick={closeModal}>Cancelar</Button>
-            <Button 
-              variant="primary" 
+            <Button
+              variant="primary"
               onClick={handleSalvar}
               disabled={!nome.trim() || !categoria}
             >

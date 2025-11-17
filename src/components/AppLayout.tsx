@@ -47,8 +47,17 @@ export default function AppLayout({ children }: Props) {
       <main className="content-area">
         <Container>
           {user && (
-            <div className="mb-3 d-flex justify-content-between align-items-center">
-              <div className="d-flex align-items-center">
+            <div
+              className="mb-3 d-flex flex-wrap gap-2 justify-content-between align-items-center"
+              style={{
+                rowGap: '0.5rem',
+                columnGap: '1rem',
+                paddingTop: '0.5rem',
+                paddingBottom: '0.5rem',
+                flexDirection: 'row',
+              }}
+            >
+              <div className="d-flex align-items-center flex-wrap gap-2" style={{ minWidth: 0 }}>
                 <Button
                   variant="link"
                   className="p-0 me-2 text-muted"
@@ -62,12 +71,14 @@ export default function AppLayout({ children }: Props) {
                 >
                   <Settings size={18} />
                 </Button>
-                <small className="text-muted">
+                <small className="text-muted" style={{ wordBreak: 'keep-all' }}>
                   Ano letivo: <strong>{anoLetivo}</strong>
                 </small>
               </div>
-              <div className="text-muted small">
-                Olá, <strong>{user.nome}</strong> ({user.tipo})
+              <div className="text-muted small" style={{ wordBreak: 'break-word', minWidth: 0 }}>
+                Olá, <strong>{user.nome}</strong>
+                <br />
+                <span className="text-secondary">({user.tipo})</span>
               </div>
             </div>
           )}
