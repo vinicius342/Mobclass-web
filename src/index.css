@@ -537,7 +537,11 @@ button {
   }
 
   .info-cards-frequencia {
-    gap: 0.5rem !important;
+    gap: 0rem !important;
+  }
+
+  .mt-mobile-0 {
+    margin-top: 0 !important;
   }
 
   .row {
@@ -2744,7 +2748,7 @@ button {
 
   /* Grid mobile */
   .ocorrencias-grid-mobile {
-    padding: 0 15px;
+    padding: 0;
   }
 }
 
@@ -2801,3 +2805,131 @@ button {
 }
 
 /* ========== FIM DOS ESTILOS PARA OCORRÊNCIAS - MOBILE ========== */
+
+/* ========== ESTILOS PARA TURMAS/REMATRÍCULA - MOBILE ========== */
+@media (max-width: 768px) {
+  /* Ocultar tabela tradicional no mobile */
+  .turmas-table-desktop {
+    display: none !important;
+  }
+
+  /* Mostrar cards para mobile */
+  .turmas-mobile-cards {
+    display: block !important;
+  }
+
+  /* Cards dos alunos */
+  .turmas-aluno-card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border-left: 4px solid #3b82f6;
+  }
+
+  .turmas-aluno-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+    gap: 8px;
+  }
+
+  .turmas-aluno-nome {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1e293b;
+    flex: 1;
+  }
+
+  .turmas-aluno-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+
+  .turmas-aluno-info-row:last-child {
+    border-bottom: none;
+  }
+
+  .turmas-info-label {
+    font-size: 0.75rem;
+    color: #64748b;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .turmas-info-value {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #1e293b;
+  }
+
+  .turmas-acoes-mobile {
+    display: flex;
+    gap: 6px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+
+  .turmas-btn-mobile {
+    flex: 1;
+    min-width: 100px;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .btn-aprovar-todos,
+  .btn-reprovar-todos {
+    font-size: 0.85rem;
+    padding: 8px 12px;
+  }
+
+  .user-icon-circle-frequencia {
+    width: 36px !important;
+    height: 36px !important;
+  }
+}
+
+/* Ocultar cards mobile em desktop */
+@media (min-width: 769px) {
+  .turmas-mobile-cards {
+    display: none !important;
+  }
+}
+
+/* ========== FIM DOS ESTILOS PARA TURMAS/REMATRÍCULA - MOBILE ========== */
+
+  .btn-acao-aprovado:hover {
+    background: #22c55e !important;
+    color: #fff !important;
+  }
+
+  .btn-acao-reprovado:hover {
+    background: #dc3545 !important;
+    color: #fff !important;
+  }
+
+  .btn-aprovar-todos {
+    border: 1px solid #93c4a5 !important;
+    font-style: italic;
+  }
+
+  .btn-reprovar-todos {
+    border: 1px solid #f5a6a6 !important;
+    font-style: italic;
+  }
+
+  /* .filter-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+  } */

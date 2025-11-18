@@ -2,17 +2,19 @@
 import { useEffect, useState, ChangeEvent, JSX } from 'react';
 import AppLayout from '../components/AppLayout';
 import {
-  Container, Button, Table, Badge, Spinner,
-  Modal, InputGroup, FormControl, Toast, ToastContainer, Dropdown, Form, Card
+  Container, Row, Button, Table, Badge, Spinner,
+  Modal, InputGroup, FormControl, Toast, ToastContainer, Dropdown, Form, Card,
+  Col
 } from 'react-bootstrap';
 import { PlusCircle, Person } from 'react-bootstrap-icons';
 import Paginacao from '../components/Paginacao';
 import { db } from '../services/firebase';
 import {
-  collection, getDocs, updateDoc, deleteDoc, doc, writeBatch
+  collection, getDocs, updateDoc, deleteDoc, doc, writeBatch, query, where
 } from 'firebase/firestore';
 import UsuarioForm, { FormValues, AlunoOption } from '../components/UsuarioForm';
-import { GraduationCap, Download } from 'lucide-react';
+import { GraduationCap, Download, Users } from 'lucide-react';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 
 // PDF
 import jsPDF from 'jspdf';
@@ -29,6 +31,7 @@ interface Responsavel extends UsuarioBase { filhos?: string[]; }
 interface Administrador extends UsuarioBase { }
 
 export default function Usuarios(): JSX.Element {
+  const { anoLetivo } = useAnoLetivoAtual();
   const [activeTab, setActiveTab] = useState<'todos' | 'professores' | 'alunos' | 'responsaveis' | 'administradores'>('todos');
   const [search, setSearch] = useState('');
   const [professores, setProfessores] = useState<Professor[]>([]);
@@ -36,6 +39,7 @@ export default function Usuarios(): JSX.Element {
   const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
   const [administradores, setAdministradores] = useState<Administrador[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
+  const [todasTurmas, setTodasTurmas] = useState<Turma[]>([]); // Todas as turmas (sem filtro de ano)
   const [alunosOptions, setAlunosOptions] = useState<AlunoOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -100,12 +104,12 @@ export default function Usuarios(): JSX.Element {
       }
       return nameMatch || emailMatch || infoMatch;
     });
-    
+
     // Filtro por status
     if (statusFiltro) {
       list = list.filter(u => (u.status || 'Ativo') === statusFiltro);
     }
-    
+
     // Filtro por turma
     if (turmaFiltro) {
       if (activeTab === 'alunos') {
@@ -149,7 +153,7 @@ export default function Usuarios(): JSX.Element {
             usuario.tipoUsuario === 'responsaveis' ? 'Responsável' : 'Administrador';
 
         if (usuario.tipoUsuario === 'professores' && usuario.turmas) {
-          info = usuario.turmas.map((id: string) => turmas.find(t => t.id === id)?.nome || id).join(', ');
+          info = usuario.turmas.map((id: string) => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ');
         } else if (usuario.tipoUsuario === 'alunos' && usuario.turmaId) {
           info = turmas.find(t => t.id === usuario.turmaId)?.nome || '';
         } else if (usuario.tipoUsuario === 'responsaveis' && usuario.filhos) {
@@ -157,7 +161,7 @@ export default function Usuarios(): JSX.Element {
         }
       } else {
         if (activeTab === 'professores' && (usuario as Professor).turmas) {
-          info = (usuario as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome || id).join(', ');
+          info = (usuario as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ');
         } else if (activeTab === 'alunos' && (usuario as Aluno).turmaId) {
           info = turmas.find(t => t.id === (usuario as Aluno).turmaId)?.nome || '';
         } else if (activeTab === 'responsaveis' && (usuario as Responsavel).filhos) {
@@ -218,7 +222,7 @@ export default function Usuarios(): JSX.Element {
             usuario.tipoUsuario === 'responsaveis' ? 'Responsável' : 'Administrador';
 
         if (usuario.tipoUsuario === 'professores' && usuario.turmas) {
-          info = usuario.turmas.map((id: string) => turmas.find(t => t.id === id)?.nome || id).join(', ');
+          info = usuario.turmas.map((id: string) => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ');
         } else if (usuario.tipoUsuario === 'alunos' && usuario.turmaId) {
           info = turmas.find(t => t.id === usuario.turmaId)?.nome || '';
         } else if (usuario.tipoUsuario === 'responsaveis' && usuario.filhos) {
@@ -226,7 +230,7 @@ export default function Usuarios(): JSX.Element {
         }
       } else {
         if (activeTab === 'professores' && (usuario as Professor).turmas) {
-          info = (usuario as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome || id).join(', ');
+          info = (usuario as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ');
         } else if (activeTab === 'alunos' && (usuario as Aluno).turmaId) {
           info = turmas.find(t => t.id === (usuario as Aluno).turmaId)?.nome || '';
         } else if (activeTab === 'responsaveis' && (usuario as Responsavel).filhos) {
@@ -430,7 +434,15 @@ export default function Usuarios(): JSX.Element {
       setAlunos(alunosList);
       setResponsaveis(responsaveisList);
       setAdministradores(administradoresList);
-      setTurmas(tSnap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome })));
+
+      // Guardar todas as turmas
+      const todasTurmasList = tSnap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome, anoLetivo: (d.data() as any).anoLetivo }));
+      setTodasTurmas(todasTurmasList);
+
+      // Filtrar turmas apenas do ano letivo selecionado
+      const turmasAnoAtual = todasTurmasList.filter(t => (t as any).anoLetivo?.toString() === anoLetivo.toString());
+      setTurmas(turmasAnoAtual);
+
       setLoading(false);
       setAlunosOptions(
         alunosList
@@ -454,7 +466,7 @@ export default function Usuarios(): JSX.Element {
       }
     }
     fetchData();
-  }, []);
+  }, [anoLetivo]);
 
   const handleSearch = (e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value);
 
@@ -471,14 +483,17 @@ export default function Usuarios(): JSX.Element {
   };
 
   const renderTurmasBadges = (turmasIds: string[], userId: string, maxVisible: number = 2) => {
+    // Filtrar apenas turmas do ano letivo atual
+    const turmasDoAnoAtual = turmasIds.filter(id => turmas.some(t => t.id === id));
     const isExpanded = expandedTurmas.has(userId);
-    const turmasToShow = isExpanded ? turmasIds : turmasIds.slice(0, maxVisible);
-    const remainingCount = turmasIds.length - maxVisible;
+    const turmasToShow = isExpanded ? turmasDoAnoAtual : turmasDoAnoAtual.slice(0, maxVisible);
+    const remainingCount = turmasDoAnoAtual.length - maxVisible;
 
     return (
       <>
         {turmasToShow.map(id => {
-          const turmaNome = turmas.find(t => t.id === id)?.nome || id;
+          const turmaNome = turmas.find(t => t.id === id)?.nome;
+          if (!turmaNome) return null; // Não renderizar se a turma não for do ano atual
           return (
             <span
               key={id}
@@ -567,14 +582,14 @@ export default function Usuarios(): JSX.Element {
           if (isAluno) {
             return (u as Aluno).turmaId === turmaFiltro;
           }
-          
+
           // Verificar se é professor pela presença na lista de professores
           const isProfessor = professores.find(p => p.id === u.id);
           if (isProfessor) {
             const professor = u as unknown as Professor;
             return professor.turmas && professor.turmas.includes(turmaFiltro);
           }
-          
+
           // Para responsáveis e administradores, não mostrar quando há filtro de turma
           return false;
         });
@@ -674,7 +689,7 @@ export default function Usuarios(): JSX.Element {
 
       const snapshot = await getDocs(collection(db, data.tipoUsuario));
       const novosDados = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      
+
       if (data.tipoUsuario === 'professores') setProfessores(novosDados);
       if (data.tipoUsuario === 'alunos') {
         setAlunos(novosDados);
@@ -911,9 +926,9 @@ export default function Usuarios(): JSX.Element {
         </div>
 
         {/* Cards de resumo */}
-        <div className="row mb-3 g-3">
+        <Row className='mb-3'>
           {/* Card Total de Usuários */}
-          <div className="col-md-4">
+          <Col md={3}>
             <div className="card shadow-sm card-sm border-left-primary mb-1">
               <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
                 <span className="fw-bold" style={{ fontSize: '1rem', color: '#3b4861' }}>Total de Usuários</span>
@@ -925,9 +940,23 @@ export default function Usuarios(): JSX.Element {
                 </h3>
               </div>
             </div>
-          </div>
+          </Col>
+          {/* Card Alunos Ativos */}
+          <Col md={3}>
+            <div className="card shadow-sm card-sm mb-1" style={{ borderLeft: '4px solid #f59e0b' }}>
+              <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
+                <span className="fw-bold" style={{ fontSize: '1rem', color: '#3b4861' }}>Alunos</span>
+                <Users size={20} style={{ color: '#f59e0b' }} />
+              </div>
+              <div className="card-body py-3">
+                <h3 className="mb-0 fw-bold" style={{ color: '#f59e0b' }}>
+                  {alunos.filter(a => (a.status || 'Ativo') === 'Ativo').length}
+                </h3>
+              </div>
+            </div>
+          </Col>
           {/* Card Total de Professores */}
-          <div className="col-md-4">
+          <Col md={3}>
             <div className="card shadow-sm card-sm border-left-success mb-1">
               <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
                 <span className="fw-bold" style={{ fontSize: '1rem', color: '#3b4861' }}>Professores</span>
@@ -937,9 +966,9 @@ export default function Usuarios(): JSX.Element {
                 <h3 className="mb-0 fw-bold" style={{ color: '#22c55e' }}>{professores.length}</h3>
               </div>
             </div>
-          </div>
+          </Col>
           {/* Card Turmas Ativas */}
-          <div className="col-md-4">
+          <Col md={3}>
             <div className="card shadow-sm card-sm mb-1" style={{ borderLeft: '4px solid #a78bfa' }}>
               <div className="bg-white px-3 py-2 d-flex align-items-center justify-content-between gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
                 <span className="fw-bold" style={{ fontSize: '1rem', color: '#3b4861' }}>Turmas Ativas</span>
@@ -949,18 +978,18 @@ export default function Usuarios(): JSX.Element {
                 <h3 className="mb-0 fw-bold" style={{ color: '#a78bfa' }}>{turmas.length}</h3>
               </div>
             </div>
-          </div>
-        </div>
+          </Col>
+        </Row>
         {/* Card de filtros avançados */}
         <div className="card mb-3">
           <div className="card-body">
-            <div className="row g-3 align-items-center">
-              <div className="col-md-3">
+            <Row>
+              <Col md={3} className='mb-1'>
                 <InputGroup>
                   <FormControl placeholder="Pesquisar..." value={search} onChange={handleSearch} />
                 </InputGroup>
-              </div>
-              <div className="col-md-3">
+              </Col>
+              <Col md={3} className='mb-1'>
                 <Form.Select value={activeTab} onChange={e => { setActiveTab(e.target.value as any); setCurrentPage(1); }}>
                   <option value="todos">Todos os tipos</option>
                   <option value="professores">Professores</option>
@@ -968,26 +997,26 @@ export default function Usuarios(): JSX.Element {
                   <option value="responsaveis">Responsáveis</option>
                   <option value="administradores">Administradores</option>
                 </Form.Select>
-              </div>
-              <div className="col-md-3">
+              </Col>
+              <Col md={3} className='mb-1'>
                 <Form.Select value={statusFiltro} onChange={e => { setStatusFiltro(e.target.value); setCurrentPage(1); }}>
                   <option value="">Todos os status</option>
                   <option value="Ativo">Ativo</option>
                   <option value="Inativo">Inativo</option>
                 </Form.Select>
-              </div>
-              <div className="col-md-3">
+              </Col>
+              <Col md={3} className='mb-1'>
                 <Form.Select value={turmaFiltro} onChange={e => { setTurmaFiltro(e.target.value); setCurrentPage(1); }}>
-                    <option value="">Todas as turmas</option>
-                    {turmas
-                      .slice()
-                      .sort((a, b) => a.nome.localeCompare(b.nome))
-                      .map(t => (
-                        <option key={t.id} value={t.id}>{t.nome}</option>
-                      ))}
+                  <option value="">Todas as turmas</option>
+                  {turmas
+                    .slice()
+                    .sort((a, b) => a.nome.localeCompare(b.nome))
+                    .map(t => (
+                      <option key={t.id} value={t.id}>{t.nome}</option>
+                    ))}
                 </Form.Select>
-              </div>
-            </div>
+              </Col>
+            </Row>
           </div>
         </div>
 
@@ -1119,98 +1148,251 @@ export default function Usuarios(): JSX.Element {
 
             {/* Versão Mobile */}
             <div className="usuarios-mobile-cards d-block d-md-none">
-              <div className="usuarios-header-mobile mb-3">
-                <h3 className="mb-0">Lista de Usuários</h3>
-              </div>
-
-              {getCurrentUsersList().length > 0 ? (
-                <div className="usuarios-grid-mobile">
-                  {getCurrentUsersList().map(user => (
-                    <div key={user.id} className="usuarios-card-mobile">
-                      <div className="usuarios-card-header">
-                        <div className="usuarios-card-info">
-                          <div className="usuarios-card-name">{user.nome}</div>
-                          <div className="usuarios-card-email">{user.email}</div>
-                          {activeTab === 'todos' && (
-                            <div className="usuarios-card-type">
-                              <span className="badge bg-light text-dark me-2">
-                                {user.tipoUsuario === 'professores' ? 'Professor' :
-                                  user.tipoUsuario === 'alunos' ? 'Aluno' :
-                                    user.tipoUsuario === 'responsaveis' ? 'Responsável' : 'Administrador'}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        <Badge
-                          className={`usuario-status-badge ${user.status === 'Ativo' ? 'ativo' : 'inativo'} align-self-start`}
-                          style={{
-                            backgroundColor: user.status === 'Ativo' ? '#22c55e' : '#6c757d',
-                            color: '#fff',
-                            fontWeight: 700,
-                            border: 'none',
-                            borderRadius: '12px',
-                            padding: '0.22rem 0.5rem',
-                            fontSize: '0.71rem',
-                            letterSpacing: '0.1px',
-                            lineHeight: 1.1,
-                            display: 'inline-block'
-                          }}
-                        >
-                          {user.status || 'Ativo'}
-                        </Badge>
-                      </div>
-
-                      <div className="usuarios-card-body">
-                        <div className="usuarios-info-details">
-                          {activeTab === 'todos' ? (
-                            <>
-                              {user.tipoUsuario === 'professores' && (user as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome || id).join(', ')}
-                              {user.tipoUsuario === 'alunos' && turmas.find(t => t.id === (user as Aluno).turmaId)?.nome}
-                              {user.tipoUsuario === 'responsaveis' && (user as Responsavel).filhos?.map(filhoId => alunos.find(a => a.id === filhoId)?.nome).join(', ')}
-                            </>
-                          ) : (
-                            <>
-                              {activeTab === 'professores' && (user as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome || id).join(', ')}
-                              {activeTab === 'alunos' && turmas.find(t => t.id === (user as Aluno).turmaId)?.nome}
-                              {activeTab === 'responsaveis' && (user as Responsavel).filhos?.map(filhoId => alunos.find(a => a.id === filhoId)?.nome).join(', ')}
-                            </>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="usuarios-card-actions">
-                        <button
-                          className="usuarios-action-btn usuarios-edit-btn"
-                          onClick={() => openEdit(user)}
-                        >
-                          <i className="bi bi-pencil"></i>
-                          Editar
-                        </button>
-                        <button
-                          className="usuarios-action-btn usuarios-delete-btn"
-                          onClick={() => handleExcluir(user.id)}
-                        >
-                          <i className="bi bi-trash"></i>
-                          Excluir
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="usuarios-empty-state">
-                  <div className="usuarios-empty-icon">
-                    <Person size={48} />
+              <Card className="shadow-sm">
+                <Card.Body>
+                  <div className="usuarios-header-mobile mb-3">
+                    <h3 className="mb-0">Lista de Usuários</h3>
                   </div>
-                  <h5 className="usuarios-empty-title">Nenhum usuário encontrado</h5>
-                  <p className="usuarios-empty-text">
-                    {search || activeTab !== 'todos'
-                      ? 'Tente ajustar os filtros de busca.'
-                      : 'Comece adicionando seu primeiro usuário.'
-                    }
-                  </p>
-                </div>
-              )}
+
+                  {getCurrentUsersList().length > 0 ? (
+                    <div className="usuarios-grid-mobile">
+                      {getCurrentUsersList().map(user => {
+                        // Determinar tipo de usuário e cor do badge
+                        const getTipoBadge = () => {
+                          if (activeTab === 'todos') {
+                            const tipos = {
+                              professores: { label: 'Professor', bg: '#22c55e', icon: '👨‍🏫' },
+                              alunos: { label: 'Aluno', bg: '#3b82f6', icon: '🎓' },
+                              responsaveis: { label: 'Responsável', bg: '#f59e0b', icon: '👨‍👩‍👧' },
+                              administradores: { label: 'Administrador', bg: '#a855f7', icon: '⚙️' }
+                            };
+                            return tipos[user.tipoUsuario as keyof typeof tipos];
+                          }
+                          return null;
+                        };
+
+                        const tipoBadge = getTipoBadge();
+
+                        return (
+                          <div
+                            key={user.id}
+                            style={{
+                              backgroundColor: '#fff',
+                              borderRadius: '12px',
+                              padding: '16px',
+                              marginBottom: '12px',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                              border: '1px solid #e5e7eb'
+                            }}
+                          >
+                            {/* Header */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontWeight: '600', fontSize: '1rem', color: '#111827', marginBottom: '4px', wordBreak: 'break-word' }}>
+                                  {user.nome}
+                                </div>
+                                <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '8px', wordBreak: 'break-word' }}>
+                                  {user.email}
+                                </div>
+                                {tipoBadge && (
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      backgroundColor: tipoBadge.bg + '20',
+                                      color: tipoBadge.bg,
+                                      fontWeight: '600',
+                                      borderRadius: '8px',
+                                      padding: '4px 10px',
+                                      fontSize: '0.75rem'
+                                    }}
+                                  >
+                                    <span>{tipoBadge.icon}</span>
+                                    {tipoBadge.label}
+                                  </span>
+                                )}
+                              </div>
+                              <Badge
+                                style={{
+                                  backgroundColor: user.status === 'Ativo' ? '#22c55e' : '#6c757d',
+                                  color: '#fff',
+                                  fontWeight: 700,
+                                  border: 'none',
+                                  borderRadius: '12px',
+                                  padding: '4px 10px',
+                                  fontSize: '0.7rem',
+                                  flexShrink: 0,
+                                  marginLeft: '8px'
+                                }}
+                              >
+                                {user.status || 'Ativo'}
+                              </Badge>
+                            </div>
+
+                            {/* Info adicional */}
+                            <div style={{
+                              backgroundColor: '#f9fafb',
+                              borderRadius: '8px',
+                              padding: '10px',
+                              marginBottom: '12px',
+                              fontSize: '0.875rem',
+                              color: '#374151'
+                            }}>
+                              {activeTab === 'todos' ? (
+                                <>
+                                  {user.tipoUsuario === 'professores' && (
+                                    <div>
+                                      <strong style={{ color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Turmas:</strong>
+                                      <div style={{ marginTop: '4px' }}>
+                                        {(user as Professor).turmas.length > 0
+                                          ? (user as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ')
+                                          : <span style={{ color: '#9ca3af' }}>Nenhuma turma</span>
+                                        }
+                                      </div>
+                                    </div>
+                                  )}
+                                  {user.tipoUsuario === 'alunos' && (
+                                    <div>
+                                      <strong style={{ color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Turma:</strong>
+                                      <div style={{ marginTop: '4px' }}>
+                                        {turmas.find(t => t.id === (user as Aluno).turmaId)?.nome || <span style={{ color: '#9ca3af' }}>Sem turma</span>}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {user.tipoUsuario === 'responsaveis' && (
+                                    <div>
+                                      <strong style={{ color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Filhos:</strong>
+                                      <div style={{ marginTop: '4px' }}>
+                                        {(user as Responsavel).filhos && (user as Responsavel).filhos!.length > 0
+                                          ? (user as Responsavel).filhos!.map(filhoId => alunos.find(a => a.id === filhoId)?.nome).filter(Boolean).join(', ')
+                                          : <span style={{ color: '#9ca3af' }}>Nenhum filho vinculado</span>
+                                        }
+                                      </div>
+                                    </div>
+                                  )}
+                                  {user.tipoUsuario === 'administradores' && (
+                                    <div style={{ color: '#9ca3af', fontStyle: 'italic' }}>
+                                      Acesso total ao sistema
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  {activeTab === 'professores' && (
+                                    <div>
+                                      <strong style={{ color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Turmas:</strong>
+                                      <div style={{ marginTop: '4px' }}>
+                                        {(user as Professor).turmas.length > 0
+                                          ? (user as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ')
+                                          : <span style={{ color: '#9ca3af' }}>Nenhuma turma</span>
+                                        }
+                                      </div>
+                                    </div>
+                                  )}
+                                  {activeTab === 'alunos' && (
+                                    <div>
+                                      <strong style={{ color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Turma:</strong>
+                                      <div style={{ marginTop: '4px' }}>
+                                        {turmas.find(t => t.id === (user as Aluno).turmaId)?.nome || <span style={{ color: '#9ca3af' }}>Sem turma</span>}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {activeTab === 'responsaveis' && (
+                                    <div>
+                                      <strong style={{ color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Filhos:</strong>
+                                      <div style={{ marginTop: '4px' }}>
+                                        {(user as Responsavel).filhos && (user as Responsavel).filhos!.length > 0
+                                          ? (user as Responsavel).filhos!.map(filhoId => alunos.find(a => a.id === filhoId)?.nome).filter(Boolean).join(', ')
+                                          : <span style={{ color: '#9ca3af' }}>Nenhum filho vinculado</span>
+                                        }
+                                      </div>
+                                    </div>
+                                  )}
+                                  {activeTab === 'administradores' && (
+                                    <div style={{ color: '#9ca3af', fontStyle: 'italic' }}>
+                                      Acesso total ao sistema
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+
+                            {/* Actions */}
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                onClick={() => openEdit(user)}
+                                style={{
+                                  flex: 1,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                  padding: '10px',
+                                  backgroundColor: '#3b82f6',
+                                  color: '#fff',
+                                  border: 'none',
+                                  borderRadius: '8px',
+                                  fontSize: '0.875rem',
+                                  fontWeight: '500',
+                                  cursor: 'pointer',
+                                  transition: 'background-color 0.2s'
+                                }}
+                                onMouseDown={(e) => (e.currentTarget.style.backgroundColor = '#2563eb')}
+                                onMouseUp={(e) => (e.currentTarget.style.backgroundColor = '#3b82f6')}
+                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#3b82f6')}
+                              >
+                                <i className="bi bi-pencil"></i>
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => handleExcluir(user.id)}
+                                style={{
+                                  flex: 1,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                  padding: '10px',
+                                  backgroundColor: '#ef4444',
+                                  color: '#fff',
+                                  border: 'none',
+                                  borderRadius: '8px',
+                                  fontSize: '0.875rem',
+                                  fontWeight: '500',
+                                  cursor: 'pointer',
+                                  transition: 'background-color 0.2s'
+                                }}
+                                onMouseDown={(e) => (e.currentTarget.style.backgroundColor = '#dc2626')}
+                                onMouseUp={(e) => (e.currentTarget.style.backgroundColor = '#ef4444')}
+                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#ef4444')}
+                              >
+                                <i className="bi bi-trash"></i>
+                                Excluir
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                      <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.3 }}>
+                        <Person size={48} />
+                      </div>
+                      <h5 style={{ fontSize: '1.125rem', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>
+                        Nenhum usuário encontrado
+                      </h5>
+                      <p style={{ fontSize: '0.875rem', color: '#6b7280', margin: 0 }}>
+                        {search || activeTab !== 'todos'
+                          ? 'Tente ajustar os filtros de busca.'
+                          : 'Comece adicionando seu primeiro usuário.'
+                        }
+                      </p>
+                    </div>
+                  )}
+                </Card.Body>
+              </Card>
             </div>
 
             <Paginacao

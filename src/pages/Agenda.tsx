@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import Paginacao from '../components/Paginacao';
 
 // PDF
@@ -32,6 +33,9 @@ interface AgendaItem {
 interface Turma {
   id: string;
   nome: string;
+  anoLetivo?: string | number;
+  isVirtualizada?: boolean;
+  turmaOriginalId?: string;
 }
 interface Materia {
   id: string;
@@ -46,6 +50,7 @@ const diasSemana = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-fei
 const diasIndexMap = Object.fromEntries(diasSemana.map((d, i) => [d, i]));
 
 export default function Agenda() {
+  const { anoLetivo } = useAnoLetivoAtual();
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
 
@@ -109,9 +114,67 @@ export default function Agenda() {
       const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
       const materiaIds = [...new Set(vincList.map(v => v.materiaId))];
 
-      const turmaDocs = isAdmin
-        ? (await getDocs(collection(db, 'turmas'))).docs
-        : await Promise.all(turmaIds.map(id => getDoc(doc(db, 'turmas', id))));
+      // Buscar turmas do ano atual
+      let turmaDocs;
+      if (isAdmin) {
+        turmaDocs = (await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())))).docs;
+      } else {
+        const turmaDocsTemp = await Promise.all(
+          turmaIds.map(async id => {
+            const turmaDoc = await getDoc(doc(db, 'turmas', id));
+            return turmaDoc.data()?.anoLetivo?.toString() === anoLetivo.toString() ? turmaDoc : null;
+          })
+        );
+        turmaDocs = turmaDocsTemp.filter((d): d is typeof turmaDocsTemp[0] & { id: string } => !!d);
+      }
+
+      // Buscar turmas do ano anterior para virtualização
+      const anoAnterior = anoLetivo - 1;
+      let turmasAnoAnteriorSnap;
+      if (isAdmin) {
+        turmasAnoAnteriorSnap = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoAnterior.toString())));
+      } else {
+        const turmaDocsTemp = await Promise.all(
+          turmaIds.map(async id => {
+            const turmaDoc = await getDoc(doc(db, 'turmas', id));
+            return turmaDoc.data()?.anoLetivo?.toString() === anoAnterior.toString() ? turmaDoc : null;
+          })
+        );
+        turmasAnoAnteriorSnap = { docs: turmaDocsTemp.filter((d): d is typeof turmaDocsTemp[0] & { id: string } => !!d) };
+      }
+
+
+      // Processar turmas do ano atual
+      const turmasAtuais = turmaDocs.map(d => ({ id: d.id, ...(d.data() as any) }));
+
+      // Processar turmas do ano anterior
+      const turmasAnteriores = turmasAnoAnteriorSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+
+      // Verificar quais turmas do ano anterior podem ser virtualizadas
+      const turmasVirtualizadas: Turma[] = [];
+      for (const turmaAnterior of turmasAnteriores) {
+        const podeVirtualizar = (turmaAnterior as any).isVirtual !== false;
+        // Normalizar nomes para comparação (remover espaços extras e case-insensitive)
+        const nomeAnterior = (turmaAnterior.nome || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const jaExisteAtual = turmasAtuais.some(t => {
+          const nomeAtual = (t.nome || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          return nomeAtual === nomeAnterior;
+        });
+
+        if (podeVirtualizar && !jaExisteAtual) {
+          turmasVirtualizadas.push({
+            ...turmaAnterior,
+            id: `virtual_${turmaAnterior.id}`,
+            anoLetivo: anoLetivo,
+            isVirtualizada: true,
+            turmaOriginalId: turmaAnterior.id
+          });
+        }
+      }
+
+      // Combinar turmas reais + virtualizadas
+      const turmasFinais = [...turmasAtuais, ...turmasVirtualizadas].sort((a, b) => a.nome.localeCompare(b.nome));
+
 
       const materiaDocs = isAdmin
         ? (await getDocs(collection(db, 'materias'))).docs
@@ -119,15 +182,15 @@ export default function Agenda() {
 
       setProfessores(profSnap.docs.map(d => ({ id: d.id, nome: d.data().nome })));
       setMaterias(materiaDocs.map(d => ({ id: d.id, nome: d.data()?.nome || '-' })));
-      setTurmas(turmaDocs.map(d => ({ id: d.id, nome: d.data()?.nome || '-' })));
+      setTurmas(turmasFinais);
       setLoading(false);
     };
     fetchInitial();
-  }, [userData]);
+  }, [userData, anoLetivo]);
 
   useEffect(() => {
-    if (!loading) fetchAgendaPorTurma();
-  }, [loading]);
+    if (!loading && turmas.length > 0) fetchAgendaPorTurma();
+  }, [loading, turmas]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -136,10 +199,42 @@ export default function Agenda() {
   const fetchAgendaPorTurma = async () => {
     const snap = await getDocs(collection(db, 'agenda'));
     const data = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as AgendaItem[];
+
+    // Criar conjunto de IDs válidos incluindo turmas reais e virtualizadas
+    const turmaIdsValidos = new Set<string>();
+    turmas.forEach(t => {
+      if (t.isVirtualizada && t.turmaOriginalId) {
+        // Para turmas virtualizadas, o ID original é válido
+        turmaIdsValidos.add(t.turmaOriginalId);
+      } else {
+        // Para turmas reais, o ID normal é válido
+        turmaIdsValidos.add(t.id);
+      }
+    });
+
+    const dataFiltrada = data.filter(item => {
+      // Verificar se a turma da aula está no conjunto de turmas válidas
+      return turmaIdsValidos.has(item.turmaId);
+    });
+
     const agrupado: Record<string, AgendaItem[]> = {};
-    data.forEach(item => {
-      if (!agrupado[item.turmaId]) agrupado[item.turmaId] = [];
-      agrupado[item.turmaId].push(item);
+    dataFiltrada.forEach(item => {
+      // Para agrupar, precisamos encontrar a turma correspondente
+      const turma = turmas.find(t => {
+        if (t.isVirtualizada && t.turmaOriginalId) {
+          // Para turmas virtualizadas, comparar com o ID original
+          return t.turmaOriginalId === item.turmaId;
+        }
+        // Para turmas reais, comparar diretamente
+        return t.id === item.turmaId;
+      });
+
+      if (turma) {
+        // Usar o ID da turma no estado como chave (pode ser ID real ou virtual_xxx)
+        const turmaKey = turma.id;
+        if (!agrupado[turmaKey]) agrupado[turmaKey] = [];
+        agrupado[turmaKey].push(item);
+      }
     });
     setAgendaPorTurma(agrupado);
   };
@@ -267,7 +362,7 @@ export default function Agenda() {
 
   const downloadPDF = () => {
     const doc = new jsPDF('landscape', 'mm', 'a4'); // Orientação paisagem
-    
+
     // Agrupar dados por turma
     const dadosPorTurma: Record<string, AgendaItem[]> = {};
     dadosFiltrados.forEach(item => {
@@ -283,7 +378,13 @@ export default function Agenda() {
 
     // Para cada turma, criar uma grade de horários
     Object.keys(dadosPorTurma).forEach((turmaId, index) => {
-      const turma = turmas.find(t => t.id === turmaId);
+      // Buscar turma considerando turmas virtualizadas
+      const turma = turmas.find(t => {
+        if (t.isVirtualizada && t.turmaOriginalId) {
+          return t.turmaOriginalId === turmaId || t.id === turmaId;
+        }
+        return t.id === turmaId;
+      });
       const aulasDaTurma = dadosPorTurma[turmaId];
 
       // Se não for a primeira turma e não couber na página, criar nova página
@@ -306,7 +407,7 @@ export default function Agenda() {
         if (!gradeHorarios[aula.diaSemana]) {
           gradeHorarios[aula.diaSemana] = {};
         }
-        
+
         const materia = materias.find(m => m.id === aula.materiaId);
         const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
         const professor = professores.find(p => p.id === vinculo?.professorId);
@@ -315,7 +416,7 @@ export default function Agenda() {
           materia: materia?.nome || '-',
           professor: professor?.nome || '---'
         };
-        
+
         horariosUnicos.add(aula.horario);
       });
 
@@ -324,10 +425,10 @@ export default function Agenda() {
 
       // Preparar dados para a tabela da grade
       const bodyData: string[][] = [];
-      
+
       horariosOrdenados.forEach(horario => {
         const linha: string[] = [];
-        
+
         diasSemana.forEach(dia => {
           const aulaInfo = gradeHorarios[dia]?.[horario];
           if (aulaInfo) {
@@ -336,7 +437,7 @@ export default function Agenda() {
             linha.push('------');
           }
         });
-        
+
         bodyData.push(linha);
       });
 
@@ -345,13 +446,13 @@ export default function Agenda() {
         startY: currentY,
         head: [diasSemana],
         body: bodyData,
-        styles: { 
+        styles: {
           fontSize: 8,
           cellPadding: 2,
           valign: 'middle',
           halign: 'center'
         },
-        headStyles: { 
+        headStyles: {
           fillColor: [60, 60, 60],
           textColor: [255, 255, 255],
           fontStyle: 'bold',
@@ -364,13 +465,11 @@ export default function Agenda() {
           3: { cellWidth: (pageWidth - 40) / 5 },
           4: { cellWidth: (pageWidth - 40) / 5 }
         },
-        margin: { left: 20, right: 20 },
-        didDrawPage: () => {
-          // currentY is not updated here as data is unused
-        }
+        margin: { left: 20, right: 20 }
       });
 
-      currentY += 20;
+      // Atualizar currentY após a tabela da grade
+      currentY = (doc as any).lastAutoTable.finalY + 15;
 
       // Adicionar seção de horários das aulas em formato de tabela
       // Layout lado a lado: horários à esquerda, professores à direita
@@ -435,7 +534,7 @@ export default function Agenda() {
           1: { cellWidth: 45 }
         },
         tableWidth: horariosTableWidth,
-        didDrawPage: () => {}
+        didDrawPage: () => { }
       });
       autoTable(doc, {
         startY: tableTopY,
@@ -585,7 +684,21 @@ export default function Agenda() {
       if (turnoAula !== filtroTurnoVisualizacao) return false;
 
       // Aplica o filtro de turma da visualização se existir
-      if (filtroVisualizacaoTurma && item.turmaId !== filtroVisualizacaoTurma) return false;
+      if (filtroVisualizacaoTurma) {
+        // Considerar turmas virtualizadas
+        const turma = turmas.find(t => t.id === filtroVisualizacaoTurma);
+        if (turma?.isVirtualizada && turma.turmaOriginalId) {
+          // Se a turma do filtro é virtualizada, comparar com o ID original
+          if (item.turmaId !== turma.turmaOriginalId && item.turmaId !== filtroVisualizacaoTurma) {
+            return false;
+          }
+        } else {
+          // Turma normal
+          if (item.turmaId !== filtroVisualizacaoTurma) {
+            return false;
+          }
+        }
+      }
 
       // Aplica o filtro de professor da visualização se existir
       if (filtroProfessorVisualizacao) {
@@ -612,8 +725,22 @@ export default function Agenda() {
 
   const dadosOrdenados = Object.values(agendaPorTurma).flat()
     .sort((a, b) => {
-      const nomeTurmaA = turmas.find(t => t.id === a.turmaId)?.nome || '';
-      const nomeTurmaB = turmas.find(t => t.id === b.turmaId)?.nome || '';
+      // Buscar turma, considerando turmas virtualizadas
+      const turmaA = turmas.find(t => {
+        if (t.isVirtualizada && t.turmaOriginalId) {
+          return t.turmaOriginalId === a.turmaId || t.id === a.turmaId;
+        }
+        return t.id === a.turmaId;
+      });
+      const turmaB = turmas.find(t => {
+        if (t.isVirtualizada && t.turmaOriginalId) {
+          return t.turmaOriginalId === b.turmaId || t.id === b.turmaId;
+        }
+        return t.id === b.turmaId;
+      });
+
+      const nomeTurmaA = turmaA?.nome || '';
+      const nomeTurmaB = turmaB?.nome || '';
       const nomeDiff = nomeTurmaA.localeCompare(nomeTurmaB);
       if (nomeDiff !== 0) return nomeDiff;
       const diaDiff = diasIndexMap[a.diaSemana] - diasIndexMap[b.diaSemana];
@@ -621,7 +748,14 @@ export default function Agenda() {
     });
 
   const dadosFiltrados = dadosOrdenados.filter(item => {
-    const turma = turmas.find(t => t.id === item.turmaId);
+    // Buscar turma, considerando turmas virtualizadas
+    const turma = turmas.find(t => {
+      if (t.isVirtualizada && t.turmaOriginalId) {
+        return t.turmaOriginalId === item.turmaId || t.id === item.turmaId;
+      }
+      return t.id === item.turmaId;
+    });
+
     const materia = materias.find(m => m.id === item.materiaId);
     const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
     const professor = professores.find(p => p.id === vinculo?.professorId);
@@ -638,8 +772,21 @@ export default function Agenda() {
       if (!contemBusca) return false;
     }
 
-    // Filtro de turma específica
-    if (filtroTurma && item.turmaId !== filtroTurma) return false;
+    // Filtro de turma específica - considerar turmas virtualizadas
+    if (filtroTurma) {
+      const turmaFiltro = turmas.find(t => t.id === filtroTurma);
+      if (turmaFiltro?.isVirtualizada && turmaFiltro.turmaOriginalId) {
+        // Se a turma do filtro é virtualizada, comparar com o ID original
+        if (item.turmaId !== turmaFiltro.turmaOriginalId && item.turmaId !== filtroTurma) {
+          return false;
+        }
+      } else {
+        // Turma normal
+        if (item.turmaId !== filtroTurma) {
+          return false;
+        }
+      }
+    }
 
     // Filtro de professor
     if (filtroProfessor && vinculo?.professorId !== filtroProfessor) return false;
@@ -741,11 +888,12 @@ export default function Agenda() {
         {/* Navigation Tabs */}
         <div className="container px-0">
           <div className="d-flex py-3">
-            <div className="custom-tabs-container">
+            <div className="custom-tabs-container w-100">
               <button
                 className={`custom-tab ${activeTab === 'lancamento-notas' ? 'active' : ''}`}
                 onClick={() => setActiveTab('lancamento-notas')}
                 type="button"
+                style={{ flex: 1 }}
               >
                 Cadastro de Agendas
               </button>
@@ -753,6 +901,7 @@ export default function Agenda() {
                 className={`custom-tab ${activeTab === 'visualizacao-resultados' ? 'active' : ''}`}
                 onClick={() => setActiveTab('visualizacao-resultados')}
                 type="button"
+                style={{ flex: 1 }}
               >
                 Grade por Turnos
               </button>
@@ -810,7 +959,7 @@ export default function Agenda() {
                       onChange={e => setFiltroBusca(e.target.value)}
                     />
                   </Col>
-                  <Col md={3} className="d-flex align-items-center justify-content-end">
+                  <Col md={3} className="d-none d-md-flex align-items-center justify-content-end">
                     <Button
                       variant="link"
                       className="text-muted d-flex align-items-center gap-2 p-0 border-0"
@@ -825,39 +974,52 @@ export default function Agenda() {
               </Card.Body>
             </Card>
 
-            <Row className="align-items-center">
-              <Col md={6}>
-                <Card className="mb-3 mb-custom-mobile-0">
-                  <Card.Body className="py-3 px-3">
-                    <div className="d-flex align-items-center justify-content-between">
-                      <div className="d-flex align-items-center gap-2 px-3">
-                        <Download size={18} className='nothing-in-mobile' />
-                        <h6 className="text-dark fw-medium mb-0">Exportar Agenda</h6>
-                      </div>
-                      <div className="d-flex gap-2">
-                        <Button
-                          variant="outline-secondary"
-                          size="sm"
-                          onClick={downloadPDF}
-                        >
-                          Exportar PDF
-                        </Button>
-                        <Button
-                          variant="outline-success"
-                          size="sm"
-                          onClick={downloadExcel}
-                        >
-                          Exportar Excel
-                        </Button>
-                      </div>
-                    </div>
-                  </Card.Body>
-                </Card>
+            {/* Botão Limpar Filtros - Mobile (fora do Card) */}
+            <div className="d-block d-md-none mb-2">
+              <Button
+                // variant="white"
+                className="w-100 d-flex align-items-center justify-content-center gap-2 p-2"
+                onClick={limparFiltros}
+                style={{ backgroundColor: 'white', color: 'black', textDecoration: 'none', fontWeight: 500, border: '1px solid #e1e7ef' }}
+              >
+                <X size={16} />
+                <span>Limpar filtros</span>
+              </Button>
+            </div>
+
+            <Row className="align-items-center mb-2">
+              <Col md={6} className="mb-2 mb-md-0">
+                <Dropdown className="w-100">
+                  <Dropdown.Toggle
+                    className="w-100 d-flex align-items-center justify-content-center gap-2"
+                    style={{ border: '1px solid #e1e7ef', backgroundColor: 'white', color: 'black', fontWeight: 500 }}
+                    variant="light"
+                  >
+                    <Download size={18} />
+                    Exportar
+                  </Dropdown.Toggle>
+                  <Dropdown.Menu className="w-100">
+                    <Dropdown.Item onClick={downloadPDF}>
+                      Exportar PDF
+                    </Dropdown.Item>
+                    <Dropdown.Item onClick={downloadExcel}>
+                      Exportar Excel
+                    </Dropdown.Item>
+                  </Dropdown.Menu>
+                </Dropdown>
               </Col>
               <Col md={6} className="d-flex justify-content-end">
                 <Button
                   variant='outline-primary'
-                  className="d-flex align-items-center gap-2 mb-2"
+                  className="d-none d-md-flex align-items-center gap-2"
+                  onClick={handleShow}
+                >
+                  <Plus size={18} />
+                  <span>Adicionar Aula</span>
+                </Button>
+                <Button
+                  variant='primary'
+                  className="d-flex d-md-none w-100 align-items-center justify-content-center gap-2"
                   onClick={handleShow}
                 >
                   <Plus size={18} />
@@ -923,6 +1085,18 @@ export default function Agenda() {
                       const professor = professores.find(p => p.id === vinculo?.professorId);
                       const turnoStyle = getShiftColor(turno);
 
+                      // Buscar turma correspondente ao turmaId da aula
+
+                      // Buscar turma pelo id exato, se não encontrar, buscar virtualizada pelo turmaOriginalId
+                      let turma = turmas.find(t => t.id === item.turmaId);
+                      let nomeTurma = turma?.nome;
+                      if (!turma) {
+                        // Procurar turma virtualizada que tenha turmaOriginalId igual ao turmaId da aula
+                        turma = turmas.find(t => t.isVirtualizada && t.turmaOriginalId === item.turmaId);
+                        nomeTurma = turma?.nome;
+                      }
+                      if (!nomeTurma) nomeTurma = '-';
+
                       return (
                         <tr key={item.id} className='align-middle linha-agenda' style={{ textAlign: 'center' }}>
                           <td className='nothing-in-mobile'>
@@ -942,7 +1116,7 @@ export default function Agenda() {
                           <td>{formatarNomeProfessor(professor?.nome)}</td>
                           <td>
                             <span className="badge badge-turma px-2 py-1">
-                              {turmas.find(t => t.id === item.turmaId)?.nome}
+                              {nomeTurma}
                             </span>
                           </td>
                           <td>
@@ -1081,7 +1255,7 @@ export default function Agenda() {
             {/* Filtros da visualização por turnos */}
             <Card className="mb-3">
               <Card.Body>
-                <Row className='mb-3'>
+                <Row>
                   <Col md={6}>
                     <Form.Select value={filtroVisualizacaoTurma} onChange={e => setFiltroVisualizacaoTurma(e.target.value)}>
                       <option value="">Todas as Turmas</option>
@@ -1103,11 +1277,12 @@ export default function Agenda() {
             </Card>
             <Row className='mb-3'>
               <Col md={12}>
-                <div className="custom-tabs-container">
+                <div className="custom-tabs-container w-100">
                   <button
                     className={`custom-tab ${filtroTurnoVisualizacao === 'manha' ? 'active' : ''}`}
                     onClick={() => setFiltroTurnoVisualizacao(filtroTurnoVisualizacao === 'manha' ? '' : 'manha')}
                     type="button"
+                    style={{ flex: 1 }}
                   >
                     <Sun size={18} />
                     Manhã
@@ -1116,6 +1291,7 @@ export default function Agenda() {
                     className={`custom-tab ${filtroTurnoVisualizacao === 'tarde' ? 'active' : ''}`}
                     onClick={() => setFiltroTurnoVisualizacao(filtroTurnoVisualizacao === 'tarde' ? '' : 'tarde')}
                     type="button"
+                    style={{ flex: 1 }}
                   >
                     <Sunset size={18} />
                     Tarde
@@ -1124,6 +1300,7 @@ export default function Agenda() {
                     className={`custom-tab ${filtroTurnoVisualizacao === 'noite' ? 'active' : ''}`}
                     onClick={() => setFiltroTurnoVisualizacao(filtroTurnoVisualizacao === 'noite' ? '' : 'noite')}
                     type="button"
+                    style={{ flex: 1 }}
                   >
                     <Moon size={18} />
                     Noite
@@ -1132,230 +1309,226 @@ export default function Agenda() {
               </Col>
             </Row>
 
-            {/* Card de Exportação - aparece quando um turno está selecionado */}
+            {/* Dropdown de Exportação - aparece quando um turno está selecionado */}
             {filtroTurnoVisualizacao && (
-              <Col md={6}>
-                <Card className="mb-3">
-                  <Card.Body className="py-3 px-3">
-                    <div className="d-flex align-items-center justify-content-between">
-                      <div className="d-flex align-items-center gap-2 px-3">
-                        <Download size={18} />
-                        <h6 className="text-dark fw-medium mb-0">Exportar Grade(s)</h6>
-                      </div>
-                      <div className="d-flex gap-2">
-                        <Button
-                          variant="outline-secondary"
-                          size="sm"
-                          onClick={() => {
-                            // Exportar PDF no mesmo padrão da agenda principal, por turma
-                            const doc = new jsPDF('landscape', 'mm', 'a4');
-                            const pageHeight = doc.internal.pageSize.height;
-                            const pageWidth = doc.internal.pageSize.width;
-                            let currentY = 20;
+              <Col md={6} className="mb-3">
+                <Dropdown className="w-100">
+                  <Dropdown.Toggle
+                    className="w-100 d-flex align-items-center justify-content-center gap-2"
+                    style={{ border: '1px solid #e1e7ef', backgroundColor: 'white', color: 'black', fontWeight: 500 }}
+                    variant="light"
+                  >
+                    <Download size={18} />
+                    Exportar Grade(s)
+                  </Dropdown.Toggle>
+                  <Dropdown.Menu className="w-100">
+                    <Dropdown.Item onClick={() => {
+                      const doc = new jsPDF('landscape', 'mm', 'a4');
+                      const pageHeight = doc.internal.pageSize.height;
+                      const pageWidth = doc.internal.pageSize.width;
+                      let currentY = 20;
 
-                            // Agrupar dados filtrados por turma
-                            const dadosGrade = obterDadosFiltradosParaGrade();
-                            const dadosPorTurma: Record<string, AgendaItem[]> = {};
-                            dadosGrade.forEach(item => {
-                              if (!dadosPorTurma[item.turmaId]) dadosPorTurma[item.turmaId] = [];
-                              dadosPorTurma[item.turmaId].push(item);
-                            });
+                      // Agrupar dados filtrados por turma
+                      const dadosGrade = obterDadosFiltradosParaGrade();
+                      const dadosPorTurma: Record<string, AgendaItem[]> = {};
+                      dadosGrade.forEach(item => {
+                        if (!dadosPorTurma[item.turmaId]) dadosPorTurma[item.turmaId] = [];
+                        dadosPorTurma[item.turmaId].push(item);
+                      });
 
-                            Object.keys(dadosPorTurma).forEach((turmaId, index) => {
-                              const turma = turmas.find(t => t.id === turmaId);
-                              const aulasDaTurma = dadosPorTurma[turmaId];
-                              if (index > 0 && currentY > pageHeight - 100) {
-                                doc.addPage();
-                                currentY = 20;
-                              }
-                              // Título da turma
-                              doc.setFontSize(16);
-                              doc.setFont('helvetica', 'bold');
-                              doc.text(turma?.nome || `Turma ${turmaId}`, pageWidth / 2, currentY, { align: 'center' });
-                              currentY += 15;
+                      Object.keys(dadosPorTurma).forEach((turmaId, index) => {
+                        // Buscar turma considerando turmas virtualizadas
+                        const turma = turmas.find(t => {
+                          if (t.isVirtualizada && t.turmaOriginalId) {
+                            return t.turmaOriginalId === turmaId || t.id === turmaId;
+                          }
+                          return t.id === turmaId;
+                        });
+                        const aulasDaTurma = dadosPorTurma[turmaId];
+                        if (index > 0 && currentY > pageHeight - 100) {
+                          doc.addPage();
+                          currentY = 20;
+                        }
+                        // Título da turma
+                        doc.setFontSize(16);
+                        doc.setFont('helvetica', 'bold');
+                        doc.text(turma?.nome || `Turma ${turmaId}`, pageWidth / 2, currentY, { align: 'center' });
+                        currentY += 15;
 
-                              // Organizar aulas por dia da semana e horário
-                              const gradeHorarios: Record<string, Record<string, { materia: string; professor: string }>> = {};
-                              const horariosUnicos = new Set<string>();
-                              aulasDaTurma.forEach(aula => {
-                                if (!gradeHorarios[aula.diaSemana]) gradeHorarios[aula.diaSemana] = {};
-                                const materia = materias.find(m => m.id === aula.materiaId);
-                                const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
-                                const professor = professores.find(p => p.id === vinculo?.professorId);
-                                gradeHorarios[aula.diaSemana][aula.horario] = {
-                                  materia: materia?.nome || '-',
-                                  professor: professor?.nome || '---'
-                                };
-                                horariosUnicos.add(aula.horario);
-                              });
-                              const horariosOrdenados = Array.from(horariosUnicos).sort();
-                              // Preparar dados para a tabela da grade
-                              const bodyData: string[][] = [];
-                              horariosOrdenados.forEach(horario => {
-                                const linha: string[] = [];
-                                diasSemana.forEach(dia => {
-                                  const aulaInfo = gradeHorarios[dia]?.[horario];
-                                  if (aulaInfo) {
-                                    linha.push(`${aulaInfo.materia} (${aulaInfo.professor})`);
-                                  } else {
-                                    linha.push('------');
-                                  }
-                                });
-                                bodyData.push(linha);
-                              });
-                              // Criar tabela da grade de horários
-                              autoTable(doc, {
-                                startY: currentY,
-                                head: [diasSemana],
-                                body: bodyData,
-                                styles: { fontSize: 8, cellPadding: 2, valign: 'middle', halign: 'center' },
-                                headStyles: { fillColor: [60, 60, 60], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
-                                columnStyles: {
-                                  0: { cellWidth: (pageWidth - 40) / 5 },
-                                  1: { cellWidth: (pageWidth - 40) / 5 },
-                                  2: { cellWidth: (pageWidth - 40) / 5 },
-                                  3: { cellWidth: (pageWidth - 40) / 5 },
-                                  4: { cellWidth: (pageWidth - 40) / 5 }
-                                },
-                                margin: { left: 20, right: 20 },
-                                didDrawPage: () => {
-                                  // currentY is not updated here as data is unused
-                                }
-                              });
-                              currentY += 20;
-                              // Tabelas lado a lado: horários e professores
-                              // Montar dados da tabela de horários
-                              const horariosTable: string[][] = [];
-                              let aulaCount = 1;
-                              horariosOrdenados.forEach((horario) => {
-                                const temIntervalo = aulasDaTurma.some(a => a.horario === horario && (
-                                  (materias.find(m => m.id === a.materiaId)?.nome || '').toLowerCase().includes('intervalo')
-                                ));
-                                if (temIntervalo) {
-                                  horariosTable.push(['Intervalo', horario]);
-                                } else {
-                                  horariosTable.push([`${aulaCount}ª Aula`, horario]);
-                                  aulaCount++;
-                                }
-                              });
-                              // Professores
-                              const professoresDaTurma = new Map<string, string[]>();
-                              aulasDaTurma.forEach(aula => {
-                                const materia = materias.find(m => m.id === aula.materiaId);
-                                const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
-                                const professor = professores.find(p => p.id === vinculo?.professorId);
-                                if (professor && materia) {
-                                  if (!professoresDaTurma.has(professor.nome)) {
-                                    professoresDaTurma.set(professor.nome, []);
-                                  }
-                                  const materiasDoProf = professoresDaTurma.get(professor.nome)!;
-                                  if (!materiasDoProf.includes(materia.nome)) {
-                                    materiasDoProf.push(materia.nome);
-                                  }
-                                }
-                              });
-                              const professoresTable: string[][] = [];
-                              professoresDaTurma.forEach((materias, professor) => {
-                                professoresTable.push([professor, materias.join(', ')]);
-                              });
-                              // Definir largura das tabelas e margens
-                              const horariosTableWidth = 85;
-                              const professoresTableWidth = 130;
-                              const tableTopY = currentY + 4;
-                              const leftMargin = 20;
-                              const rightMargin = pageWidth - professoresTableWidth - 20;
-                              // Título das tabelas
-                              doc.setFontSize(10);
-                              doc.setFont('helvetica', 'bold');
-                              doc.text('Horários das Aulas:', leftMargin, currentY);
-                              doc.text(`Professores do ${turma?.nome || 'Turma'}:`, rightMargin, currentY);
-                              // Renderizar tabelas lado a lado
-                              autoTable(doc, {
-                                startY: tableTopY,
-                                margin: { left: leftMargin },
-                                head: [['Aula', 'Horário']],
-                                body: horariosTable,
-                                styles: { fontSize: 8, cellPadding: 2, valign: 'middle', halign: 'center' },
-                                headStyles: { fillColor: [60, 60, 60], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
-                                columnStyles: {
-                                  0: { cellWidth: 30 },
-                                  1: { cellWidth: 45 }
-                                },
-                                tableWidth: horariosTableWidth,
-                                didDrawPage: () => {}
-                              });
-                              autoTable(doc, {
-                                startY: tableTopY,
-                                margin: { left: rightMargin },
-                                head: [['Professor', 'Disciplinas']],
-                                body: professoresTable,
-                                styles: { fontSize: 8, cellPadding: 2, valign: 'middle', halign: 'center' },
-                                headStyles: { fillColor: [60, 60, 60], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
-                                columnStyles: {
-                                  0: { cellWidth: 50 },
-                                  1: { cellWidth: 80 }
-                                },
-                                tableWidth: professoresTableWidth,
-                                didDrawPage: () => {
-                                  // Atualiza currentY para o final da tabela mais longa
-                                  const horariosRows = horariosTable.length + 1;
-                                  const profRows = professoresTable.length + 1;
-                                  const rowHeight = 8;
-                                  const maxRows = Math.max(horariosRows, profRows);
-                                  currentY = tableTopY + maxRows * rowHeight + 10;
-                                }
-                              });
-                            });
-                            doc.save(`grade-${filtroTurnoVisualizacao}-${new Date().toISOString().split('T')[0]}.pdf`);
-                          }}
-                        >
-                          Exportar PDF
-                        </Button>
-                        <Button
-                          variant="outline-success"
-                          size="sm"
-                          onClick={() => {
-                            // Função para exportar Excel da grade selecionada
-                            const turnoNome = getTurnoNome(filtroTurnoVisualizacao);
+                        // Organizar aulas por dia da semana e horário
+                        const gradeHorarios: Record<string, Record<string, { materia: string; professor: string }>> = {};
+                        const horariosUnicos = new Set<string>();
+                        aulasDaTurma.forEach(aula => {
+                          if (!gradeHorarios[aula.diaSemana]) gradeHorarios[aula.diaSemana] = {};
+                          const materia = materias.find(m => m.id === aula.materiaId);
+                          const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
+                          const professor = professores.find(p => p.id === vinculo?.professorId);
+                          gradeHorarios[aula.diaSemana][aula.horario] = {
+                            materia: materia?.nome || '-',
+                            professor: professor?.nome || '---'
+                          };
+                          horariosUnicos.add(aula.horario);
+                        });
+                        const horariosOrdenados = Array.from(horariosUnicos).sort();
+                        // Preparar dados para a tabela da grade
+                        const bodyData: string[][] = [];
+                        horariosOrdenados.forEach(horario => {
+                          const linha: string[] = [];
+                          diasSemana.forEach(dia => {
+                            const aulaInfo = gradeHorarios[dia]?.[horario];
+                            if (aulaInfo) {
+                              linha.push(`${aulaInfo.materia} (${aulaInfo.professor})`);
+                            } else {
+                              linha.push('------');
+                            }
+                          });
+                          bodyData.push(linha);
+                        });
+                        // Criar tabela da grade de horários
+                        autoTable(doc, {
+                          startY: currentY,
+                          head: [diasSemana],
+                          body: bodyData,
+                          styles: { fontSize: 8, cellPadding: 2, valign: 'middle', halign: 'center' },
+                          headStyles: { fillColor: [60, 60, 60], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
+                          columnStyles: {
+                            0: { cellWidth: (pageWidth - 40) / 5 },
+                            1: { cellWidth: (pageWidth - 40) / 5 },
+                            2: { cellWidth: (pageWidth - 40) / 5 },
+                            3: { cellWidth: (pageWidth - 40) / 5 },
+                            4: { cellWidth: (pageWidth - 40) / 5 }
+                          },
+                          margin: { left: 20, right: 20 }
+                        });
 
-                            // Usar os dados filtrados que consideram todos os filtros aplicados
-                            const dadosGrade = obterDadosFiltradosParaGrade().map(item => {
-                              const turma = turmas.find(t => t.id === item.turmaId);
-                              const materia = materias.find(m => m.id === item.materiaId);
-                              const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
-                              const professor = professores.find(p => p.id === vinculo?.professorId);
+                        // Atualizar currentY após a tabela da grade
+                        currentY = (doc as any).lastAutoTable.finalY + 15;
+                        // Tabelas lado a lado: horários e professores
+                        // Montar dados da tabela de horários
+                        const horariosTable: string[][] = [];
+                        let aulaCount = 1;
+                        horariosOrdenados.forEach((horario) => {
+                          const temIntervalo = aulasDaTurma.some(a => a.horario === horario && (
+                            (materias.find(m => m.id === a.materiaId)?.nome || '').toLowerCase().includes('intervalo')
+                          ));
+                          if (temIntervalo) {
+                            horariosTable.push(['Intervalo', horario]);
+                          } else {
+                            horariosTable.push([`${aulaCount}ª Aula`, horario]);
+                            aulaCount++;
+                          }
+                        });
+                        // Professores
+                        const professoresDaTurma = new Map<string, string[]>();
+                        aulasDaTurma.forEach(aula => {
+                          const materia = materias.find(m => m.id === aula.materiaId);
+                          const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
+                          const professor = professores.find(p => p.id === vinculo?.professorId);
+                          if (professor && materia) {
+                            if (!professoresDaTurma.has(professor.nome)) {
+                              professoresDaTurma.set(professor.nome, []);
+                            }
+                            const materiasDoProf = professoresDaTurma.get(professor.nome)!;
+                            if (!materiasDoProf.includes(materia.nome)) {
+                              materiasDoProf.push(materia.nome);
+                            }
+                          }
+                        });
+                        const professoresTable: string[][] = [];
+                        professoresDaTurma.forEach((materias, professor) => {
+                          professoresTable.push([professor, materias.join(', ')]);
+                        });
+                        // Definir largura das tabelas e margens
+                        const horariosTableWidth = 85;
+                        const professoresTableWidth = 130;
+                        const tableTopY = currentY + 4;
+                        const leftMargin = 20;
+                        const rightMargin = pageWidth - professoresTableWidth - 20;
+                        // Título das tabelas
+                        doc.setFontSize(10);
+                        doc.setFont('helvetica', 'bold');
+                        doc.text('Horários das Aulas:', leftMargin, currentY);
+                        doc.text(`Professores do ${turma?.nome || 'Turma'}:`, rightMargin, currentY);
+                        // Renderizar tabelas lado a lado
+                        autoTable(doc, {
+                          startY: tableTopY,
+                          margin: { left: leftMargin },
+                          head: [['Aula', 'Horário']],
+                          body: horariosTable,
+                          styles: { fontSize: 8, cellPadding: 2, valign: 'middle', halign: 'center' },
+                          headStyles: { fillColor: [60, 60, 60], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
+                          columnStyles: {
+                            0: { cellWidth: 30 },
+                            1: { cellWidth: 45 }
+                          },
+                          tableWidth: horariosTableWidth,
+                          didDrawPage: () => { }
+                        });
+                        autoTable(doc, {
+                          startY: tableTopY,
+                          margin: { left: rightMargin },
+                          head: [['Professor', 'Disciplinas']],
+                          body: professoresTable,
+                          styles: { fontSize: 8, cellPadding: 2, valign: 'middle', halign: 'center' },
+                          headStyles: { fillColor: [60, 60, 60], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
+                          columnStyles: {
+                            0: { cellWidth: 50 },
+                            1: { cellWidth: 80 }
+                          },
+                          tableWidth: professoresTableWidth,
+                          didDrawPage: () => {
+                            // Atualiza currentY para o final da tabela mais longa
+                            const horariosRows = horariosTable.length + 1;
+                            const profRows = professoresTable.length + 1;
+                            const rowHeight = 8;
+                            const maxRows = Math.max(horariosRows, profRows);
+                            currentY = tableTopY + maxRows * rowHeight + 10;
+                          }
+                        });
+                      });
+                      doc.save(`grade-${filtroTurnoVisualizacao}-${new Date().toISOString().split('T')[0]}.pdf`);
+                    }}>
+                      Exportar PDF
+                    </Dropdown.Item>
+                    <Dropdown.Item onClick={() => {
+                      // Função para exportar Excel da grade selecionada
+                      const turnoNome = getTurnoNome(filtroTurnoVisualizacao);
 
-                              return {
-                                'Turma': turma?.nome || '-',
-                                'Dia da Semana': item.diaSemana,
-                                'Horário': item.horario,
-                                'Matéria': materia?.nome || '-',
-                                'Professor': professor?.nome || '---'
-                              };
-                            });
+                      // Usar os dados filtrados que consideram todos os filtros aplicados
+                      const dadosGrade = obterDadosFiltradosParaGrade().map(item => {
+                        const turma = turmas.find(t => t.id === item.turmaId);
+                        const materia = materias.find(m => m.id === item.materiaId);
+                        const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
+                        const professor = professores.find(p => p.id === vinculo?.professorId);
 
-                            const worksheet = XLSX.utils.json_to_sheet(dadosGrade);
+                        return {
+                          'Turma': turma?.nome || '-',
+                          'Dia da Semana': item.diaSemana,
+                          'Horário': item.horario,
+                          'Matéria': materia?.nome || '-',
+                          'Professor': professor?.nome || '---'
+                        };
+                      });
 
-                            worksheet['!cols'] = [
-                              { wch: 20 }, // Turma
-                              { wch: 20 }, // Dia da Semana
-                              { wch: 18 }, // Horário
-                              { wch: 25 }, // Matéria
-                              { wch: 25 }  // Professor
-                            ];
+                      const worksheet = XLSX.utils.json_to_sheet(dadosGrade);
 
-                            const workbook = XLSX.utils.book_new();
-                            XLSX.utils.book_append_sheet(workbook, worksheet, `Grade ${turnoNome}`);
+                      worksheet['!cols'] = [
+                        { wch: 20 }, // Turma
+                        { wch: 20 }, // Dia da Semana
+                        { wch: 18 }, // Horário
+                        { wch: 25 }, // Matéria
+                        { wch: 25 }  // Professor
+                      ];
 
-                            XLSX.writeFile(workbook, `grade-${filtroTurnoVisualizacao}-${new Date().toISOString().split('T')[0]}.xlsx`);
-                          }}
-                        >
-                          Exportar Excel
-                        </Button>
-                      </div>
-                    </div>
-                  </Card.Body>
-                </Card>
+                      const workbook = XLSX.utils.book_new();
+                      XLSX.utils.book_append_sheet(workbook, worksheet, `Grade ${turnoNome}`);
+
+                      XLSX.writeFile(workbook, `grade-${filtroTurnoVisualizacao}-${new Date().toISOString().split('T')[0]}.xlsx`);
+                    }}>
+                      Exportar Excel
+                    </Dropdown.Item>
+                  </Dropdown.Menu>
+                </Dropdown>
               </Col>
             )}
 

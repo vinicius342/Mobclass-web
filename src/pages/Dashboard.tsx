@@ -7,9 +7,10 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   LineChart, Line, Cell
 } from 'recharts';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import { FaUserGraduate, FaChalkboardTeacher, FaUsers, FaClipboardList } from 'react-icons/fa';
 import { BarChart3, Filter } from 'lucide-react';
 
@@ -29,6 +30,7 @@ interface NotaMediaPorTurma {
 }
 
 export default function Dashboard(): JSX.Element {
+  const { anoLetivo } = useAnoLetivoAtual();
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
 
@@ -44,7 +46,8 @@ export default function Dashboard(): JSX.Element {
   const [tipoPeriodo, setTipoPeriodo] = useState<string>("");
   const [dataPersonalizada, setDataPersonalizada] = useState<string>("");
   const [mesSelecionado, setMesSelecionado] = useState<string>("");
-  const [loading, setLoading] = useState(true);
+  const [loadingCards, setLoadingCards] = useState(true);
+  const [loadingGraficos, setLoadingGraficos] = useState(false);
   const [grupoTurmasAutoSelecionado, setGrupoTurmasAutoSelecionado] = useState<boolean>(false);
 
   // Divide as turmas em grupos de 5 - agora memoizado para evitar loop
@@ -56,88 +59,121 @@ export default function Dashboard(): JSX.Element {
     return grupos;
   }, [turmasLista]);
 
+  // Etapa 1: Carrega apenas cards principais (rápido)
   useEffect(() => {
-    if (!isAdmin) return setLoading(false);
+    if (!isAdmin) {
+      setLoadingCards(false);
+      return;
+    }
 
-    async function fetchData() {
+    async function fetchCards() {
       try {
-        const [alunosSnap, profSnap, turmasSnap, tarefasSnap, freqSnap, notasSnap, materiasSnap] = await Promise.all([
+        const [alunosSnap, profSnap, turmasSnap, tarefasSnap] = await Promise.all([
           getDocs(collection(db, 'alunos')),
           getDocs(collection(db, 'professores')),
-          getDocs(collection(db, 'turmas')),
-          getDocs(collection(db, 'tarefas')),
+          getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString()))),
+          getDocs(query(collection(db, 'tarefas'), where('anoLetivo', '==', anoLetivo.toString()))),
+        ]);
+
+        // Processa em setTimeout para não bloquear
+        setTimeout(() => {
+          const turmas = turmasSnap.docs
+            .map(doc => ({ id: doc.id, nome: (doc.data() as any).nome }))
+            .sort((a, b) => a.nome.localeCompare(b.nome));
+          setTurmasLista(turmas);
+
+          setCounts({
+            alunos: alunosSnap.size,
+            professores: profSnap.size,
+            turmas: turmas.length,
+            atividades: tarefasSnap.docs.filter(doc => doc.data()?.anoLetivo?.toString() === anoLetivo.toString()).length,
+          });
+
+          setLoadingCards(false);
+          // Inicia carregamento dos gráficos após 150ms para dar tempo da UI responder
+          setTimeout(() => setLoadingGraficos(true), 150);
+        }, 0);
+      } catch (error) {
+        console.error('Erro ao carregar cards:', error);
+        setLoadingCards(false);
+      }
+    }
+
+    fetchCards();
+  }, [isAdmin, anoLetivo]);
+
+  // Etapa 2: Carrega gráficos de forma assíncrona (não bloqueia UI)
+  useEffect(() => {
+    if (!isAdmin || !loadingGraficos || turmasLista.length === 0) return;
+
+    async function fetchGraficos() {
+      try {
+        const [freqSnap, notasSnap, materiasSnap] = await Promise.all([
           getDocs(collection(db, 'frequencias')),
           getDocs(collection(db, 'notas')),
           getDocs(collection(db, 'materias')),
         ]);
 
-        const turmas = turmasSnap.docs
-          .map(doc => ({ id: doc.id, nome: (doc.data() as any).nome }))
-          .sort((a, b) => a.nome.localeCompare(b.nome));
-        setTurmasLista(turmas);
+        // Processa matérias primeiro
+        setTimeout(() => {
+          const materias = materiasSnap.docs
+            .map(doc => ({ id: doc.id, nome: (doc.data() as any).nome }))
+            .sort((a, b) => a.nome.localeCompare(b.nome));
+          setMateriasLista(materias);
 
-        const materias = materiasSnap.docs
-          .map(doc => ({ id: doc.id, nome: (doc.data() as any).nome }))
-          .sort((a, b) => a.nome.localeCompare(b.nome));
-        setMateriasLista(materias);
+          // Processa frequências em outro chunk
+          setTimeout(() => {
+            const freqDocs = freqSnap.docs.map(d => d.data()).filter((f: any) => turmasLista.some(t => t.id === f.turmaId));
+            setFreqDataOriginal(freqDocs);
 
-        setCounts({
-          alunos: alunosSnap.size,
-          professores: profSnap.size,
-          turmas: turmas.length,
-          atividades: tarefasSnap.size,
-        });
+            const freqResults: FreqPorTurma[] = turmasLista.map(turma => {
+              const turmaFreq = freqDocs.filter((f: any) => f.turmaId === turma.id);
+              const total = turmaFreq.length;
+              const presentes = turmaFreq.filter((f: any) => f.presenca).length;
+              const taxa = total ? (presentes / total) * 100 : 0;
+              return { turma: turma.nome, taxa: parseFloat(taxa.toFixed(2)) };
+            });
+            setFreqData(freqResults);
 
-        const freqDocs = freqSnap.docs.map(d => d.data());
-        setFreqDataOriginal(freqDocs);
+            // Processa notas em outro chunk
+            setTimeout(() => {
+              const notaDocs = notasSnap.docs.map(d => d.data()).filter((n: any) => turmasLista.some(t => t.id === n.turmaId));
+              setNotaDataOriginal(notaDocs);
 
-        const freqResults: FreqPorTurma[] = turmas.map(turma => {
-          const turmaFreq = freqDocs.filter((f: any) => f.turmaId === turma.id);
-          const total = turmaFreq.length;
-          const presentes = turmaFreq.filter((f: any) => f.presenca).length;
-          const taxa = total ? (presentes / total) * 100 : 0;
-          return { turma: turma.nome, taxa: parseFloat(taxa.toFixed(2)) };
-        });
-        setFreqData(freqResults);
+              const notaResults: NotaMediaPorTurma[] = turmasLista.map(turma => {
+                let notasTurma = notaDocs.filter(n => n.turmaId === turma.id);
 
-        const notaDocs = notasSnap.docs.map(d => d.data());
+                if (disciplinaSelecionada !== 'todas') {
+                  notasTurma = notasTurma.filter(n => n.materiaId === disciplinaSelecionada);
+                }
 
-        // Salvar dados originais das notas para filtragem posterior
-        setNotaDataOriginal(notaDocs);
+                const somaMedias = notasTurma.reduce((acc, cur) => {
+                  const parcial = typeof cur.notaParcial === 'number' ? cur.notaParcial : 0;
+                  const global = typeof cur.notaGlobal === 'number' ? cur.notaGlobal : 0;
+                  const participacao = typeof cur.notaParticipacao === 'number' ? cur.notaParticipacao : 0;
+                  const mediaFinal = ((parcial + global) / 2) + participacao;
+                  return acc + mediaFinal;
+                }, 0);
+                const media = notasTurma.length ? somaMedias / notasTurma.length : 0;
+                return {
+                  turma: turma.nome,
+                  media: parseFloat(media.toFixed(2))
+                };
+              });
 
-        // Calcular nota média por turma
-        const notaResults: NotaMediaPorTurma[] = turmas.map(turma => {
-          let notasTurma = notaDocs.filter(n => n.turmaId === turma.id);
-
-          // Filtrar por disciplina se houver uma selecionada
-          if (disciplinaSelecionada !== 'todas') {
-            notasTurma = notasTurma.filter(n => n.materiaId === disciplinaSelecionada);
-          }
-
-          const somaMedias = notasTurma.reduce((acc, cur) => {
-            const parcial = typeof cur.notaParcial === 'number' ? cur.notaParcial : 0;
-            const global = typeof cur.notaGlobal === 'number' ? cur.notaGlobal : 0;
-            const participacao = typeof cur.notaParticipacao === 'number' ? cur.notaParticipacao : 0;
-            const mediaFinal = ((parcial + global) / 2) + participacao;
-            return acc + mediaFinal;
+              setNotaData(notaResults);
+              setLoadingGraficos(false);
+            }, 0);
           }, 0);
-          const media = notasTurma.length ? somaMedias / notasTurma.length : 0;
-          return {
-            turma: turma.nome,
-            media: parseFloat(media.toFixed(2))
-          };
-        });
-
-        setNotaData(notaResults);
+        }, 0);
       } catch (error) {
-        console.error('Erro ao carregar dados:', error);
-      } finally {
-        setLoading(false);
+        console.error('Erro ao carregar gráficos:', error);
+        setLoadingGraficos(false);
       }
     }
 
-    fetchData();
-  }, [isAdmin]);
+    fetchGraficos();
+  }, [isAdmin, loadingGraficos, turmasLista, disciplinaSelecionada]);
 
   // Seleciona automaticamente o grupo de turmas com melhor taxa de frequência média
   useEffect(() => {
@@ -235,16 +271,6 @@ export default function Dashboard(): JSX.Element {
     setNotaData(notaResults);
   }, [grupoTurmasSelecionado, disciplinaSelecionada, notaDataOriginal, turmasLista, gruposTurmas, isAdmin]);
 
-  if (loading) {
-    return (
-      <AppLayout>
-        <Container className="d-flex justify-content-center align-items-center vh-75">
-          <Spinner animation="border" />
-        </Container>
-      </AppLayout>
-    );
-  }
-
   const dadosFreqFiltrados = grupoTurmasSelecionado === -1
     ? freqData
     : freqData.filter(f => gruposTurmas[grupoTurmasSelecionado]?.some(t => t.nome === f.turma));
@@ -280,7 +306,11 @@ export default function Dashboard(): JSX.Element {
           </div>
         </div>
 
-        {isAdmin ? (
+        {loadingCards ? (
+          <Container className="d-flex justify-content-center align-items-center py-5">
+            <Spinner animation="border" />
+          </Container>
+        ) : isAdmin ? (
           <>
             <Row xs={1} sm={2} md={4} className="g-3">
               <DashboardCard icon={<FaUserGraduate size={30} color="#22c55e" />} title="Alunos" value={counts?.alunos} />
@@ -289,6 +319,12 @@ export default function Dashboard(): JSX.Element {
               <DashboardCard icon={<FaClipboardList size={30} color="#ff9800" />} title="Atividades" value={counts?.atividades} />
             </Row>
 
+            {loadingGraficos ? (
+              <Container className="d-flex justify-content-center align-items-center py-5">
+                <Spinner animation="border" />
+              </Container>
+            ) : (
+              <>
             <Card className="shadow-sm mt-3 mb-3" style={{ boxShadow: '0 0 0 2px #2563eb33' }}>
               <Card.Body>
                 <h5 className="px-1 mb-2 d-flex align-items-center gap-2" style={{ fontWeight: 500 }}>
@@ -444,6 +480,8 @@ export default function Dashboard(): JSX.Element {
                 </Card>
               </Col>
             </Row>
+              </>
+            )}
           </>
         ) : (
           <p className="mt-4">Você está logado como <strong>{userData?.tipo}</strong>.</p>

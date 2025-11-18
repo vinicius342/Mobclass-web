@@ -114,7 +114,14 @@ export default function AppNavbar() {
       </div>
 
       {/* Offcanvas Mobile Menu */}
-      <Offcanvas show={showMenu} onHide={handleClose} backdrop scroll className="bg-primary text-white">
+      <Offcanvas 
+        show={showMenu} 
+        onHide={handleClose} 
+        backdrop={true}
+        keyboard={true}
+        className="bg-primary text-white"
+        style={{ willChange: 'transform' }}
+      >
         <Offcanvas.Header closeButton closeVariant="white">
           <Offcanvas.Title className="d-flex align-items-center gap-2">
             <img src={logo} alt="Logo" height={50} /> MobClassApp

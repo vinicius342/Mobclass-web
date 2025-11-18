@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnoLetivo } from '../contexts/AnoLetivoContext';
 import Paginacao from '../components/Paginacao';
 import { Save, Check, Undo, BarChart, Award, Activity, TrendingDown, ArrowDownUp, BookOpen, Download } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -30,8 +31,13 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 interface Turma { id: string; nome: string; }
-interface Aluno { uid: string; nome: string; turmaId: string; }
-interface Materia { id: string; nome: string; turmaId: string; }
+interface Aluno {
+  uid: string;
+  nome: string;
+  turmaId: string;
+  historicoTurmas?: { [anoLetivo: string]: string }; // Histórico de turmas por ano letivo
+}
+interface Materia { id: string; nome: string; turmaId?: string; }
 interface Nota {
   id: string; turmaId: string; materiaId: string; bimestre: string;
   notaParcial: number; notaGlobal: number; notaParticipacao: number;
@@ -43,6 +49,7 @@ export default function Notas(): JSX.Element {
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
   const userId = userData?.uid;
+  const { anoLetivo } = useAnoLetivo();
 
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
@@ -65,6 +72,19 @@ export default function Notas(): JSX.Element {
   const [historicoAluno, setHistoricoAluno] = useState<{ nome: string, notas: Nota[] } | null>(null);
   const [ordenacao, setOrdenacao] = useState<'nome' | 'parcial' | 'global' | 'participacao' | 'recuperacao' | 'media' | 'data'>('nome');
 
+  // Função auxiliar para obter a turma do aluno no ano letivo específico
+  const getTurmaAlunoNoAno = (aluno: Aluno, ano: number): string => {
+    const anoStr = ano.toString();
+
+    // Verificar se existe histórico de turmas
+    if (aluno.historicoTurmas && aluno.historicoTurmas[anoStr]) {
+      return aluno.historicoTurmas[anoStr];
+    }
+
+    // Fallback para turmaId atual (compatibilidade com dados antigos)
+    return aluno.turmaId;
+  };
+
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
@@ -75,26 +95,72 @@ export default function Notas(): JSX.Element {
 
       if (isAdmin) {
         const turmasSnap = await getDocs(collection(db, 'turmas'));
-        turmaDocs = turmasSnap.docs;
+        // Filtra turmas pelo ano letivo selecionado (convertendo para número)
+        turmaDocs = turmasSnap.docs.filter(doc => Number(doc.data()?.anoLetivo) === anoLetivo);
 
-        const snap = await getDocs(collection(db, 'materias'));
-        materiasList = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-        materiaIds = materiasList.map(m => m.id);
+        // Busca os vínculos de professores_materias para as turmas do ano letivo
+        const turmaIdsAnoLetivo = turmaDocs.map(d => d.id);
+        const vinculosSnap = await getDocs(collection(db, 'professores_materias'));
+        const vinculosFiltrados = vinculosSnap.docs
+          .map(d => ({ id: d.id, ...d.data() as any }))
+          .filter(v => turmaIdsAnoLetivo.includes(v.turmaId));
+
+        // Busca as matérias e adiciona o turmaId vindo do vínculo
+        const materiasSnap = await getDocs(collection(db, 'materias'));
+        const materiasMap = new Map(materiasSnap.docs.map(d => [d.id, { id: d.id, ...d.data() as any }]));
+
+        // Cria lista de matérias com turmaId baseado nos vínculos
+        const materiasComTurma = new Map<string, Materia>();
+        vinculosFiltrados.forEach(vinculo => {
+          const materia = materiasMap.get(vinculo.materiaId);
+          if (materia) {
+            const key = `${materia.id}_${vinculo.turmaId}`;
+            materiasComTurma.set(key, {
+              id: materia.id,
+              nome: materia.nome,
+              turmaId: vinculo.turmaId
+            });
+          }
+        });
+
+        materiasList = Array.from(materiasComTurma.values());
+        materiaIds = Array.from(new Set(materiasList.map(m => m.id)));
       } else {
         const vincSnap = await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userId)));
-        const vincList = vincSnap.docs.map(d => d.data());
+        const vincList = vincSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
 
         const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-        turmaDocs = await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))));
+        // Busca as turmas e filtra pelo ano letivo (convertendo para número)
+        turmaDocs = (await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))))).filter(doc => doc.exists() && Number(doc.data()?.anoLetivo) === anoLetivo);
 
-        materiaIds = [...new Set(vincList.map(v => v.materiaId))];
+        // Filtra vínculos para apenas turmas do ano letivo selecionado
+        const turmaIdsAnoLetivo = turmaDocs.map(d => d.id);
+        const vinculosFiltrados = vincList.filter(v => turmaIdsAnoLetivo.includes(v.turmaId));
+
+        // Busca as matérias e adiciona o turmaId vindo do vínculo
+        materiaIds = [...new Set(vinculosFiltrados.map(v => v.materiaId))];
         const materiasSnap = await Promise.all(
           materiaIds.map(async id => {
             const m = await getDoc(doc(db, 'materias', id));
             return { id: m.id, ...(m.data() as any) };
           })
         );
-        materiasList = materiasSnap;
+
+        // Cria lista de matérias com turmaId baseado nos vínculos
+        const materiasComTurma = new Map<string, Materia>();
+        vinculosFiltrados.forEach(vinculo => {
+          const materia = materiasSnap.find(m => m.id === vinculo.materiaId);
+          if (materia) {
+            const key = `${materia.id}_${vinculo.turmaId}`;
+            materiasComTurma.set(key, {
+              id: materia.id,
+              nome: materia.nome,
+              turmaId: vinculo.turmaId
+            });
+          }
+        });
+
+        materiasList = Array.from(materiasComTurma.values());
       }
 
       const alunosSnap = await getDocs(collection(db, 'alunos'));
@@ -134,7 +200,14 @@ export default function Notas(): JSX.Element {
       setLoading(false);
     }
     fetchData();
-  }, [userData]);
+  }, [userData, anoLetivo]);
+
+  // Limpa os filtros quando o ano letivo muda
+  useEffect(() => {
+    setFiltroTurma('');
+    setFiltroMateria('');
+    setFiltroBimestre('');
+  }, [anoLetivo]);
 
   useEffect(() => {
     if (!filtroTurma || !filtroMateria || !filtroBimestre) {
@@ -142,7 +215,7 @@ export default function Notas(): JSX.Element {
       return;
     }
     const alunosFiltrados = alunos
-      .filter(a => a.turmaId === filtroTurma && (a as any).status !== 'Inativo') // Excluir usuários inativos
+      .filter(a => getTurmaAlunoNoAno(a, anoLetivo) === filtroTurma && (a as any).status !== 'Inativo') // Filtrar por histórico de turmas e excluir inativos
       .sort((a, b) => a.nome.localeCompare(b.nome));
     const newEdit: Record<string, any> = {};
     alunosFiltrados.forEach(a => {
@@ -292,7 +365,7 @@ export default function Notas(): JSX.Element {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="container px-0">
+        <div className="container px-0 d-none d-md-block">
           <div className="d-flex py-3">
             <div className="custom-tabs-container">
               <button
@@ -313,6 +386,30 @@ export default function Notas(): JSX.Element {
           </div>
         </div>
 
+        {/* Mobile navigation Tabs */}
+        <div className="container px-0 d-block d-md-none">
+          <div className="d-flex py-3">
+            <div className="w-100 custom-tabs-container">
+              <button
+                className={`custom-tab ${activeTab === 'lancamento-notas' ? 'active' : ''}`}
+                onClick={() => setActiveTab('lancamento-notas')}
+                type="button"
+                style={{ flex: 1 }}
+              >
+                Lanç. de Notas
+              </button>
+              <button
+                className={`custom-tab ${activeTab === 'visualizacao-resultados' ? 'active' : ''}`}
+                onClick={() => setActiveTab('visualizacao-resultados')}
+                type="button"
+                style={{ flex: 1 }}
+              >
+                Vis. de Resultados
+              </button>
+            </div>
+          </div>
+        </div>
+
         {activeTab === 'lancamento-notas' && (
           <>
             <Card className='shadow-sm p-3'>
@@ -320,13 +417,26 @@ export default function Notas(): JSX.Element {
                 <Col md={3}>
                   <Form.Select value={filtroTurma} onChange={e => setFiltroTurma(e.target.value)}>
                     <option value="">Selecione a Turma</option>
-                    {turmas.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+                    {turmas.map(t => (
+                      <option key={t.id} value={t.id}>{t.nome}</option>
+                    ))}
                   </Form.Select>
                 </Col>
                 <Col md={3}>
                   <Form.Select value={filtroMateria} onChange={e => setFiltroMateria(e.target.value)}>
                     <option value="">Selecione a Matéria</option>
-                    {materias.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                    {materias
+                      .filter(m => !filtroTurma || m.turmaId === filtroTurma)
+                      .reduce((unique, m) => {
+                        // Remove duplicatas: apenas uma matéria por ID
+                        if (!unique.find(item => item.id === m.id)) {
+                          unique.push(m);
+                        }
+                        return unique;
+                      }, [] as Materia[])
+                      .map(m => (
+                        <option key={m.id} value={m.id}>{m.nome}</option>
+                      ))}
                   </Form.Select>
                 </Col>
                 <Col md={3}>
@@ -534,8 +644,8 @@ export default function Notas(): JSX.Element {
 
         {activeTab === 'visualizacao-resultados' && (
           <>
-            <Card className='shadow-sm p-3 gap-2 mb-3'>
-              <Row>
+            <Card className='shadow-sm px-3 pt-3 gap-2 mb-3'>
+              <Row className="mb-3">
                 <Col md={3}>
                   <Form.Select value={filtroTurma} onChange={e => setFiltroTurma(e.target.value)}>
                     <option value="">Selecione a Turma</option>
@@ -545,7 +655,18 @@ export default function Notas(): JSX.Element {
                 <Col md={3}>
                   <Form.Select value={filtroMateria} onChange={e => setFiltroMateria(e.target.value)}>
                     <option value="">Selecione a Matéria</option>
-                    {materias.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                    {materias
+                      .filter(m => !filtroTurma || m.turmaId === filtroTurma)
+                      .reduce((unique, m) => {
+                        // Remove duplicatas: apenas uma matéria por ID
+                        if (!unique.find(item => item.id === m.id)) {
+                          unique.push(m);
+                        }
+                        return unique;
+                      }, [] as Materia[])
+                      .map(m => (
+                        <option key={m.id} value={m.id}>{m.nome}</option>
+                      ))}
                   </Form.Select>
                 </Col>
                 <Col md={3}>
@@ -557,29 +678,45 @@ export default function Notas(): JSX.Element {
                     <option value="4º">4º</option>
                   </Form.Select>
                 </Col>
-                <Col md={3}>
-                  <InputGroup>
-                    <FormControl placeholder="Buscar aluno" value={busca} onChange={e => setBusca(e.target.value)} />
-                  </InputGroup>
+                {/* Botão Desktop */}
+                <Col md={3} className="d-none d-md-block">
+                  <Button
+                    onClick={() => {
+                      setFiltroTurma('');
+                      setFiltroMateria('');
+                      setFiltroBimestre('');
+                      setBusca('');
+                    }}
+                    className="d-flex align-items-center gap-2 text-secondary bg-transparent border-0 px-3 py-2"
+                    style={{ minWidth: '180px' }}
+                  >
+                    <Undo size={20} />
+                    Limpar Filtros
+                  </Button>
                 </Col>
               </Row>
-              {/* Botão fora da row, alinhado à direita e mais largo */}
-              <div className="d-flex justify-content-end">
-                <Button
-                  onClick={() => {
-                    setFiltroTurma('');
-                    setFiltroMateria('');
-                    setFiltroBimestre('');
-                    setBusca('');
-                  }}
-                  className="d-flex align-items-center gap-2 text-secondary bg-transparent border-0 px-3 py-2"
-                  style={{ minWidth: '180px' }}
-                >
-                  <Undo size={20} />
-                  Limpar Filtros
-                </Button>
-              </div>
             </Card>
+
+            {/* Botão Mobile */}
+            <div className="w-100 my-2 d-block d-md-none">
+              <Row>
+                <Col>
+                  <Button
+                    onClick={() => {
+                      setFiltroTurma('');
+                      setFiltroMateria('');
+                      setFiltroBimestre('');
+                      setBusca('');
+                    }}
+                    className="w-100 d-flex align-items-center justify-content-center gap-2 bg-white"
+                    style={{ color: 'black', border: '1px solid #e1e7ef' }}
+                  >
+                    <Undo size={20} />
+                    Limpar Filtros
+                  </Button>
+                </Col>
+              </Row>
+            </div>
 
             {/* Visualização dos resultados filtrados por turma, matéria e bimestre */}
             {(() => {
@@ -600,7 +737,7 @@ export default function Notas(): JSX.Element {
                   // Verificar se o aluno está ativo
                   const aluno = alunos.find(a => a.uid === n.alunoUid);
                   const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
-                  
+
                   return alunoAtivo &&
                     (!filtroTurma || n.turmaId === filtroTurma) &&
                     (!filtroMateria || n.materiaId === filtroMateria) &&
@@ -747,8 +884,9 @@ export default function Notas(): JSX.Element {
 
               return (
                 <>
-                  <Row className="mb-3 notas-stats-mobile">
-                    <Col xs={6} md={3}>
+                  {/* Desktop: Row layout */}
+                  <Row className="mb-3 d-none d-md-flex">
+                    <Col md={3}>
                       <Card className="text-center shadow-sm mb-0">
                         <Card.Body>
                           <Card.Title className="fw-bold text-muted fs-6">Média Geral</Card.Title>
@@ -760,7 +898,7 @@ export default function Notas(): JSX.Element {
                       </Card>
                     </Col>
 
-                    <Col xs={6} md={3}>
+                    <Col md={3}>
                       <Card className="text-center shadow-sm mb-0">
                         <Card.Body>
                           <Card.Title className="fw-bold text-muted fs-6">Excelentes (≥ 9)</Card.Title>
@@ -772,7 +910,7 @@ export default function Notas(): JSX.Element {
                       </Card>
                     </Col>
 
-                    <Col xs={6} md={3}>
+                    <Col md={3}>
                       <Card className="text-center shadow-sm mb-0">
                         <Card.Body>
                           <Card.Title className="fw-bold text-muted fs-6">Regulares (6 a 8.9)</Card.Title>
@@ -784,7 +922,7 @@ export default function Notas(): JSX.Element {
                       </Card>
                     </Col>
 
-                    <Col xs={6} md={3}>
+                    <Col md={3}>
                       <Card className="text-center shadow-sm mb-0">
                         <Card.Body>
                           <Card.Title className="fw-bold text-muted fs-6">Baixas (&lt; 6)</Card.Title>
@@ -797,9 +935,52 @@ export default function Notas(): JSX.Element {
                     </Col>
                   </Row>
 
+                  {/* Mobile: Block layout with full width */}
+                  <div className="d-block d-md-none mb-3">
+                    <Card className="text-center shadow-sm mb-2 w-100">
+                      <Card.Body>
+                        <Card.Title className="fw-bold text-muted fs-6">Média Geral</Card.Title>
+                        <h4 className="fw-bold text-primary d-flex justify-content-center align-items-center gap-2">
+                          <BarChart size={20} className="text-primary" />
+                          {mediaTurma}
+                        </h4>
+                      </Card.Body>
+                    </Card>
+
+                    <Card className="text-center shadow-sm mb-2 w-100">
+                      <Card.Body>
+                        <Card.Title className="fw-bold text-muted fs-6">Excelentes (≥ 9)</Card.Title>
+                        <h4 className="fw-bold text-success d-flex justify-content-center align-items-center gap-2">
+                          <Award size={20} className="text-success" />
+                          {estatisticas.excelentes}
+                        </h4>
+                      </Card.Body>
+                    </Card>
+
+                    <Card className="text-center shadow-sm mb-2 w-100">
+                      <Card.Body>
+                        <Card.Title className="fw-bold text-muted fs-6">Regulares (6 a 8.9)</Card.Title>
+                        <h4 className="fw-bold text-warning d-flex justify-content-center align-items-center gap-2">
+                          <Activity size={20} className="text-warning" />
+                          {estatisticas.regulares}
+                        </h4>
+                      </Card.Body>
+                    </Card>
+
+                    <Card className="text-center shadow-sm mb-2 w-100">
+                      <Card.Body>
+                        <Card.Title className="fw-bold text-muted fs-6">Baixas (&lt; 6)</Card.Title>
+                        <h4 className="fw-bold text-danger d-flex justify-content-center align-items-center gap-2">
+                          <TrendingDown size={20} className="text-danger" />
+                          {estatisticas.baixas}
+                        </h4>
+                      </Card.Body>
+                    </Card>
+                  </div>
+
                   {/* Cards com gráficos */}
                   <Row className="notas-charts-mobile">
-                    <Col md={6}>
+                    <Col md={6} className='mb-0'>
                       <Card className="shadow-md mb-3">
                         <Card.Body>
                           <h3 className="fs-5 fw-bold text-dark mb-0 mb-1">Distribuição das Notas</h3>
@@ -831,7 +1012,7 @@ export default function Notas(): JSX.Element {
                     </Col>
 
                     <Col md={6}>
-                      <Card className="shadow-md mb-3">
+                      <Card className="shadow-md mb-0">
                         <Card.Body>
                           <h3 className="fs-5 fw-bold text-dark mb-0 mb-1">Top 5 Alunos - Média Final</h3>
                           <ResponsiveContainer width="100%" height={250}>
@@ -869,36 +1050,40 @@ export default function Notas(): JSX.Element {
                   </Row>
 
                   {/* Card de Exportação */}
-                  <Row>
+                  <Row className="mb-3">
                     <Col md={6}>
-                      <Card className='mb-3'>
-                        <Card.Body className="py-3 px-3">
-                          <div className="d-flex align-items-center justify-content-between">
-                            <div className="d-flex align-items-center gap-2 px-3">
-                              <Download size={18} className='nothing-in-mobile' />
-                              <h6 className="text-dark fw-medium mb-0">Exportar Notas</h6>
-                            </div>
-                            <div className="d-flex gap-2">
-                              <Button
-                                variant="outline-secondary"
-                                size="sm"
-                                onClick={downloadPDF}
-                              >
-                                Exportar PDF
-                              </Button>
-                              <Button
-                                variant="outline-success"
-                                size="sm"
-                                onClick={downloadExcel}
-                              >
-                                Exportar Excel
-                              </Button>
-                            </div>
-                          </div>
-                        </Card.Body>
-                      </Card>
+                      <Dropdown className="w-100">
+                        <Dropdown.Toggle
+                          className="w-100 d-flex align-items-center justify-content-center gap-2"
+                          style={{ border: '1px solid #e1e7ef', backgroundColor: 'white', color: 'black', fontWeight: 500 }}
+                          variant="light"
+                        >
+                          <Download size={18} />
+                          Exportar Notas
+                        </Dropdown.Toggle>
+                        <Dropdown.Menu className="w-100">
+                          <Dropdown.Item onClick={downloadPDF}>
+                            Exportar PDF
+                          </Dropdown.Item>
+                          <Dropdown.Item onClick={downloadExcel}>
+                            Exportar Excel
+                          </Dropdown.Item>
+                        </Dropdown.Menu>
+                      </Dropdown>
                     </Col>
                   </Row>
+
+                  <Card className='shadow-sm mb-3 mt-2'>
+                    <Card.Body>
+                      <FormControl
+                        placeholder="Buscar aluno..."
+                        value={busca}
+                        onChange={e => setBusca(e.target.value)}
+                        type="search"
+                        autoComplete="off"
+                      />
+                    </Card.Body>
+                  </Card>
 
                   <Card className="shadow-sm p-3">
                     <div className="d-flex align-items-center justify-content-between mb-3 px-3">
@@ -1007,7 +1192,7 @@ export default function Notas(): JSX.Element {
                                           // Verificar se o aluno está ativo
                                           const aluno = alunos.find(a => a.uid === n.alunoUid);
                                           const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
-                                          
+
                                           return alunoAtivo &&
                                             n.alunoUid === nota.alunoUid &&
                                             n.materiaId === filtroMateria &&
@@ -1118,7 +1303,7 @@ export default function Notas(): JSX.Element {
                                         // Verificar se o aluno está ativo
                                         const aluno = alunos.find(a => a.uid === n.alunoUid);
                                         const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
-                                        
+
                                         return alunoAtivo &&
                                           n.alunoUid === nota.alunoUid &&
                                           n.materiaId === filtroMateria &&
@@ -1176,107 +1361,107 @@ export default function Notas(): JSX.Element {
                                     <h6 className="text-dark fw-medium mb-0 fs-6">Exportar Histórico</h6>
                                   </div>
                                   <div className="d-flex gap-2">
-                                <Button
-                                  variant="outline-secondary"
-                                  size="sm"
-                                  onClick={() => {
-                                    if (!historicoAluno) return;
+                                    <Button
+                                      variant="outline-secondary"
+                                      size="sm"
+                                      onClick={() => {
+                                        if (!historicoAluno) return;
 
-                                    const turmaNome = turmas.find(t => t.id === filtroTurma)?.nome || 'Desconhecida';
-                                    const materiaNome = materias.find(m => m.id === filtroMateria)?.nome || 'Desconhecida';
+                                        const turmaNome = turmas.find(t => t.id === filtroTurma)?.nome || 'Desconhecida';
+                                        const materiaNome = materias.find(m => m.id === filtroMateria)?.nome || 'Desconhecida';
 
-                                    const doc = new jsPDF();
-                                    doc.text(`Histórico de Notas - ${historicoAluno.nome} - ${turmaNome} - ${materiaNome}`, 14, 15);
+                                        const doc = new jsPDF();
+                                        doc.text(`Histórico de Notas - ${historicoAluno.nome} - ${turmaNome} - ${materiaNome}`, 14, 15);
 
-                                    // Preparar dados para a tabela
-                                    const dadosParaTabela = ['1º', '2º', '3º', '4º'].map(bim => {
-                                      const nota = historicoAluno.notas.find(n => n.bimestre === bim);
-                                      const mediaFinal = nota ? calcularMediaFinal(nota) : '-';
-                                      return [
-                                        bim,
-                                        nota?.notaParcial?.toString() || '-',
-                                        nota?.notaGlobal?.toString() || '-',
-                                        nota?.notaParticipacao?.toString() || '-',
-                                        nota?.notaRecuperacao?.toString() || '-',
-                                        typeof mediaFinal === 'number' ? mediaFinal.toString() : '-',
-                                        nota?.dataLancamento || '-'
-                                      ];
-                                    });
+                                        // Preparar dados para a tabela
+                                        const dadosParaTabela = ['1º', '2º', '3º', '4º'].map(bim => {
+                                          const nota = historicoAluno.notas.find(n => n.bimestre === bim);
+                                          const mediaFinal = nota ? calcularMediaFinal(nota) : '-';
+                                          return [
+                                            bim,
+                                            nota?.notaParcial?.toString() || '-',
+                                            nota?.notaGlobal?.toString() || '-',
+                                            nota?.notaParticipacao?.toString() || '-',
+                                            nota?.notaRecuperacao?.toString() || '-',
+                                            typeof mediaFinal === 'number' ? mediaFinal.toString() : '-',
+                                            nota?.dataLancamento || '-'
+                                          ];
+                                        });
 
-                                    autoTable(doc, {
-                                      startY: 25,
-                                      head: [['Bimestre', 'Parcial', 'Global', 'Participação', 'Recuperação', 'Média Final', 'Data']],
-                                      body: dadosParaTabela,
-                                      styles: { fontSize: 9 },
-                                      headStyles: { fillColor: [41, 128, 185] },
-                                      columnStyles: {
-                                        0: { cellWidth: 20 },
-                                        1: { cellWidth: 20 },
-                                        2: { cellWidth: 20 },
-                                        3: { cellWidth: 25 },
-                                        4: { cellWidth: 25 },
-                                        5: { cellWidth: 25 },
-                                        6: { cellWidth: 25 }
-                                      }
-                                    });
+                                        autoTable(doc, {
+                                          startY: 25,
+                                          head: [['Bimestre', 'Parcial', 'Global', 'Participação', 'Recuperação', 'Média Final', 'Data']],
+                                          body: dadosParaTabela,
+                                          styles: { fontSize: 9 },
+                                          headStyles: { fillColor: [41, 128, 185] },
+                                          columnStyles: {
+                                            0: { cellWidth: 20 },
+                                            1: { cellWidth: 20 },
+                                            2: { cellWidth: 20 },
+                                            3: { cellWidth: 25 },
+                                            4: { cellWidth: 25 },
+                                            5: { cellWidth: 25 },
+                                            6: { cellWidth: 25 }
+                                          }
+                                        });
 
-                                    doc.save(`historico-${historicoAluno.nome.replace(/\s+/g, '-')}-${turmaNome}-${materiaNome}-${new Date().toISOString().split('T')[0]}.pdf`);
-                                  }}
-                                >
-                                  Exportar PDF
-                                </Button>
-                                <Button
-                                  variant="outline-success"
-                                  size="sm"
-                                  onClick={() => {
-                                    if (!historicoAluno) return;
+                                        doc.save(`historico-${historicoAluno.nome.replace(/\s+/g, '-')}-${turmaNome}-${materiaNome}-${new Date().toISOString().split('T')[0]}.pdf`);
+                                      }}
+                                    >
+                                      Exportar PDF
+                                    </Button>
+                                    <Button
+                                      variant="outline-success"
+                                      size="sm"
+                                      onClick={() => {
+                                        if (!historicoAluno) return;
 
-                                    const turmaNome = turmas.find(t => t.id === filtroTurma)?.nome || 'Desconhecida';
-                                    const materiaNome = materias.find(m => m.id === filtroMateria)?.nome || 'Desconhecida';
+                                        const turmaNome = turmas.find(t => t.id === filtroTurma)?.nome || 'Desconhecida';
+                                        const materiaNome = materias.find(m => m.id === filtroMateria)?.nome || 'Desconhecida';
 
-                                    // Preparar dados para Excel
-                                    const dadosParaExcel = ['1º', '2º', '3º', '4º'].map(bim => {
-                                      const nota = historicoAluno.notas.find(n => n.bimestre === bim);
-                                      const mediaFinal = nota ? calcularMediaFinal(nota) : '-';
-                                      return {
-                                        'Bimestre': bim,
-                                        'Nota Parcial': nota?.notaParcial || '-',
-                                        'Nota Global': nota?.notaGlobal || '-',
-                                        'Nota Participação': nota?.notaParticipacao || '-',
-                                        'Nota Recuperação': nota?.notaRecuperacao || '-',
-                                        'Média Final': typeof mediaFinal === 'number' ? mediaFinal : '-',
-                                        'Data Lançamento': nota?.dataLancamento || '-'
-                                      };
-                                    });
+                                        // Preparar dados para Excel
+                                        const dadosParaExcel = ['1º', '2º', '3º', '4º'].map(bim => {
+                                          const nota = historicoAluno.notas.find(n => n.bimestre === bim);
+                                          const mediaFinal = nota ? calcularMediaFinal(nota) : '-';
+                                          return {
+                                            'Bimestre': bim,
+                                            'Nota Parcial': nota?.notaParcial || '-',
+                                            'Nota Global': nota?.notaGlobal || '-',
+                                            'Nota Participação': nota?.notaParticipacao || '-',
+                                            'Nota Recuperação': nota?.notaRecuperacao || '-',
+                                            'Média Final': typeof mediaFinal === 'number' ? mediaFinal : '-',
+                                            'Data Lançamento': nota?.dataLancamento || '-'
+                                          };
+                                        });
 
-                                    // Cria a planilha
-                                    const worksheet = XLSX.utils.json_to_sheet(dadosParaExcel);
+                                        // Cria a planilha
+                                        const worksheet = XLSX.utils.json_to_sheet(dadosParaExcel);
 
-                                    // Define a largura das colunas
-                                    worksheet['!cols'] = [
-                                      { wch: 12 }, // Bimestre
-                                      { wch: 15 }, // Nota Parcial
-                                      { wch: 15 }, // Nota Global
-                                      { wch: 18 }, // Nota Participação
-                                      { wch: 18 }, // Nota Recuperação
-                                      { wch: 15 }, // Média Final
-                                      { wch: 18 }  // Data Lançamento
-                                    ];
+                                        // Define a largura das colunas
+                                        worksheet['!cols'] = [
+                                          { wch: 12 }, // Bimestre
+                                          { wch: 15 }, // Nota Parcial
+                                          { wch: 15 }, // Nota Global
+                                          { wch: 18 }, // Nota Participação
+                                          { wch: 18 }, // Nota Recuperação
+                                          { wch: 15 }, // Média Final
+                                          { wch: 18 }  // Data Lançamento
+                                        ];
 
-                                    // Cria o workbook e adiciona a aba
-                                    const workbook = XLSX.utils.book_new();
-                                    XLSX.utils.book_append_sheet(workbook, worksheet, 'Histórico');
+                                        // Cria o workbook e adiciona a aba
+                                        const workbook = XLSX.utils.book_new();
+                                        XLSX.utils.book_append_sheet(workbook, worksheet, 'Histórico');
 
-                                    // Salva o arquivo
-                                    XLSX.writeFile(workbook, `historico-${historicoAluno.nome.replace(/\s+/g, '-')}-${turmaNome}-${materiaNome}-${new Date().toISOString().split('T')[0]}.xlsx`);
-                                  }}
-                                >
-                                  Exportar Excel
-                                </Button>
-                              </div>
-                            </div>
-                          </Card.Body>
-                        </Card>
+                                        // Salva o arquivo
+                                        XLSX.writeFile(workbook, `historico-${historicoAluno.nome.replace(/\s+/g, '-')}-${turmaNome}-${materiaNome}-${new Date().toISOString().split('T')[0]}.xlsx`);
+                                      }}
+                                    >
+                                      Exportar Excel
+                                    </Button>
+                                  </div>
+                                </div>
+                              </Card.Body>
+                            </Card>
                           </Col>
                         </Row>
                       )}

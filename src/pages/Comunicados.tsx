@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import Paginacao from '../components/Paginacao';
 import { Megaphone, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -49,6 +50,7 @@ interface Vinculo {
 export default function Comunicados() {
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
+  const { anoLetivo } = useAnoLetivoAtual();
 
   // Componente CustomDateInput para usar com DatePicker
   type CustomDateInputProps = {
@@ -97,6 +99,7 @@ export default function Comunicados() {
   const [assunto, setAssunto] = useState('');
   const [mensagem, setMensagem] = useState('');
   const [turmaId, setTurmaId] = useState('');
+  const [turmasSelecionadas, setTurmasSelecionadas] = useState<string[]>([]);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [status, setStatus] = useState<'enviado' | 'agendado' | 'rascunho'>('enviado');
   const [dataAgendamento, setDataAgendamento] = useState<Date | null>(null);
@@ -113,7 +116,7 @@ export default function Comunicados() {
 
   useEffect(() => {
     fetchData();
-  }, [userData]);
+  }, [userData, anoLetivo]);
 
   useEffect(() => {
     if (showModal) {
@@ -126,14 +129,16 @@ export default function Comunicados() {
   const fetchData = async () => {
     let turmaDocs = [];
     if (isAdmin) {
-      const turmaSnap = await getDocs(collection(db, 'turmas'));
+      const turmaSnap = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())));
       turmaDocs = turmaSnap.docs;
     } else {
       const vincSnap = await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userData?.uid)));
       const vincList = vincSnap.docs.map(d => d.data() as Vinculo);
       setVinculos(vincList);
       const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-      turmaDocs = await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))));
+      const turmaDocsTemp = await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))));
+      // Filtrar apenas turmas do ano letivo atual
+      turmaDocs = turmaDocsTemp.filter(d => d.data()?.anoLetivo?.toString() === anoLetivo.toString());
     }
 
     const listaTurmas = turmaDocs
@@ -163,28 +168,62 @@ export default function Comunicados() {
       return;
     }
 
-    const turmaSelecionada = turmas.find(t => t.id === turmaId);
-    const payload: any = {
-      assunto,
-      mensagem,
-      turmaId,
-      turmaNome: turmaSelecionada?.nome || '',
-      data: Timestamp.now(),
-      status,
-    };
-
-    // Adicionar data de agendamento se status for agendado
-    if (status === 'agendado' && dataAgendamento) {
-      payload.dataAgendamento = Timestamp.fromDate(dataAgendamento);
+    // Validar se pelo menos uma turma foi selecionada
+    if (turmasSelecionadas.length === 0) {
+      setToast({ show: true, message: 'Selecione pelo menos uma turma.', variant: 'danger' });
+      return;
     }
 
     try {
       if (editandoId) {
+        // No modo edição, mantém o comportamento antigo (uma turma)
+        const turmaSelecionada = turmas.find(t => t.id === turmaId);
+        const payload: any = {
+          assunto,
+          mensagem,
+          turmaId,
+          turmaNome: turmaSelecionada?.nome || '',
+          data: Timestamp.now(),
+          status,
+        };
+
+        // Adicionar data de agendamento se status for agendado
+        if (status === 'agendado' && dataAgendamento) {
+          payload.dataAgendamento = Timestamp.fromDate(dataAgendamento);
+        }
+
         await updateDoc(doc(db, 'comunicados', editandoId), payload);
         setToast({ show: true, message: 'Comunicado atualizado com sucesso!', variant: 'success' });
       } else {
-        await addDoc(collection(db, 'comunicados'), payload);
-        setToast({ show: true, message: 'Comunicado salvo com sucesso!', variant: 'success' });
+        // No modo criação, cria um comunicado para cada turma selecionada
+        let turmasParaCriar: string[] = [];
+        
+        // Se "todas" foi selecionado, usar todas as turmas disponíveis
+        if (turmasSelecionadas.includes('todas')) {
+          turmasParaCriar = turmasDisponiveis.map(t => t.id);
+        } else {
+          turmasParaCriar = turmasSelecionadas;
+        }
+
+        for (const turmaIdSelecionada of turmasParaCriar) {
+          const turmaSelecionada = turmas.find(t => t.id === turmaIdSelecionada);
+          const payload: any = {
+            assunto,
+            mensagem,
+            turmaId: turmaIdSelecionada,
+            turmaNome: turmaSelecionada?.nome || '',
+            data: Timestamp.now(),
+            status,
+          };
+
+          // Adicionar data de agendamento se status for agendado
+          if (status === 'agendado' && dataAgendamento) {
+            payload.dataAgendamento = Timestamp.fromDate(dataAgendamento);
+          }
+
+          await addDoc(collection(db, 'comunicados'), payload);
+        }
+        setToast({ show: true, message: `Comunicado criado para ${turmasParaCriar.length} turma(s)!`, variant: 'success' });
       }
       setShowModal(false);
       limparFormulario();
@@ -201,6 +240,7 @@ export default function Comunicados() {
     setAssunto(comunicado.assunto);
     setMensagem(comunicado.mensagem);
     setTurmaId(comunicado.turmaId);
+    setTurmasSelecionadas([comunicado.turmaId]);
     setStatus(comunicado.status);
     
     // Definir data de agendamento se existir
@@ -227,6 +267,7 @@ export default function Comunicados() {
     setAssunto('');
     setMensagem('');
     setTurmaId('');
+    setTurmasSelecionadas([]);
     setStatus('enviado');
     setDataAgendamento(null);
     setEditandoId(null);
@@ -293,8 +334,8 @@ export default function Comunicados() {
           </div>
         </div>
 
-        {/* Botão de Novo Comunicado no canto direito */}
-        <div className="d-flex justify-content-end mb-3">
+        {/* Botão de Novo Comunicado no canto direito - Desktop */}
+        <div className="d-none d-md-flex justify-content-end mb-3">
           {isAdmin && (
             <Button variant="primary" onClick={() => { limparFormulario(); setShowModal(true); }}>
               <PlusCircle className="me-2" size={18} />
@@ -303,20 +344,20 @@ export default function Comunicados() {
           )}
         </div>
 
-        {/* Campo de busca full-width */}
-        <Row className="mb-3">
-          <Col>
+        {/* Campo de busca dentro de Card */}
+        <Card className="shadow-sm mb-3">
+          <Card.Body>
             <FormControl
               placeholder="Buscar por assunto, mensagem ou turma"
               value={busca}
               onChange={e => { setBusca(e.target.value); setPaginaAtual(1); }}
               style={{ borderRadius: '8px', padding: '12px 16px' }}
             />
-          </Col>
-        </Row>
+          </Card.Body>
+        </Card>
 
         {/* Filtros dentro de Card */}
-        <Card className="mb-4 shadow-sm">
+        <Card className="mb-3 shadow-sm">
           <Card.Body>
             <Row className="align-items-center">
               <Col md={3}>
@@ -366,7 +407,8 @@ export default function Comunicados() {
                 </Form.Group>
               </Col>
 
-              <Col md={3} className="d-flex justify-content-center align-items-center">
+              {/* Botão Desktop */}
+              <Col md={3} className="d-none d-md-flex justify-content-center align-items-center">
                 <Button variant="link" onClick={limparFiltros} className="text-muted p-0 d-flex align-items-center justify-content-center" style={{ fontSize: '14px', textDecoration: 'none' }}>
                   <X className="me-2" size={18} />
                   Limpar filtros
@@ -376,6 +418,40 @@ export default function Comunicados() {
           </Card.Body>
         </Card>
 
+        {/* Botão Limpar Filtros - Mobile */}
+        <div className="w-100 mb-2 d-block d-md-none">
+          <Row>
+            <Col>
+              <Button
+                onClick={limparFiltros}
+                className="w-100 d-flex align-items-center justify-content-center gap-2 bg-white"
+                style={{ color: 'black', border: '1px solid #e1e7ef' }}
+              >
+                <X size={20} />
+                Limpar Filtros
+              </Button>
+            </Col>
+          </Row>
+        </div>
+
+        {/* Botão de Novo Comunicado - Mobile */}
+        {isAdmin && (
+          <div className="w-100 mb-3 d-block d-md-none">
+            <Row>
+              <Col>
+                <Button 
+                  variant="primary" 
+                  className="w-100 d-flex align-items-center justify-content-center gap-2"
+                  onClick={() => { limparFormulario(); setShowModal(true); }}
+                >
+                  <PlusCircle size={20} />
+                  Novo Comunicado
+                </Button>
+              </Col>
+            </Row>
+          </div>
+        )}
+
         {/* Cards dos Comunicados verticalmente agrupados */}
         <div className="d-flex flex-column gap-4">
           {comunicadosPaginados.map(c => (
@@ -383,12 +459,13 @@ export default function Comunicados() {
               <Card.Body className="p-3">
                 {/* Header do Card com Título e Status */}
                 <div className="d-flex justify-content-between align-items-start mb-2">
-                  <div className="flex-grow-1 d-flex align-items-center gap-2">
-                    <h3 className="fs-5 fw-bold text-dark mb-0 mb-1">
+                  <div className="flex-grow-1 d-flex align-items-center gap-2" style={{ minWidth: 0 }}>
+                    <h3 className="fs-5 fw-bold text-dark mb-0 mb-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                       {c.assunto}
                     </h3>
                     <Badge
                       className={`status-badge ${c.status}`}
+                      style={{ flexShrink: 0 }}
                     >
                       {/* Ícone + texto do status */}
                       {c.status === 'enviado' || (c.status !== 'agendado' && c.status !== 'rascunho') ? (
@@ -406,7 +483,7 @@ export default function Comunicados() {
                       )}
                     </Badge>
                   </div>
-                  <div className="d-flex gap-2 align-items-center justify-content-center" style={{ alignSelf: 'center' }}>
+                  <div className="d-flex gap-2 align-items-center justify-content-center" style={{ alignSelf: 'center', flexShrink: 0 }}>
                     <Button
                       variant="link"
                       className="p-0 text-primary d-flex align-items-center px-2"
@@ -573,13 +650,71 @@ export default function Comunicados() {
           <Modal.Body>
             <Form>
               <Form.Group className="mb-3">
-                <Form.Label>Turma</Form.Label>
-                <Form.Select value={turmaId} onChange={e => setTurmaId(e.target.value)}>
-                  <option value="">Todas as turmas</option>
-                  {turmasDisponiveis.map(t => (
-                    <option key={t.id} value={t.id}>{t.nome}</option>
-                  ))}
-                </Form.Select>
+                <Form.Label style={{ fontWeight: 'bold' }}>Selecione as turmas</Form.Label>
+                <div
+                  style={{
+                    border: '1px solid #d1d5db',
+                    borderRadius: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: 12,
+                      maxHeight: 220,
+                      overflowY: 'auto',
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 8,
+                      margin: '0 auto',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    {/* Checkbox "Todas as turmas" */}
+                    <Form.Check
+                      type="checkbox"
+                      id="turma-todas"
+                      label="Todas as turmas"
+                      checked={turmasSelecionadas.includes('todas')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          // Selecionar "todas" e desmarcar turmas específicas
+                          setTurmasSelecionadas(['todas']);
+                        } else {
+                          // Desmarcar "todas"
+                          setTurmasSelecionadas([]);
+                        }
+                      }}
+                      disabled={editandoId !== null}
+                      style={{ fontWeight: turmasSelecionadas.includes('todas') ? 'bold' : 'normal' }}
+                    />
+                    
+                    {/* Checkboxes das turmas individuais */}
+                    {[...turmasDisponiveis].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
+                      <Form.Check
+                        key={t.id}
+                        type="checkbox"
+                        id={`turma-${t.id}`}
+                        label={t.nome}
+                        checked={turmasSelecionadas.includes(t.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            // Remover "todas" se estiver selecionado e adicionar a turma específica
+                            const novasSelecionadas = turmasSelecionadas.filter(id => id !== 'todas');
+                            setTurmasSelecionadas([...novasSelecionadas, t.id]);
+                          } else {
+                            setTurmasSelecionadas(turmasSelecionadas.filter(id => id !== t.id));
+                          }
+                        }}
+                        disabled={editandoId !== null}
+                      />
+                    ))}
+                  </div>
+                </div>
+                {editandoId && (
+                  <Form.Text className="text-muted">
+                    Não é possível alterar as turmas ao editar um comunicado
+                  </Form.Text>
+                )}
               </Form.Group>
               <Form.Group className="mb-3">
                 <Form.Label>Assunto</Form.Label>

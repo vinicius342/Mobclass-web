@@ -8,6 +8,7 @@ import {
 import { db } from '../services/firebase';
 import AppLayout from '../components/AppLayout';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import Paginacao from '../components/Paginacao';
 import { useUrlValidator } from '../hooks/useUrlValidator';
 
@@ -73,6 +74,7 @@ interface Vinculo {
 export default function Tarefas() {
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
+  const { anoLetivo } = useAnoLetivoAtual();
 
   // Novo sistema de validação de URLs com segurança avançada
   const { validateUrl } = useUrlValidator();
@@ -89,12 +91,12 @@ export default function Tarefas() {
   };
 
   // Estado para links filtrados (para renderização)
-  const [linksSegurosFiltrados, setLinksSegurosFiltrados] = useState<{[tarefaId: string]: Array<{url: string; titulo: string}>}>({});
+  const [linksSegurosFiltrados, setLinksSegurosFiltrados] = useState<{ [tarefaId: string]: Array<{ url: string; titulo: string }> }>({});
 
   // Função para filtrar links seguros de todas as tarefas
   const filtrarLinksSegurosDasTarefas = async (tarefasList: Tarefa[]) => {
-    const linksSegurosPorTarefa: {[tarefaId: string]: Array<{url: string; titulo: string}>} = {};
-    
+    const linksSegurosPorTarefa: { [tarefaId: string]: Array<{ url: string; titulo: string }> } = {};
+
     for (const tarefa of tarefasList) {
       if (tarefa.links && tarefa.links.length > 0) {
         const linksValidos = [];
@@ -109,7 +111,7 @@ export default function Tarefas() {
         linksSegurosPorTarefa[tarefa.id] = [];
       }
     }
-    
+
     setLinksSegurosFiltrados(linksSegurosPorTarefa);
   };
 
@@ -158,7 +160,7 @@ export default function Tarefas() {
     if (!userData) return;
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userData]);
+  }, [userData, anoLetivo]);
 
   const exportarPDF = () => {
     if (!atividadeSelecionada) return;
@@ -233,7 +235,7 @@ export default function Tarefas() {
 
     let turmaDocs: any[] = [];
     if (isAdmin) {
-      turmaDocs = (await getDocs(collection(db, 'turmas'))).docs;
+      turmaDocs = (await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())))).docs;
     } else {
       if (!userData) {
         setLoading(false);
@@ -244,9 +246,11 @@ export default function Tarefas() {
       setVinculos(vincList);
 
       const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-      turmaDocs = await Promise.all(
+      const turmaDocsTemp = await Promise.all(
         turmaIds.map(async id => await getDoc(doc(db, 'turmas', id)))
       );
+      // Filtrar apenas turmas do ano letivo atual
+      turmaDocs = turmaDocsTemp.filter(d => d.data()?.anoLetivo?.toString() === anoLetivo.toString());
     }
     setTurmas(turmaDocs.map(d => ({ id: d.id, nome: d.data()?.nome || '-' })));
 
@@ -1109,15 +1113,51 @@ export default function Tarefas() {
                                   <div className="materias-card-actions materias-card-actions-mobile">
                                     <div className="aluno-btn-group-mobile" style={{ display: 'flex', width: '100%' }}>
                                       <button
-                                        className="materias-action-btn materias-edit-btn aluno-btn-mobile-left"
-                                        style={{ flex: 1, borderRadius: '8px 0 0 8px', borderRight: '1px solid #fff', margin: 0 }}
+                                        className={`materias-action-btn aluno-btn-mobile-left${entrega?.status === 'concluida' ? ' btn-active-success' : ' materias-edit-btn'}`}
+                                        style={
+                                          entrega?.status === 'concluida'
+                                            ? {
+                                              flex: 1,
+                                              borderRadius: '8px 0 0 8px',
+                                              borderRight: '1px solid #fff',
+                                              margin: 0,
+                                              background: '#22c55e',
+                                              color: '#fff',
+                                              fontWeight: 600,
+                                              border: '2px solid #22c55e'
+                                            }
+                                            : {
+                                              flex: 1,
+                                              borderRadius: '8px 0 0 8px',
+                                              borderRight: '1px solid #fff',
+                                              margin: 0
+                                            }
+                                        }
                                         onClick={() => atualizarEntrega(aluno.id, 'concluida')}
                                       >
                                         <FontAwesomeIcon icon={faCheck} /> Confirmar
                                       </button>
                                       <button
-                                        className="materias-action-btn materias-delete-btn aluno-btn-mobile-right"
-                                        style={{ flex: 1, borderRadius: '0 8px 8px 0', borderLeft: '1px solid #fff', margin: 0 }}
+                                        className={`materias-action-btn aluno-btn-mobile-right${entrega?.status === 'nao_entregue' ? ' btn-active-danger' : ' materias-delete-btn'}`}
+                                        style={
+                                          entrega?.status === 'nao_entregue'
+                                            ? {
+                                              flex: 1,
+                                              borderRadius: '0 8px 8px 0',
+                                              borderLeft: '1px solid #fff',
+                                              margin: 0,
+                                              background: '#dc3545',
+                                              color: '#fff',
+                                              fontWeight: 600,
+                                              border: '2px solid #dc3545'
+                                            }
+                                            : {
+                                              flex: 1,
+                                              borderRadius: '0 8px 8px 0',
+                                              borderLeft: '1px solid #fff',
+                                              margin: 0
+                                            }
+                                        }
                                         onClick={() => atualizarEntrega(aluno.id, 'nao_entregue')}
                                       >
                                         <FontAwesomeIcon icon={faX} /> Não Entregue
@@ -1125,10 +1165,21 @@ export default function Tarefas() {
                                     </div>
                                     <button
                                       className="materias-action-btn aluno-btn-mobile-obs"
-                                      style={{ background: '#f3f4f6', color: '#212529', width: '100%', marginTop: 8, borderRadius: 8 }}
+                                      style={{
+                                        background: entrega?.observacoes && '#f3f4f6',
+                                        color: entrega?.observacoes ? '#92400e' : '#212529',
+                                        width: '100%',
+                                        marginTop: 8,
+                                        borderRadius: 8,
+                                        fontWeight: entrega?.observacoes ? 600 : 400
+                                      }}
                                       onClick={() => openObsModal(entrega ? entrega.id : '', entrega?.observacoes || '')}
                                     >
-                                      <FontAwesomeIcon icon={faComment} /> Obs
+                                      <FontAwesomeIcon icon={faComment} />
+                                      Obs
+                                      {entrega?.observacoes && (
+                                        <FontAwesomeIcon icon={faCircleExclamation} className="ms-1" />
+                                      )}
                                     </button>
                                     {entrega?.anexoUrl && (
                                       <a
