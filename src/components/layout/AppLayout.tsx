@@ -1,8 +1,8 @@
 // src/components/AppLayout.tsx
 import React, { useState } from 'react';
 import AppNavbar from './AppNavbar';
-import { useAuth } from '../contexts/AuthContext';
-import { useAnoLetivo } from '../contexts/AnoLetivoContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { useAnoLetivo } from '../../contexts/AnoLetivoContext';
 import { Spinner, Container, Modal, Form, Button } from 'react-bootstrap';
 import { Settings } from 'lucide-react';
 

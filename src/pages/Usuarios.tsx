@@ -1,18 +1,18 @@
 // src/pages/Usuarios.tsx - Atualizado com suporte ao modoAcesso "responsavel"
 import { useEffect, useState, ChangeEvent, JSX } from 'react';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import {
   Container, Row, Button, Table, Badge, Spinner,
   Modal, InputGroup, FormControl, Toast, ToastContainer, Dropdown, Form, Card,
   Col
 } from 'react-bootstrap';
 import { PlusCircle, Person } from 'react-bootstrap-icons';
-import Paginacao from '../components/Paginacao';
+import Paginacao from '../components/common/Paginacao';
 import { db } from '../services/firebase';
 import {
   collection, getDocs, updateDoc, deleteDoc, doc, writeBatch, query, where
 } from 'firebase/firestore';
-import UsuarioForm, { FormValues, AlunoOption } from '../components/UsuarioForm';
+import UsuarioForm, { FormValues, AlunoOption } from '../components/usuarios/UsuarioForm';
 import { GraduationCap, Download, Users } from 'lucide-react';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 
@@ -483,6 +483,11 @@ export default function Usuarios(): JSX.Element {
   };
 
   const renderTurmasBadges = (turmasIds: string[], userId: string, maxVisible: number = 2) => {
+    // Verificar se turmasIds existe e é um array válido
+    if (!turmasIds || !Array.isArray(turmasIds) || turmasIds.length === 0) {
+      return null;
+    }
+    
     // Filtrar apenas turmas do ano letivo atual
     const turmasDoAnoAtual = turmasIds.filter(id => turmas.some(t => t.id === id));
     const isExpanded = expandedTurmas.has(userId);
@@ -1245,7 +1250,7 @@ export default function Usuarios(): JSX.Element {
                                     <div>
                                       <strong style={{ color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Turmas:</strong>
                                       <div style={{ marginTop: '4px' }}>
-                                        {(user as Professor).turmas.length > 0
+                                        {(user as Professor).turmas && (user as Professor).turmas.length > 0
                                           ? (user as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ')
                                           : <span style={{ color: '#9ca3af' }}>Nenhuma turma</span>
                                         }
@@ -1283,7 +1288,7 @@ export default function Usuarios(): JSX.Element {
                                     <div>
                                       <strong style={{ color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Turmas:</strong>
                                       <div style={{ marginTop: '4px' }}>
-                                        {(user as Professor).turmas.length > 0
+                                        {(user as Professor).turmas && (user as Professor).turmas.length > 0
                                           ? (user as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ')
                                           : <span style={{ color: '#9ca3af' }}>Nenhuma turma</span>
                                         }

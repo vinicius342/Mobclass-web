@@ -1,5 +1,5 @@
 import { useEffect, useState, JSX, useMemo } from 'react';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import {
   Container, Row, Col, Card, Spinner, Form
 } from 'react-bootstrap';
@@ -13,6 +13,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import { FaUserGraduate, FaChalkboardTeacher, FaUsers, FaClipboardList } from 'react-icons/fa';
 import { BarChart3, Filter } from 'lucide-react';
+import { loadTurmasByAnoLetivo, loadMaterias } from '../utils/dataLoaders';
 
 interface Counts {
   alunos: number;
@@ -68,18 +69,15 @@ export default function Dashboard(): JSX.Element {
 
     async function fetchCards() {
       try {
-        const [alunosSnap, profSnap, turmasSnap, tarefasSnap] = await Promise.all([
+        const [alunosSnap, profSnap, turmas, tarefasSnap] = await Promise.all([
           getDocs(collection(db, 'alunos')),
           getDocs(collection(db, 'professores')),
-          getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString()))),
+          loadTurmasByAnoLetivo(anoLetivo),
           getDocs(query(collection(db, 'tarefas'), where('anoLetivo', '==', anoLetivo.toString()))),
         ]);
 
         // Processa em setTimeout para não bloquear
         setTimeout(() => {
-          const turmas = turmasSnap.docs
-            .map(doc => ({ id: doc.id, nome: (doc.data() as any).nome }))
-            .sort((a, b) => a.nome.localeCompare(b.nome));
           setTurmasLista(turmas);
 
           setCounts({
@@ -108,17 +106,14 @@ export default function Dashboard(): JSX.Element {
 
     async function fetchGraficos() {
       try {
-        const [freqSnap, notasSnap, materiasSnap] = await Promise.all([
+        const [freqSnap, notasSnap, materias] = await Promise.all([
           getDocs(collection(db, 'frequencias')),
           getDocs(collection(db, 'notas')),
-          getDocs(collection(db, 'materias')),
+          loadMaterias(),
         ]);
 
         // Processa matérias primeiro
         setTimeout(() => {
-          const materias = materiasSnap.docs
-            .map(doc => ({ id: doc.id, nome: (doc.data() as any).nome }))
-            .sort((a, b) => a.nome.localeCompare(b.nome));
           setMateriasLista(materias);
 
           // Processa frequências em outro chunk
@@ -325,161 +320,161 @@ export default function Dashboard(): JSX.Element {
               </Container>
             ) : (
               <>
-            <Card className="shadow-sm mt-3 mb-3" style={{ boxShadow: '0 0 0 2px #2563eb33' }}>
-              <Card.Body>
-                <h5 className="px-1 mb-2 d-flex align-items-center gap-2" style={{ fontWeight: 500 }}>
-                  <Filter className='text-muted' size={20} />
-                  Filtros
-                </h5>
-                <Row className="g-3">
-                  <Col md={3}>
-                    <Form.Label className="small text-muted">Turmas (5 por opção)</Form.Label>
-                    <Form.Select
-                      value={grupoTurmasSelecionado}
-                      onChange={e => {
-                        setGrupoTurmasSelecionado(Number(e.target.value));
-                        setGrupoTurmasAutoSelecionado(true);
-                      }}
-                    >
-                      <option value={-1} disabled hidden>Selecione as turmas</option>
-                      {gruposTurmas.map((grupo, idx) => {
-                        const primeiro = grupo[0]?.nome || '';
-                        const ultimo = grupo[grupo.length - 1]?.nome || '';
-                        return (
-                          <option key={idx} value={idx}>{primeiro} - {ultimo}</option>
-                        );
-                      })}
-                    </Form.Select>
-                  </Col>
-                  <Col md={3}>
-                    <Form.Label className="small text-muted">Disciplinas</Form.Label>
-                    <Form.Select
-                      value={disciplinaSelecionada}
-                      onChange={e => setDisciplinaSelecionada(e.target.value)}
-                    >
-                      <option value="todas">Todas as Disciplinas</option>
-                      {materiasLista.map(materia => (
-                        <option key={materia.id} value={materia.id}>
-                          {materia.nome}
-                        </option>
-                      ))}
-                    </Form.Select>
-                  </Col>
-                  <Col md={3}>
-                    <Form.Label className="small text-muted">Tipo de Período</Form.Label>
-                    <Form.Select value={tipoPeriodo} onChange={e => setTipoPeriodo(e.target.value)}>
-                      <option value="">Selecione o período</option>
-                      <option value="hoje">Hoje</option>
-                      <option value="mes">Mês</option>
-                      <option value="personalizado">Personalizado</option>
-                    </Form.Select>
-                  </Col>
-                  {tipoPeriodo === 'personalizado' && (
-                    <Col md={3}>
-                      <Form.Label className="small text-muted">Data Personalizada</Form.Label>
-                      <Form.Control
-                        type="date"
-                        value={dataPersonalizada}
-                        onChange={e => setDataPersonalizada(e.target.value)}
-                        placeholder="Selecione uma data"
-                      />
-                    </Col>
-                  )}
-                  {tipoPeriodo === 'mes' && (
-                    <Col md={3}>
-                      <Form.Label className="small text-muted">Selecione o Mês</Form.Label>
-                      <Form.Select
-                        value={mesSelecionado}
-                        onChange={e => setMesSelecionado(e.target.value)}
-                      >
-                        <option value="">Selecione o mês</option>
-                        <option value="01">Janeiro</option>
-                        <option value="02">Fevereiro</option>
-                        <option value="03">Março</option>
-                        <option value="04">Abril</option>
-                        <option value="05">Maio</option>
-                        <option value="06">Junho</option>
-                        <option value="07">Julho</option>
-                        <option value="08">Agosto</option>
-                        <option value="09">Setembro</option>
-                        <option value="10">Outubro</option>
-                        <option value="11">Novembro</option>
-                        <option value="12">Dezembro</option>
-                      </Form.Select>
-                    </Col>
-                  )}
-                </Row>
-              </Card.Body>
-            </Card>
-
-            <Row xs={1} lg={2} className="g-4">
-              <Col>
-                <Card className="p-1 h-100">
-                  <Card.Header className="fw-bold bg-white" style={{ borderBottom: '0' }}>Taxa de Frequência por Turmas</Card.Header>
+                <Card className="shadow-sm mt-3 mb-3" style={{ boxShadow: '0 0 0 2px #2563eb33' }}>
                   <Card.Body>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <BarChart data={dadosFreqFiltrados}>
-                        <XAxis
-                          dataKey="turma"
-                          tick={{ fontSize: 11, fontStyle: 'italic', fill: '#495057', dy: 10, dx: -10 }}
-                          angle={-20}
-                        />
-                        <YAxis
-                          domain={[0, 100]}
-                          unit="%"
-                          tick={{ fontSize: 14, fill: '#495057' }}
-                        />
-                        <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
-                        <Bar
-                          dataKey="taxa"
-                          label={{ position: 'top' }}
-                          fill="#8884d8"
-                          radius={[5, 5, 0, 0]}
+                    <h5 className="px-1 mb-2 d-flex align-items-center gap-2" style={{ fontWeight: 500 }}>
+                      <Filter className='text-muted' size={20} />
+                      Filtros
+                    </h5>
+                    <Row className="g-3">
+                      <Col md={3}>
+                        <Form.Label className="small text-muted">Turmas (5 por opção)</Form.Label>
+                        <Form.Select
+                          value={grupoTurmasSelecionado}
+                          onChange={e => {
+                            setGrupoTurmasSelecionado(Number(e.target.value));
+                            setGrupoTurmasAutoSelecionado(true);
+                          }}
                         >
-                          {dadosFreqFiltrados.map((entry, index) => {
-                            const color =
-                              entry.taxa >= 85 ? '#28a745' : entry.taxa >= 60 ? '#ffc107' : '#dc3545';
-                            return <Cell key={`cell-${index}`} fill={color} />;
+                          <option value={-1} disabled hidden>Selecione as turmas</option>
+                          {gruposTurmas.map((grupo, idx) => {
+                            const primeiro = grupo[0]?.nome || '';
+                            const ultimo = grupo[grupo.length - 1]?.nome || '';
+                            return (
+                              <option key={idx} value={idx}>{primeiro} - {ultimo}</option>
+                            );
                           })}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                        </Form.Select>
+                      </Col>
+                      <Col md={3}>
+                        <Form.Label className="small text-muted">Disciplinas</Form.Label>
+                        <Form.Select
+                          value={disciplinaSelecionada}
+                          onChange={e => setDisciplinaSelecionada(e.target.value)}
+                        >
+                          <option value="todas">Todas as Disciplinas</option>
+                          {materiasLista.map(materia => (
+                            <option key={materia.id} value={materia.id}>
+                              {materia.nome}
+                            </option>
+                          ))}
+                        </Form.Select>
+                      </Col>
+                      <Col md={3}>
+                        <Form.Label className="small text-muted">Tipo de Período</Form.Label>
+                        <Form.Select value={tipoPeriodo} onChange={e => setTipoPeriodo(e.target.value)}>
+                          <option value="">Selecione o período</option>
+                          <option value="hoje">Hoje</option>
+                          <option value="mes">Mês</option>
+                          <option value="personalizado">Personalizado</option>
+                        </Form.Select>
+                      </Col>
+                      {tipoPeriodo === 'personalizado' && (
+                        <Col md={3}>
+                          <Form.Label className="small text-muted">Data Personalizada</Form.Label>
+                          <Form.Control
+                            type="date"
+                            value={dataPersonalizada}
+                            onChange={e => setDataPersonalizada(e.target.value)}
+                            placeholder="Selecione uma data"
+                          />
+                        </Col>
+                      )}
+                      {tipoPeriodo === 'mes' && (
+                        <Col md={3}>
+                          <Form.Label className="small text-muted">Selecione o Mês</Form.Label>
+                          <Form.Select
+                            value={mesSelecionado}
+                            onChange={e => setMesSelecionado(e.target.value)}
+                          >
+                            <option value="">Selecione o mês</option>
+                            <option value="01">Janeiro</option>
+                            <option value="02">Fevereiro</option>
+                            <option value="03">Março</option>
+                            <option value="04">Abril</option>
+                            <option value="05">Maio</option>
+                            <option value="06">Junho</option>
+                            <option value="07">Julho</option>
+                            <option value="08">Agosto</option>
+                            <option value="09">Setembro</option>
+                            <option value="10">Outubro</option>
+                            <option value="11">Novembro</option>
+                            <option value="12">Dezembro</option>
+                          </Form.Select>
+                        </Col>
+                      )}
+                    </Row>
                   </Card.Body>
                 </Card>
-              </Col>
 
-              <Col>
-                <Card className="h-100 pt-1 px-1">
-                  <Card.Header className="fw-bold bg-white" style={{ borderBottom: '0' }}>Nota Média por Turma</Card.Header>
-                  <Card.Body>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <LineChart data={dadosNotaFiltrados} margin={{ left: 0, right: 20, top: 5, bottom: 6 }}>
-                        {/* <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" /> */}
-                        <XAxis
-                          dataKey="turma"
-                          tick={{ fontSize: 11, fontStyle: 'italic', fill: '#495057', dy: 10, dx: -10 }}
-                          angle={-20}
-                          interval={0}
-                        />
-                        <YAxis
-                          domain={[0, 10]}
-                          tick={{ fontSize: 14, fill: '#495057' }}
-                        />
-                        <Tooltip formatter={(value: number) => `${value.toFixed(2)} pts`} />
-                        <Line
-                          type="monotone"
-                          dataKey="media"
-                          stroke="#007bff"
-                          dot={{ stroke: '#007bff', strokeWidth: 2, fill: '#fff', r: 5 }}
-                          activeDot={{ r: 8 }}
-                        />
-                        {/* <Legend /> */}
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </Card.Body>
-                </Card>
-              </Col>
-            </Row>
+                <Row xs={1} lg={2} className="g-4">
+                  <Col>
+                    <Card className="p-1 h-100">
+                      <Card.Header className="fw-bold bg-white" style={{ borderBottom: '0' }}>Taxa de Frequência por Turmas</Card.Header>
+                      <Card.Body>
+                        <ResponsiveContainer width="100%" height={250}>
+                          <BarChart data={dadosFreqFiltrados}>
+                            <XAxis
+                              dataKey="turma"
+                              tick={{ fontSize: 11, fontStyle: 'italic', fill: '#495057', dy: 10, dx: -10 }}
+                              angle={-20}
+                            />
+                            <YAxis
+                              domain={[0, 100]}
+                              unit="%"
+                              tick={{ fontSize: 14, fill: '#495057' }}
+                            />
+                            <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
+                            <Bar
+                              dataKey="taxa"
+                              label={{ position: 'top' }}
+                              fill="#8884d8"
+                              radius={[5, 5, 0, 0]}
+                            >
+                              {dadosFreqFiltrados.map((entry, index) => {
+                                const color =
+                                  entry.taxa >= 85 ? '#28a745' : entry.taxa >= 60 ? '#ffc107' : '#dc3545';
+                                return <Cell key={`cell-${index}`} fill={color} />;
+                              })}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+
+                  <Col>
+                    <Card className="h-100 pt-1 px-1">
+                      <Card.Header className="fw-bold bg-white" style={{ borderBottom: '0' }}>Nota Média por Turma</Card.Header>
+                      <Card.Body>
+                        <ResponsiveContainer width="100%" height={250}>
+                          <LineChart data={dadosNotaFiltrados} margin={{ left: 0, right: 20, top: 5, bottom: 6 }}>
+                            {/* <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" /> */}
+                            <XAxis
+                              dataKey="turma"
+                              tick={{ fontSize: 11, fontStyle: 'italic', fill: '#495057', dy: 10, dx: -10 }}
+                              angle={-20}
+                              interval={0}
+                            />
+                            <YAxis
+                              domain={[0, 10]}
+                              tick={{ fontSize: 14, fill: '#495057' }}
+                            />
+                            <Tooltip formatter={(value: number) => `${value.toFixed(2)} pts`} />
+                            <Line
+                              type="monotone"
+                              dataKey="media"
+                              stroke="#007bff"
+                              dot={{ stroke: '#007bff', strokeWidth: 2, fill: '#fff', r: 5 }}
+                              activeDot={{ r: 8 }}
+                            />
+                            {/* <Legend /> */}
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                </Row>
               </>
             )}
           </>
@@ -510,15 +505,3 @@ function DashboardCard({ icon, title, value }: { icon: JSX.Element; title: strin
     </Col>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-

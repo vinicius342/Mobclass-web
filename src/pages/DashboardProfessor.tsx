@@ -1,6 +1,6 @@
 // DashboardProfessor.tsx - Atualizado para filtrar cards e gráficos por vínculos
 import { useEffect, useState } from 'react';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import { Container, Row, Col, Card, Spinner, Button } from 'react-bootstrap';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -50,10 +50,10 @@ export default function DashboardProfessor() {
       const turmaIds = [...new Set(vinculos.map(v => v.turmaId))];
 
       const [tarefasSnap, aulasSnap, comunicadosSnap, freqSnap, notasSnap] = await Promise.all([
-        getDocs(query(collection(db, 'tarefas'), where('turmaId', 'in', turmaIds)) ),
-        getDocs(query(collection(db, 'agenda'), where('turmaId', 'in', turmaIds)) ),
-        getDocs(query(collection(db, 'comunicados'), where('turmaId', 'in', turmaIds)) ),
-        getDocs(query(collection(db, 'frequencias'), where('turmaId', 'in', turmaIds), where('professorId', '==', uid)) ),
+        getDocs(query(collection(db, 'tarefas'), where('turmaId', 'in', turmaIds))),
+        getDocs(query(collection(db, 'agenda'), where('turmaId', 'in', turmaIds))),
+        getDocs(query(collection(db, 'comunicados'), where('turmaId', 'in', turmaIds))),
+        getDocs(query(collection(db, 'frequencias'), where('turmaId', 'in', turmaIds), where('professorId', '==', uid))),
         getDocs(query(collection(db, 'notas'))),
       ]);
 
@@ -72,7 +72,7 @@ export default function DashboardProfessor() {
 
           if (!freqPorDia[diaSemana]) freqPorDia[diaSemana] = { presencas: 0, faltas: 0 };
           f.presenca ? freqPorDia[diaSemana].presencas++ : freqPorDia[diaSemana].faltas++;
-        } catch {}
+        } catch { }
       });
 
       const diasOrdem = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira'];
@@ -212,14 +212,3 @@ export default function DashboardProfessor() {
     </AppLayout>
   );
 }
-
-
-
-
-
-
-
-
-
-
-

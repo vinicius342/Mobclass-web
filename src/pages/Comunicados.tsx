@@ -1,30 +1,32 @@
-// src/pages/Comunicados.tsx - Atualizado para permitir professores criarem comunicados e usar vínculos
 import { useEffect, useState } from 'react';
 import React from 'react';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import {
   Container, Button, Modal, Form, ToastContainer, Toast, Row, Col, FormControl,
   Card, Badge,
-  // ProgressBar
 } from 'react-bootstrap';
 import { PlusCircle, CheckCircle, Clock, FileEarmark, Calendar } from 'react-bootstrap-icons';
 import { X } from 'lucide-react';
 import {
-  collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy, Timestamp, getDoc
+  collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy, Timestamp
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
-import Paginacao from '../components/Paginacao';
+import Paginacao from '../components/common/Paginacao';
 import { Megaphone, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  loadTurmasByAnoLetivo,
+  loadVinculos,
+  type Turma as TurmaLoader,
+  type Vinculo as VinculoLoader
+} from '../utils/dataLoaders';
 
-// Imports para DatePicker
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { ptBR } from "date-fns/locale";
 import { registerLocale } from "react-datepicker";
 
-// Registrar locale português
 registerLocale("pt-BR", ptBR as any);
 
 interface Comunicado {
@@ -37,15 +39,8 @@ interface Comunicado {
   status: 'enviado' | 'agendado' | 'rascunho';
   dataAgendamento?: Timestamp;
 }
-interface Turma {
-  id: string;
-  nome: string;
-}
-interface Vinculo {
-  professorId: string;
-  materiaId: string;
-  turmaId: string;
-}
+type Turma = TurmaLoader;
+type Vinculo = VinculoLoader;
 
 export default function Comunicados() {
   const { userData } = useAuth()!;
@@ -57,7 +52,7 @@ export default function Comunicados() {
     value?: string;
     onClick?: () => void;
   };
-  
+
   const CustomDateInput = React.forwardRef<HTMLInputElement, CustomDateInputProps>(
     ({ value, onClick }, ref) => {
       return (
@@ -116,34 +111,27 @@ export default function Comunicados() {
 
   useEffect(() => {
     fetchData();
-  }, [userData, anoLetivo]);
-
-  useEffect(() => {
     if (showModal) {
       setTimeout(() => {
         document.getElementById('input-assunto')?.focus();
       }, 100);
     }
-  }, [showModal]);
+  }, [showModal, userData, anoLetivo]);
 
   const fetchData = async () => {
-    let turmaDocs = [];
+    let listaTurmas: Turma[] = [];
+
     if (isAdmin) {
-      const turmaSnap = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())));
-      turmaDocs = turmaSnap.docs;
+      listaTurmas = await loadTurmasByAnoLetivo(anoLetivo);
     } else {
-      const vincSnap = await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userData?.uid)));
-      const vincList = vincSnap.docs.map(d => d.data() as Vinculo);
+      const vincList = await loadVinculos(userData?.uid);
       setVinculos(vincList);
+
       const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-      const turmaDocsTemp = await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))));
-      // Filtrar apenas turmas do ano letivo atual
-      turmaDocs = turmaDocsTemp.filter(d => d.data()?.anoLetivo?.toString() === anoLetivo.toString());
+      const todasTurmas = await loadTurmasByAnoLetivo(anoLetivo);
+      listaTurmas = todasTurmas.filter(t => turmaIds.includes(t.id));
     }
 
-    const listaTurmas = turmaDocs
-      .map(d => ({ id: d.id, nome: d.data()?.nome || '-' }))
-      .sort((a, b) => a.nome.localeCompare(b.nome));
     setTurmas(listaTurmas);
 
     const comunicadosQuery = isAdmin
@@ -151,8 +139,8 @@ export default function Comunicados() {
       : query(collection(db, 'comunicados'), where('turmaId', 'in', listaTurmas.map(t => t.id)), orderBy('data', 'desc'));
 
     const snap = await getDocs(comunicadosQuery);
-    const lista = snap.docs.map(d => ({ 
-      id: d.id, 
+    const lista = snap.docs.map(d => ({
+      id: d.id,
       ...(d.data() as any),
       status: d.data().status || 'enviado'
     })) as Comunicado[];
@@ -161,7 +149,7 @@ export default function Comunicados() {
 
   const handleSalvar = async () => {
     if (!assunto || !mensagem) return;
-    
+
     // Validar data de agendamento se status for agendado
     if (status === 'agendado' && !dataAgendamento) {
       setToast({ show: true, message: 'Data de agendamento é obrigatória para comunicados agendados.', variant: 'danger' });
@@ -197,7 +185,7 @@ export default function Comunicados() {
       } else {
         // No modo criação, cria um comunicado para cada turma selecionada
         let turmasParaCriar: string[] = [];
-        
+
         // Se "todas" foi selecionado, usar todas as turmas disponíveis
         if (turmasSelecionadas.includes('todas')) {
           turmasParaCriar = turmasDisponiveis.map(t => t.id);
@@ -242,12 +230,12 @@ export default function Comunicados() {
     setTurmaId(comunicado.turmaId);
     setTurmasSelecionadas([comunicado.turmaId]);
     setStatus(comunicado.status);
-    
+
     // Definir data de agendamento se existir
     if (comunicado.dataAgendamento) {
       setDataAgendamento(comunicado.dataAgendamento.toDate());
     }
-    
+
     setShowModal(true);
   };
 
@@ -297,11 +285,11 @@ export default function Comunicados() {
     const matchBusca = c.assunto.toLowerCase().includes(busca.toLowerCase()) ||
       c.mensagem.toLowerCase().includes(busca.toLowerCase()) ||
       (c.turmaNome || '').toLowerCase().includes(busca.toLowerCase());
-    
+
     const matchTurma = filtroTurma === '' || c.turmaId === filtroTurma;
     const matchAssunto = filtroAssunto === '' || c.assunto === filtroAssunto;
     const matchStatus = filtroStatus === '' || c.status === filtroStatus;
-    
+
     return matchBusca && matchTurma && matchAssunto && matchStatus;
   });
 
@@ -439,8 +427,8 @@ export default function Comunicados() {
           <div className="w-100 mb-3 d-block d-md-none">
             <Row>
               <Col>
-                <Button 
-                  variant="primary" 
+                <Button
+                  variant="primary"
                   className="w-100 d-flex align-items-center justify-content-center gap-2"
                   onClick={() => { limparFormulario(); setShowModal(true); }}
                 >
@@ -512,77 +500,18 @@ export default function Comunicados() {
                     Turma: {(c.turmaNome === '-' || c.turmaId === '') ? 'Todas as turmas' : (c.turmaNome || turmas.find(t => t.id === c.turmaId)?.nome || '-')}
                   </p>
                   <small style={{ color: '#6c757d', fontSize: '0.8rem' }}>
-                    {c.status === 'agendado' && c.dataAgendamento 
-                      ? `Agendado para: ${c.dataAgendamento.toDate().toLocaleDateString('pt-BR', { 
-                          day: '2-digit', 
-                          month: '2-digit', 
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}`
+                    {c.status === 'agendado' && c.dataAgendamento
+                      ? `Agendado para: ${c.dataAgendamento.toDate().toLocaleDateString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}`
                       : `Criado em: ${c.data?.toDate().toLocaleDateString('pt-BR')}`
                     }
                   </small>
                 </div>
-                {/*
-                Barra de Progresso de Leitura
-                <div className="mb-3">
-                  <div className="d-flex align-items-center mb-1" style={{ width: '70%', minHeight: '24px' }}>
-                    <div className="d-flex align-items-center w-100">
-                      // Definição de percent e barColor fora do bloco para uso no style da porcentagem
-                      {(() => {
-                        return null;
-                      })()}
-                      {(() => {
-                        // Definir percent e barColor para uso abaixo
-                        // ...existing code...
-                        return null;
-                      })()}
-                      {(() => {
-                        // ...existing code...
-                        return null;
-                      })()}
-                      // Cálculo da cor e percent para barra e porcentagem
-                      {(() => {
-                        const percent = ((c.leituras || 0) / (c.totalAlunos || 1)) * 100;
-                        let barColor = '#22c55e'; // verde enviado
-                        if (c.status === 'agendado') barColor = '#3b82f6'; // azul agendado
-                        if (c.status === 'rascunho') barColor = '#facc15'; // amarelo rascunho
-                        const barStyle = {
-                          height: '8px',
-                          borderRadius: '7px',
-                          width: '100%',
-                          backgroundColor: '#e9ecef',
-                          '--bs-progress-bar-bg': barColor,
-                        } as React.CSSProperties;
-                        return (
-                          <>
-                            <ProgressBar
-                              now={percent}
-                              style={barStyle}
-                              variant={undefined}
-                            />
-                            <span
-                              style={{
-                                marginLeft: 12,
-                                fontSize: '0.8rem',
-                                color: barColor,
-                                fontWeight: 600,
-                                whiteSpace: 'nowrap',
-                                display: 'flex',
-                                alignItems: 'center',
-                                height: '100%'
-                              }}
-                            >
-                              {Math.round(percent)}% leram
-                            </span>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                </div>
-                */}
                 {/* Mensagem com Expandir/Recolher com efeito suave */}
                 <div className="mb-3">
                   <div
@@ -595,10 +524,10 @@ export default function Comunicados() {
                   </div>
                   {c.mensagem.length > maxCaracteres && (
                     <div style={{ textAlign: 'left', marginTop: 4 }}>
-                      <Button 
-                        variant="link" 
-                        size="sm" 
-                        className="p-0" 
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="p-0"
                         onClick={() => toggleMessage(c.id)}
                         style={{ fontSize: '0.85rem', textDecoration: 'none', marginLeft: 0, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
                       >
@@ -687,7 +616,7 @@ export default function Comunicados() {
                       disabled={editandoId !== null}
                       style={{ fontWeight: turmasSelecionadas.includes('todas') ? 'bold' : 'normal' }}
                     />
-                    
+
                     {/* Checkboxes das turmas individuais */}
                     {[...turmasDisponiveis].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
                       <Form.Check
@@ -728,7 +657,7 @@ export default function Comunicados() {
                   <option value="rascunho">Rascunho</option>
                 </Form.Select>
               </Form.Group>
-              
+
               {/* Campo de Data de Agendamento - só aparece se status for agendado */}
               {status === 'agendado' && (
                 <Form.Group className="mb-3">
@@ -755,7 +684,7 @@ export default function Comunicados() {
                   </Form.Text>
                 </Form.Group>
               )}
-              
+
               <Form.Group className="mb-3">
                 <Form.Label>Mensagem</Form.Label>
                 <Form.Control as="textarea" rows={8} value={mensagem} onChange={e => setMensagem(e.target.value)} placeholder="Digite a mensagem do comunicado" />
@@ -784,12 +713,3 @@ export default function Comunicados() {
     </AppLayout>
   );
 }
-
-
-
-
-
-
-
-
-

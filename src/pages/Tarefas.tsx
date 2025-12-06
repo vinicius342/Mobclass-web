@@ -6,10 +6,10 @@ import {
   collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, getDoc
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
-import Paginacao from '../components/Paginacao';
+import Paginacao from '../components/common/Paginacao';
 import { useUrlValidator } from '../hooks/useUrlValidator';
 
 import { GraduationCap, Plus, Eye, Trash2, ArrowLeft, Edit, ArrowDownUp } from "lucide-react";

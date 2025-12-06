@@ -1,5 +1,5 @@
 import { JSX, useEffect, useState } from 'react';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import {
   Container, Spinner, Button, Modal, Form,
   ToastContainer, Toast, Pagination, Card, Dropdown, Badge,

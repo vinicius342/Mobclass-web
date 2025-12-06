@@ -1,7 +1,7 @@
 // src/pages/Notas.tsx - Atualizado com turmas via professores_materias
 import { JSX, useEffect, useState } from 'react';
 import { FaClockRotateLeft } from 'react-icons/fa6';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import {
   Container, Row, Col, Button, Form, Table, Spinner, Toast, ToastContainer,
   InputGroup, FormControl,
@@ -16,7 +16,7 @@ import {
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivo } from '../contexts/AnoLetivoContext';
-import Paginacao from '../components/Paginacao';
+import Paginacao from '../components/common/Paginacao';
 import { Save, Check, Undo, BarChart, Award, Activity, TrendingDown, ArrowDownUp, BookOpen, Download } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircleExclamation, faFaceFrown, faSearch } from '@fortawesome/free-solid-svg-icons';

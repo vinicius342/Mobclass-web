@@ -4,7 +4,7 @@ import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy,
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import { toast } from 'react-toastify';
 import {
   Plus,
@@ -19,7 +19,7 @@ import {
   Download,
 } from 'lucide-react';
 import { FaCircleExclamation } from 'react-icons/fa6';
-import Paginacao from '../components/Paginacao';
+import Paginacao from '../components/common/Paginacao';
 
 // PDF
 import jsPDF from 'jspdf';

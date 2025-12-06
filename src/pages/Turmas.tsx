@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import {
   Container, Table, Button, Modal, Form, Spinner, ToastContainer, Toast, Dropdown, Card,
   Col,
@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import Paginacao from '../components/Paginacao';
+import Paginacao from '../components/common/Paginacao';
 import { Users, BookOpen, User, Eye, Clock, CheckCircle2, Ghost, ArrowRight, ArrowLeftRight, CheckSquare, XSquare, BookText } from 'lucide-react';
 import { Edit, Trash2, Check, X } from 'lucide-react';
 
