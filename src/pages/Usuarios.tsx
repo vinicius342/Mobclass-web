@@ -8,7 +8,7 @@ import {
 } from 'react-bootstrap';
 import { PlusCircle, Person } from 'react-bootstrap-icons';
 import Paginacao from '../components/common/Paginacao';
-import { db } from '../services/firebase';
+import { db } from '../services/firebase/firebase';
 import {
   collection, getDocs, updateDoc, deleteDoc, doc, writeBatch, query, where
 } from 'firebase/firestore';

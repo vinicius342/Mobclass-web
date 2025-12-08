@@ -10,7 +10,7 @@ import { X } from 'lucide-react';
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy, Timestamp
 } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db } from '../services/firebase/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import Paginacao from '../components/common/Paginacao';
@@ -20,7 +20,7 @@ import {
   loadVinculos,
   type Turma as TurmaLoader,
   type Vinculo as VinculoLoader
-} from '../utils/dataLoaders';
+} from '../services/data/dataLoaders';
 
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";

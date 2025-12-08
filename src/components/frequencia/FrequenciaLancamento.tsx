@@ -11,7 +11,7 @@ import {
   writeBatch, doc
 } from 'firebase/firestore';
 import { CalendarIcon, Check, Info, Save, Undo, User, UserCheck, UserX, X } from "lucide-react";
-import { db } from '../../services/firebase';
+import { db } from '../../services/firebase/firebase';
 import { FaUserCheck, FaUsers, FaUserTimes } from 'react-icons/fa';
 
 //Data

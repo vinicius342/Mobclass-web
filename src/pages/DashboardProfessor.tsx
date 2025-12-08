@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import AppLayout from '../components/layout/AppLayout';
 import { Container, Row, Col, Card, Spinner, Button } from 'react-bootstrap';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db } from '../services/firebase/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {

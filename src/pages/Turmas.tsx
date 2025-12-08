@@ -2,21 +2,29 @@ import { useEffect, useState } from 'react';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import AppLayout from '../components/layout/AppLayout';
 import {
-  Container, Table, Button, Modal, Form, Spinner, ToastContainer, Toast, Dropdown, Card,
+  Container, Button, Form, Spinner, ToastContainer, Toast, Card,
   Col,
   Row
 } from 'react-bootstrap';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCircleExclamation } from '@fortawesome/free-solid-svg-icons';
 import { PlusCircle } from 'react-bootstrap-icons';
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, documentId, getDoc,
 } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db } from '../services/firebase/firebase';
+import { loadAdminData, loadProfessorData, loadTurmasComVirtualizacao, loadProfessores } from '../services/data/dataLoaders';
+import { getTurmaAlunoNoAnoUtil, calcularMediaFinalUtil, getNotaColorUtil } from '../utils/turmasHelpers';
 import { useAuth } from '../contexts/AuthContext';
 import Paginacao from '../components/common/Paginacao';
-import { Users, BookOpen, User, Eye, Clock, CheckCircle2, Ghost, ArrowRight, ArrowLeftRight, CheckSquare, XSquare, BookText } from 'lucide-react';
-import { Edit, Trash2, Check, X } from 'lucide-react';
+import { Users, BookOpen, Clock } from 'lucide-react';
+import { Check } from 'lucide-react';
+import RematriculaTab from '../components/turmas/RematriculaTab';
+import ConfirmacaoAcoesModal from '../components/turmas/ConfirmacaoAcoesModal';
+import HistoricoNotasModal from '../components/turmas/HistoricoNotasModal';
+import TurmaFormModal from '../components/turmas/TurmaFormModal';
+import TurmaDetailsModal from '../components/turmas/TurmaDetailsModal';
+import TurmasListDesktop from '../components/turmas/TurmasListDesktop';
+import TurmasListMobile from '../components/turmas/TurmasListMobile';
+import TransferenciaModal from '../components/turmas/TransferenciaModal';
 
 interface Turma {
   id: string;
@@ -119,9 +127,9 @@ export default function Turmas() {
   // Estado para modal de confirmação de ações
   const [showModalConfirmacao, setShowModalConfirmacao] = useState(false);
   const [resumoDestinos, setResumoDestinos] = useState<{
-    promovidos: { alunoNome: string; turmaDestino: string }[];
-    reprovados: { alunoNome: string; turmaDestino: string }[];
-    transferidos: { alunoNome: string; turmaDestino: string }[];
+    promovidos: { alunoId: string; turmaDestino: string }[];
+    reprovados: { alunoId: string; turmaDestino: string }[];
+    transferidos: { alunoId: string; turmaDestino: string }[];
   }>({ promovidos: [], reprovados: [], transferidos: [] });
 
   // Estado para modal de transferência individual
@@ -179,106 +187,69 @@ export default function Turmas() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const anoAtual = anoLetivo.toString();
-      const anoAnterior = (anoLetivo - 1).toString();
+      // Carregar dados principais com dataLoaders
+      const isAdmin = userData && userData.tipo === 'administradores';
 
-      // Buscar turmas do ano atual
-      let turmasAtuaisSnap;
-      if (userData && userData.tipo === 'administradores') {
-        turmasAtuaisSnap = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoAtual)));
+      // Carregamentos em paralelo conforme perfil
+      if (isAdmin) {
+        const [adminData, turmasComVirtual, alunosSnap, todasTurmasSnap] = await Promise.all([
+          loadAdminData(anoLetivo),
+          loadTurmasComVirtualizacao(anoLetivo),
+          getDocs(collection(db, 'alunos')),
+          getDocs(collection(db, 'turmas'))
+        ]);
+
+        // Apenas as virtualizadas do loader (para manter o mesmo comportamento anterior)
+        const virtualizadasLocal: Turma[] = turmasComVirtual
+          .filter(t => t.isVirtualizada)
+          .map(t => ({
+            id: t.id,
+            nome: t.nome,
+            anoLetivo: String(t.anoLetivo ?? anoLetivo),
+            isVirtualizada: t.isVirtualizada,
+            turmaOriginalId: t.turmaOriginalId,
+            turno: 'Manhã'
+          }));
+        const todasTurmas = todasTurmasSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Turma[];
+        const turmasFinais = [...todasTurmas, ...virtualizadasLocal].sort((a, b) => a.nome.localeCompare(b.nome));
+
+        setTurmas(turmasFinais);
+        setAlunos(alunosSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+        setProfessores(adminData.professores);
+        setMaterias(adminData.materias);
+        setVinculos(adminData.vinculos);
       } else {
-        const turmaIds = userData?.turmas || [];
-        if (turmaIds.length > 0) {
-          const turmaQuery = query(
-            collection(db, 'turmas'),
-            where(documentId(), 'in', turmaIds),
-            where('anoLetivo', '==', anoAtual)
-          );
-          turmasAtuaisSnap = await getDocs(turmaQuery);
-        } else {
-          turmasAtuaisSnap = { docs: [] };
-        }
+        const turmaIds = (userData?.turmas || []) as string[];
+
+        const [profData, turmasComVirtual, alunosSnap, professoresList, todasTurmasSnap] = await Promise.all([
+          loadProfessorData(userData!.uid, anoLetivo),
+          loadTurmasComVirtualizacao(anoLetivo),
+          getDocs(collection(db, 'alunos')),
+          loadProfessores(), // para mapear nomes nas listagens de vínculos
+          turmaIds.length
+            ? getDocs(query(collection(db, 'turmas'), where(documentId(), 'in', turmaIds)))
+            : Promise.resolve({ docs: [] } as any)
+        ]);
+
+        const virtualizadasLocal: Turma[] = turmasComVirtual
+          .filter(t => t.isVirtualizada)
+          .map(t => ({
+            id: t.id,
+            nome: t.nome,
+            anoLetivo: String(t.anoLetivo ?? anoLetivo),
+            isVirtualizada: t.isVirtualizada,
+            turmaOriginalId: t.turmaOriginalId,
+            turno: 'Manhã'
+          }));
+        const todasTurmas = (todasTurmasSnap.docs || []).map((d: any) => ({ id: d.id, ...(d.data() as any) })) as Turma[];
+        const turmasFinais = [...todasTurmas, ...virtualizadasLocal].sort((a, b) => a.nome.localeCompare(b.nome));
+
+        setTurmas(turmasFinais);
+        setAlunos(alunosSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+        setProfessores(professoresList);
+        setMaterias(profData.materias);
+        setVinculos(profData.vinculos);
       }
-
-      // Buscar turmas do ano anterior para virtualização
-      let turmasAnoAnteriorSnap;
-      if (userData && userData.tipo === 'administradores') {
-        turmasAnoAnteriorSnap = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoAnterior)));
-      } else {
-        const turmaIds = userData?.turmas || [];
-        if (turmaIds.length > 0) {
-          const turmaQuery = query(
-            collection(db, 'turmas'),
-            where(documentId(), 'in', turmaIds),
-            where('anoLetivo', '==', anoAnterior)
-          );
-          turmasAnoAnteriorSnap = await getDocs(turmaQuery);
-        } else {
-          turmasAnoAnteriorSnap = { docs: [] };
-        }
-      }
-
-      // Buscar TODAS as turmas para popular o filtro de ano letivo na rematrícula
-      let todasTurmasSnap;
-      if (userData && userData.tipo === 'administradores') {
-        todasTurmasSnap = await getDocs(collection(db, 'turmas'));
-      } else {
-        const turmaIds = userData?.turmas || [];
-        if (turmaIds.length > 0) {
-          const turmaQuery = query(
-            collection(db, 'turmas'),
-            where(documentId(), 'in', turmaIds)
-          );
-          todasTurmasSnap = await getDocs(turmaQuery);
-        } else {
-          todasTurmasSnap = { docs: [] };
-        }
-      }
-
-      // Buscar dados adicionais
-      const [alunosSnap, professoresSnap, materiasSnap, vinculosSnap] = await Promise.all([
-        getDocs(collection(db, 'alunos')),
-        getDocs(collection(db, 'professores')),
-        getDocs(collection(db, 'materias')),
-        getDocs(collection(db, 'professores_materias'))
-      ]);
-
-      // Processar turmas do ano atual
-      const turmasAtuais = turmasAtuaisSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-
-      // Processar turmas do ano anterior
-      const turmasAnteriores = turmasAnoAnteriorSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-
-      // Processar todas as turmas
-      const todasTurmas = todasTurmasSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Turma[];
-
-      // Verificar quais turmas do ano anterior podem ser virtualizadas
-      const turmasVirtualizadas: Turma[] = [];
-
-      for (const turmaAnterior of turmasAnteriores) {
-        // Só virtualiza se isVirtual não for false E se não existe uma turma atual com o mesmo nome
-        const podeVirtualizar = turmaAnterior.isVirtual !== false;
-        const jaExisteAtual = turmasAtuais.some(t => t.nome === turmaAnterior.nome);
-
-        if (podeVirtualizar && !jaExisteAtual) {
-          turmasVirtualizadas.push({
-            ...turmaAnterior,
-            id: `virtual_${turmaAnterior.id}`, // ID único para turma virtualizada
-            anoLetivo: anoAtual, // Mostra no ano atual
-            isVirtualizada: true,
-            turmaOriginalId: turmaAnterior.id
-          });
-        }
-      }
-
-      // Combinar todas as turmas reais + virtualizadas
-      const turmasFinais = [...todasTurmas, ...turmasVirtualizadas].sort((a, b) => a.nome.localeCompare(b.nome));
-
-      setTurmas(turmasFinais);
-      setAlunos(alunosSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-      setProfessores(professoresSnap.docs.map(d => ({ id: d.id, nome: d.data().nome })));
-      setMaterias(materiasSnap.docs.map(d => ({ id: d.id, nome: d.data().nome })));
-      setVinculos(vinculosSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
 
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
@@ -358,20 +329,9 @@ export default function Turmas() {
     }
   };
 
-  const totalAlunos = (turmaId: string) => alunos.filter(a => getTurmaAlunoNoAno(a, anoLetivo) === turmaId).length;
+  const totalAlunos = (turmaId: string) => alunos.filter(a => getTurmaAlunoNoAnoUtil(a, anoLetivo) === turmaId).length;
 
-  // Função auxiliar para obter a turma do aluno no ano letivo específico
-  const getTurmaAlunoNoAno = (aluno: Aluno, ano: number): string => {
-    const anoStr = ano.toString();
-
-    // Verificar se existe histórico de turmas
-    if (aluno.historicoTurmas && aluno.historicoTurmas[anoStr]) {
-      return aluno.historicoTurmas[anoStr];
-    }
-
-    // Fallback para turmaId atual (compatibilidade com dados antigos)
-    return aluno.turmaId;
-  };
+  // Utilitário extraído em src/utils/turmasHelpers.ts: getTurmaAlunoNoAnoUtil
 
   // Filtragem combinada
   const turmasFiltradas = turmas.filter(t => {
@@ -460,7 +420,7 @@ export default function Turmas() {
       return [];
     }
     return alunos
-      .filter(a => getTurmaAlunoNoAno(a, anoLetivo) === turmaId)
+      .filter(a => getTurmaAlunoNoAnoUtil(a, anoLetivo) === turmaId)
       .sort((a, b) => a.nome.localeCompare(b.nome));
   };
 
@@ -525,33 +485,14 @@ export default function Turmas() {
     return alunos.filter(aluno => {
       // Filtro por turma (usando histórico do ano letivo selecionado na rematrícula)
       const matchTurma = turmaFiltroRematricula === '' ||
-        getTurmaAlunoNoAno(aluno, anoLetivoRematricula) === turmaFiltroRematricula;
+        getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula) === turmaFiltroRematricula;
       return matchTurma;
     });
   };
 
-  // Função para calcular média final das notas
-  const calcularMediaFinal = (nota: Nota) => {
-    const { notaParcial, notaGlobal, notaParticipacao, notaRecuperacao } = nota;
-    let media = 0;
-    let count = 0;
-    if (typeof notaParcial === 'number') { media += notaParcial; count++; }
-    if (typeof notaGlobal === 'number') { media += notaGlobal; count++; }
-    if (typeof notaParticipacao === 'number') { media += notaParticipacao; count++; }
-    if (count > 0) media = media / count;
-    if (typeof notaRecuperacao === 'number') {
-      media = Math.max(media, notaRecuperacao);
-    }
-    return Math.round(media * 100) / 100;
-  };
+  // Utilitário extraído em src/utils/turmasHelpers.ts: calcularMediaFinalUtil
 
-  // Função para obter cor da nota
-  const getNotaColor = (valor: number | undefined) => {
-    if (typeof valor !== 'number') return '';
-    if (valor >= 9) return 'text-success';
-    if (valor >= 6) return 'text-warning';
-    return 'text-danger';
-  };
+  // Utilitário extraído em src/utils/turmasHelpers.ts: getNotaColorUtil
 
   // Função para calcular status do aluno baseado nas notas finais
   const calcularStatusAluno = async (aluno: Aluno, anoParaCalculo: number = anoLetivo): Promise<string> => {
@@ -559,7 +500,7 @@ export default function Turmas() {
       const alunoUidParaBusca = aluno.uid || aluno.id;
 
       // Obter a turma do aluno no ano letivo usando o histórico
-      const turmaIdNoAno = getTurmaAlunoNoAno(aluno, anoParaCalculo);
+      const turmaIdNoAno = getTurmaAlunoNoAnoUtil(aluno, anoParaCalculo);
 
       // Buscar todas as notas do aluno na turma do ano letivo atual
       const notasQuery = query(
@@ -619,7 +560,7 @@ export default function Turmas() {
 
           if (temTresNotas || temRecuperacao) {
             // Calcular média final
-            const mediaFinal = calcularMediaFinal(nota);
+            const mediaFinal = calcularMediaFinalUtil(nota);
             todasMediasFinais.push(mediaFinal);
           } else {
             temNotaIncompleta = true;
@@ -750,7 +691,7 @@ export default function Turmas() {
       if (!aluno) return null;
 
       const alunoUidParaBusca = aluno.uid || aluno.id;
-      const turmaIdNoAno = getTurmaAlunoNoAno(aluno, anoParaCalculo);
+      const turmaIdNoAno = getTurmaAlunoNoAnoUtil(aluno, anoParaCalculo);
 
       // Buscar todas as notas do aluno na turma do ano letivo atual
       const notasSnap = await getDocs(query(
@@ -777,7 +718,7 @@ export default function Turmas() {
 
         // Só calcular média se tiver notas válidas
         if (temTresNotas || temRecuperacao) {
-          const mediaFinal = calcularMediaFinal(data);
+          const mediaFinal = calcularMediaFinalUtil(data);
           if (!notasPorMateria[materiaId]) notasPorMateria[materiaId] = [];
           if (mediaFinal !== null && mediaFinal !== undefined && !isNaN(mediaFinal)) {
             notasPorMateria[materiaId].push(mediaFinal);
@@ -966,9 +907,9 @@ export default function Turmas() {
     }
 
     // Calcular resumo de destinos
-    const promovidos: { alunoNome: string; turmaDestino: string }[] = [];
-    const reprovados: { alunoNome: string; turmaDestino: string }[] = [];
-    const transferidos: { alunoNome: string; turmaDestino: string }[] = [];
+    const promovidos: { alunoId: string; turmaDestino: string }[] = [];
+    const reprovados: { alunoId: string; turmaDestino: string }[] = [];
+    const transferidos: { alunoId: string; turmaDestino: string }[] = [];
 
     const anoProximoStr = (anoLetivoRematricula + 1).toString();
     const anoAtualStr = anoLetivoRematricula.toString();
@@ -989,14 +930,14 @@ export default function Turmas() {
         }
 
         promovidos.push({
-          alunoNome: aluno.nome,
+          alunoId: aluno.id,
           turmaDestino: turmaDestino?.nome || 'Desconhecida'
         });
       }
 
       // Reprovados
       if (statusPromocao[alunoId] === 'reprovado') {
-        const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(aluno, anoLetivoRematricula));
+        const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula));
         const nomeAtualAluno = turmaAtualAluno?.nome || '';
 
         // Gerar turmas virtualizadas (mesmo código da confirmação)
@@ -1025,7 +966,7 @@ export default function Turmas() {
         const turmaDestino = turmasMesmaSerie.find(t => t.nome === nomeAtualAluno) || turmasMesmaSerie[0];
 
         reprovados.push({
-          alunoNome: aluno.nome,
+          alunoId: aluno.id,
           turmaDestino: turmaDestino?.nome || 'Desconhecida'
         });
       }
@@ -1034,7 +975,7 @@ export default function Turmas() {
       if (alunosTransferencia[alunoId]) {
         const turmaDestino = turmas.find(t => t.id === alunosTransferencia[alunoId]);
         transferidos.push({
-          alunoNome: aluno.nome,
+          alunoId: aluno.id,
           turmaDestino: turmaDestino?.nome || 'Desconhecida'
         });
       }
@@ -1157,7 +1098,7 @@ export default function Turmas() {
           const turmaDestino = turmas.find(t => t.id === turmaDestinoIdOriginal);
 
           if (turmaDestino) {
-            const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(aluno, anoLetivoRematricula));
+            const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula));
             const serieAtual = extrairNumeroSerie(turmaAtualAluno?.nome || '');
             const serieDestino = extrairNumeroSerie(turmaDestino.nome);
 
@@ -1168,7 +1109,7 @@ export default function Turmas() {
             }
 
             // IMPORTANTE: Preservar a turma atual no histórico do ano atual
-            const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivoRematricula);
+            const turmaAtualId = getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula);
 
             if (!historicoTurmas[anoAtualStr]) {
               historicoTurmas[anoAtualStr] = turmaAtualId;
@@ -1218,7 +1159,7 @@ export default function Turmas() {
 
           if (turmaDestino) {
             // IMPORTANTE: Preservar a turma atual no histórico do ano atual
-            const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivoRematricula);
+            const turmaAtualId = getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula);
 
             if (!historicoTurmas[anoAtualStr]) {
               historicoTurmas[anoAtualStr] = turmaAtualId;
@@ -1248,7 +1189,7 @@ export default function Turmas() {
         // Se for reprovação
         else if (statusPromocao[alunoId] === 'reprovado') {
           // Para reprovados: sempre buscar turma da mesma série no ano seguinte
-          const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(aluno, anoLetivoRematricula));
+          const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula));
           const serieAtual = extrairNumeroSerie(turmaAtualAluno?.nome || '');
 
           // GERAR TURMAS VIRTUALIZADAS PARA O ANO SEGUINTE
@@ -1298,7 +1239,7 @@ export default function Turmas() {
           const turmaDestinoIdFinal = await materializarTurmaVirtual(turmaDestino);
 
           // IMPORTANTE: Preservar a turma atual no histórico do ano atual
-          const turmaAtualId = getTurmaAlunoNoAno(aluno, anoLetivoRematricula);
+          const turmaAtualId = getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula);
 
           if (!historicoTurmas[anoAtualStr]) {
             historicoTurmas[anoAtualStr] = turmaAtualId;
@@ -1354,7 +1295,7 @@ export default function Turmas() {
       const alunoUidParaBusca = aluno.uid || aluno.id;
 
       // Obter a turma do aluno no ano letivo selecionado (rematrícula) usando o histórico
-      const turmaIdNoAno = getTurmaAlunoNoAno(aluno, anoLetivoRematricula);
+      const turmaIdNoAno = getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula);
 
       // Buscar as notas do aluno na turma do ano letivo atual
       const notasSnap = await getDocs(query(
@@ -1412,7 +1353,7 @@ export default function Turmas() {
 
         if (temTresNotas || temRecuperacao) {
           // Usar a mesma função do badge que já compara corretamente
-          mediaFinal = calcularMediaFinal(data);
+          mediaFinal = calcularMediaFinalUtil(data);
         }
 
         notasPorMateriaBimestre[bimestre][nomeMateria] = {
@@ -1485,7 +1426,7 @@ export default function Turmas() {
       const turmaDestino = turmas.find(t => t.id === turmaDestinoTransferencia);
 
       if (turmaDestino) {
-        const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAno(alunoTransferencia, anoLetivoRematricula));
+        const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAnoUtil(alunoTransferencia, anoLetivoRematricula));
         const serieAtual = extrairNumeroSerie(turmaAtualAluno?.nome || '');
         const serieDestino = extrairNumeroSerie(turmaDestino.nome);
 
@@ -1497,7 +1438,7 @@ export default function Turmas() {
         }
 
         // IMPORTANTE: Preservar a turma atual no histórico do ano atual
-        const turmaAtualId = getTurmaAlunoNoAno(alunoTransferencia, anoLetivoRematricula);
+        const turmaAtualId = getTurmaAlunoNoAnoUtil(alunoTransferencia, anoLetivoRematricula);
 
         if (!historicoTurmas[anoAtualStr]) {
           historicoTurmas[anoAtualStr] = turmaAtualId;
@@ -1728,224 +1669,24 @@ export default function Turmas() {
                 </div>
               ) : (
                 <>
-                  {/* Versão Desktop */}
-                  <div className="turmas-list-desktop d-none d-md-block">
-                    <Card className="mb-1">
-                      <Card.Body>
-                        <div className="agenda-table-desktop w-100">
-                          <Table hover className="w-100">
-                            <thead className="thead-sticky">
-                              <tr style={{ textAlign: 'center' }}>
-                                <th className='text-muted'>Turma</th>
-                                <th className='text-muted'>Status</th>
-                                <th className='text-muted'>Turno</th>
-                                <th className='text-muted'>Total de Alunos</th>
-                                <th className='text-muted'>Ações</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {turmasPaginadas.length > 0 ? turmasPaginadas.map(t => {
-                                const turnoStyle = getTurnoStyle(t.turno);
+                  <TurmasListDesktop
+                    turmasPaginadas={turmasPaginadas}
+                    totalAlunos={totalAlunos}
+                    getTurnoStyle={getTurnoStyle}
+                    handleVerDetalhes={handleVerDetalhes}
+                    openModal={openModal}
+                    handleExcluirTurma={handleExcluirTurma}
+                  />
 
-                                return (
-                                  <tr key={t.id} className='align-middle linha-agenda' style={{ textAlign: 'center' }}>
-                                    <td>
-                                      <div className="d-flex align-items-center justify-content-center gap-2">
-                                        <strong>{t.nome}</strong>
-                                      </div>
-                                    </td>
-                                    <td>
-                                      <span className="badge bg-success text-white px-2 py-1">
-                                        <CheckCircle2 size={14} className="me-1" />
-                                        Ativa
-                                      </span>
-                                    </td>
-                                    <td>
-                                      <span
-                                        className="badge badge-turno px-2 py-1"
-                                        style={{
-                                          backgroundColor: turnoStyle.bg,
-                                          color: turnoStyle.color
-                                        }}
-                                      >
-                                        {t.turno}
-                                      </span>
-                                    </td>
-                                    <td>
-                                      <span className="fw-semibold" style={{ fontWeight: 600, fontSize: '1rem', color: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                                        <Users size={18} style={{ marginRight: 4, verticalAlign: 'middle', color: '#6c757d' }} />
-                                        {t.isVirtualizada ? '-' : totalAlunos(t.id)}
-                                      </span>
-                                    </td>
-                                    <td>
-                                      <Dropdown align="end">
-                                        <Dropdown.Toggle
-                                          variant="light"
-                                          size="sm"
-                                          style={{
-                                            border: 'none',
-                                            background: 'transparent',
-                                            boxShadow: 'none'
-                                          }}
-                                          className="dropdown-toggle-no-caret"
-                                        >
-                                          ⋯
-                                        </Dropdown.Toggle>
-                                        <Dropdown.Menu>
-                                          <Dropdown.Item onClick={() => handleVerDetalhes(t)} className="d-flex align-items-center gap-2">
-                                            <Eye size={16} /> Detalhes
-                                          </Dropdown.Item>
-                                          {t.isVirtualizada ? (
-                                            <>
-                                              {/* <Dropdown.Item onClick={() => handleMaterializarTurma(t)} className="d-flex align-items-center gap-2 text-success">
-                                                <CheckCircle2 size={16} className="text-success" /> Materializar
-                                              </Dropdown.Item> */}
-                                              <Dropdown.Item onClick={() => handleExcluirTurma(t.id)} className="d-flex align-items-center gap-2 text-danger">
-                                                <Trash2 size={16} /> Excluir
-                                              </Dropdown.Item>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Dropdown.Item onClick={() => openModal(t)} className="d-flex align-items-center gap-2 text-primary">
-                                                <Edit size={16} className="text-primary" /> Editar
-                                              </Dropdown.Item>
-                                              <Dropdown.Item onClick={() => handleExcluirTurma(t.id)} className="d-flex align-items-center gap-2 text-danger">
-                                                <Trash2 size={16} /> Excluir
-                                              </Dropdown.Item>
-                                            </>
-                                          )}
-                                        </Dropdown.Menu>
-                                      </Dropdown>
-                                    </td>
-                                  </tr>
-                                );
-                              }) : (
-                                <tr>
-                                  <td colSpan={5} className="text-center py-4">
-                                    <div className="agenda-empty-state">
-                                      <div className="empty-icon">🏫</div>
-                                      <h5>Nenhuma turma encontrada</h5>
-                                      <p className="text-muted">Tente ajustar os filtros ou adicione uma nova turma.</p>
-                                    </div>
-                                  </td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </Table>
-                        </div>
-                      </Card.Body>
-                    </Card>
-                  </div>
-
-                  {/* Versão Mobile */}
-                  <div className="turmas-mobile-cards d-block d-md-none">
-                    <Card className="shadow-sm">
-                      <Card.Body>
-                        <div className="turmas-header-mobile mb-3">
-                          <h3 className="mb-0">Turmas</h3>
-                        </div>
-
-                        {turmasPaginadas.length > 0 ? (
-                          <div className="turmas-grid-mobile px-0">
-                            {turmasPaginadas.map(t => {
-                              const turnoStyle = getTurnoStyle(t.turno);
-                              return (
-                                <div key={t.id} className="turmas-card-mobile">
-                                  <div className="turmas-card-header">
-                                    <div className="turmas-card-info">
-                                      <div className="turmas-card-title d-flex align-items-center gap-2">
-                                        {t.nome}
-                                        {t.isVirtualizada && (
-                                          <Ghost size={14} className="text-info" />
-                                        )}
-                                      </div>
-                                      <div className="turmas-card-ano d-flex align-items-center gap-2">
-                                        Ano: {t.anoLetivo}
-                                        {t.isVirtualizada ? (
-                                          <span className="badge bg-info text-white" style={{ fontSize: '0.7rem' }}>Virtual</span>
-                                        ) : (
-                                          <span className="badge bg-success text-white" style={{ fontSize: '0.7rem' }}>Ativa</span>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <span
-                                      className="badge px-2 py-1"
-                                      style={{
-                                        backgroundColor: turnoStyle.bg,
-                                        color: turnoStyle.color,
-                                        fontSize: '0.8rem'
-                                      }}
-                                    >
-                                      {t.turno}
-                                    </span>
-                                  </div>
-
-                                  <div className="turmas-card-body">
-                                    <div className="turmas-alunos-info">
-                                      <Users size={18} className="text-muted me-2" />
-                                      <span className="fw-semibold">
-                                        {t.isVirtualizada ? 'Sem alunos (virtual)' : `${totalAlunos(t.id)} alunos`}
-                                      </span>
-                                    </div>
-                                  </div>
-
-                                  <div className="turmas-card-actions">
-                                    <button
-                                      className="turmas-action-btn turmas-detalhes-btn"
-                                      onClick={() => handleVerDetalhes(t)}
-                                    >
-                                      <Eye size={16} />
-                                      Detalhes
-                                    </button>
-                                    {t.isVirtualizada ? (
-                                      <button
-                                        className="turmas-action-btn turmas-edit-btn"
-                                        onClick={() => handleMaterializarTurma(t)}
-                                        style={{ backgroundColor: '#22c55e', borderColor: '#22c55e' }}
-                                      >
-                                        <CheckCircle2 size={16} />
-                                        Materializar
-                                      </button>
-                                    ) : (
-                                      <>
-                                        <button
-                                          className="turmas-action-btn turmas-edit-btn"
-                                          onClick={() => openModal(t)}
-                                        >
-                                          <Edit size={16} />
-                                          Editar
-                                        </button>
-                                        <button
-                                          className="turmas-action-btn turmas-delete-btn"
-                                          onClick={() => handleExcluirTurma(t.id)}
-                                        >
-                                          <Trash2 size={16} />
-                                          Excluir
-                                        </button>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="turmas-empty-state">
-                            <div className="turmas-empty-icon">
-                              <Users size={48} />
-                            </div>
-                            <h5 className="turmas-empty-title">Nenhuma turma encontrada</h5>
-                            <p className="turmas-empty-text">
-                              {turmaFiltro || anoLetivo || turnoFiltro || numAlunosFiltro
-                                ? 'Tente ajustar os filtros de busca.'
-                                : 'Comece adicionando sua primeira turma.'
-                              }
-                            </p>
-                          </div>
-                        )}
-                      </Card.Body>
-                    </Card>
-                  </div>
+                  <TurmasListMobile
+                    turmasPaginadas={turmasPaginadas}
+                    totalAlunos={totalAlunos}
+                    getTurnoStyle={getTurnoStyle}
+                    handleVerDetalhes={handleVerDetalhes}
+                    handleMaterializarTurma={handleMaterializarTurma}
+                    openModal={openModal}
+                    handleExcluirTurma={handleExcluirTurma}
+                  />
 
                   <Paginacao
                     paginaAtual={paginaAtual}
@@ -1959,1191 +1700,87 @@ export default function Turmas() {
 
           {/* Tab de Rematrícula de Alunos */}
           {activeTab === 'rematricula' && (
-            <>
-              {/* Filtros para Rematrícula */}
-              <Card className="mb-4">
-                <Card.Body>
-                  <div className="d-flex align-items-center gap-2 mb-3">
-                    <ArrowLeftRight size={20} className="" />
-                    <h5 className="mb-0">Seleção de Turma</h5>
-                  </div>
-                  <div className="row g-3">
-                    <div className="col-md-4">
-                      <Form.Label
-                        className='filter-label'
-                      >
-                        Ano Letivo
-                      </Form.Label>
-                      <Form.Select
-                        value={anoLetivoRematricula}
-                        onChange={e => {
-                          setAnoLetivoRematricula(parseInt(e.target.value));
-                          setTurmaFiltroRematricula('');
-                          setProximaTurma('');
-                        }}
-                      >
-                        {/* Mostrar apenas anos que têm turmas cadastradas */}
-                        {[...new Set(turmas.filter(t => !t.isVirtualizada).map(t => parseInt(t.anoLetivo)))]
-                          .sort((a, b) => a - b)
-                          .map(ano => (
-                            <option key={ano} value={ano}>{ano}</option>
-                          ))}
-                      </Form.Select>
-                    </div>
-                    <div className="col-md-4">
-                      <Form.Label
-                        className='filter-label'
-                      >
-                        Turma Atual
-                      </Form.Label>
-                      <Form.Select value={turmaFiltroRematricula} onChange={e => {
-                        setTurmaFiltroRematricula(e.target.value);
-                        setProximaTurma('');
-                      }}>
-                        <option value="">Selecione a turma atual</option>
-                        {turmas.filter(t => !t.isVirtualizada && t.anoLetivo === anoLetivoRematricula.toString()).map(turma => (
-                          <option key={turma.id} value={turma.id}>{turma.nome}</option>
-                        ))}
-                      </Form.Select>
-                    </div>
-                    <div className="col-md-4">
-                      <Form.Label className="d-flex align-items-center gap-2 filter-label">
-                        <ArrowRight size={16} className="text-primary" />
-                        Próxima Turma
-                      </Form.Label>
-                      <Form.Select
-                        value={proximaTurma}
-                        onChange={e => setProximaTurma(e.target.value)}
-                        disabled={!turmaFiltroRematricula}
-                      >
-                        <option value="">
-                          {turmaFiltroRematricula && getTurmasProximas().length === 0
-                            ? `Nenhuma turma cadastrada para ${parseInt(anoLetivoRematricula.toString()) + 1}`
-                            : 'Selecione a próxima turma'}
-                        </option>
-                        {getTurmasProximas().map(turma => {
-                          return (
-                            <option key={turma.id} value={turma.id}>
-                              {turma.nome} - ({parseInt(anoLetivoRematricula.toString()) + 1})
-                            </option>
-                          );
-                        })}
-                      </Form.Select>
-                      {turmaFiltroRematricula && getTurmasProximas().length === 0 && (
-                        <Form.Text className="text-warning d-flex align-items-center gap-1 mt-1">
-                          <FontAwesomeIcon icon={faCircleExclamation} />
-                          Crie turmas para {parseInt(anoLetivoRematricula.toString()) + 1} em "Gerenciar Turmas"
-                        </Form.Text>
-                      )}
-                    </div>
-                  </div>
-                </Card.Body>
-              </Card>
-
-              {/* Card informativo quando nenhuma turma está selecionada */}
-              {!turmaFiltroRematricula && (
-                <Card className="shadow-sm mb-4">
-                  <Card.Body>
-                    <div className="text-center text-muted py-5">
-                      <FontAwesomeIcon icon={faCircleExclamation} size="2x" className="mb-3" />
-                      <div>Selecione uma turma para visualizar os alunos disponíveis para rematrícula.</div>
-                    </div>
-                  </Card.Body>
-                </Card>
-              )}
-
-              {/* Lista de Alunos só aparece após seleção de turma */}
-              {turmaFiltroRematricula && (
-                <>
-                  {/* Cards informativos */}
-                  <Row className='mb-3'>
-                    {/* Card Total de Alunos */}
-                    <Col md={3}>
-                      <Card className="shadow-sm card-sm border-left-primary mb-1">
-                        <Card.Body className="py-3 px-3">
-                          <div className="d-flex align-items-center justify-content-between mb-1">
-                            <div className="text-muted small" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Total</div>
-                            <Users size={16} style={{ color: '#2563eb', opacity: 0.7 }} />
-                          </div>
-                          <h4 className="mb-0 fw-bold" style={{ color: '#2563eb' }}>{getAlunosFiltrados().length}</h4>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-
-                    {/* Card Aprovados */}
-                    <Col md={3}>
-                      <Card className="shadow-sm card-sm border-left-success mb-1">
-                        <Card.Body className="py-3 px-3">
-                          <div className="d-flex align-items-center justify-content-between mb-1">
-                            <div className="text-muted small" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Aprovados</div>
-                            <CheckCircle2 size={16} style={{ color: '#22c55e', opacity: 0.7 }} />
-                          </div>
-                          <h4 className="mb-0 fw-bold" style={{ color: '#22c55e' }}>
-                            {Object.values(statusPromocao).filter(s => s === 'promovido').length}
-                          </h4>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-
-                    {/* Card Reprovados */}
-                    <Col md={3}>
-                      <Card className="shadow-sm card-sm mb-1" style={{ borderLeft: '4px solid #ef4444' }}>
-                        <Card.Body className="py-3 px-3">
-                          <div className="d-flex align-items-center justify-content-between mb-1">
-                            <div className="text-muted small" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Reprovados</div>
-                            <X size={16} style={{ color: '#ef4444', opacity: 0.7 }} />
-                          </div>
-                          <h4 className="mb-0 fw-bold" style={{ color: '#ef4444' }}>
-                            {Object.values(statusPromocao).filter(s => s === 'reprovado').length}
-                          </h4>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-
-                    {/* Card Transferidos */}
-                    <Col md={3}>
-                      <Card className="shadow-sm card-sm mb-1" style={{ borderLeft: '4px solid #3b82f6' }}>
-                        <Card.Body className="py-3 px-3">
-                          <div className="d-flex align-items-center justify-content-between mb-1">
-                            <div className="text-muted small" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Transferidos</div>
-                            <ArrowLeftRight size={16} style={{ color: '#3b82f6', opacity: 0.7 }} />
-                          </div>
-                          <h4 className="mb-0 fw-bold" style={{ color: '#3b82f6' }}>
-                            {Object.keys(alunosTransferencia).length}
-                          </h4>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-                  </Row>
-
-                  {/* Botões mobile - Aprovar/Reprovar Todos */}
-                  <div className="d-flex d-md-none gap-2 mb-3">
-                    <Button
-                      variant="success"
-                      onClick={handleAprovarTodos}
-                      className="d-flex align-items-center justify-content-center gap-1 flex-fill"
-                    >
-                      <Check size={16} />
-                      Aprovar Todos
-                    </Button>
-                    <Button
-                      variant="danger"
-                      onClick={handleReprovarTodos}
-                      className="d-flex align-items-center justify-content-center gap-1 flex-fill"
-                    >
-                      <X size={16} />
-                      Reprovar Todos
-                    </Button>
-                  </div>
-
-                  <Card className="mb-4">
-                    <Card.Body className="pb-0">
-                      <div className="d-flex align-items-center justify-content-between px-2 mb-2">
-                        <h3 className="mb-0 d-flex align-items-center gap-2">
-                          Lista de Alunos - {turmas.find(t => t.id === turmaFiltroRematricula)?.nome} - {anoLetivoRematricula}
-                        </h3>
-                        <div className="d-none d-md-flex gap-2">
-                          <Button
-                            variant="outline-success"
-                            size="sm"
-                            onClick={handleAprovarTodos}
-                            className="d-flex align-items-center gap-1 btn-aprovar-todos"
-                          >
-                            <Check size={16} />
-                            Aprovar Todos
-                          </Button>
-                          <Button
-                            variant="outline-danger"
-                            size="sm"
-                            onClick={handleReprovarTodos}
-                            className="d-flex align-items-center gap-1 btn-reprovar-todos"
-                          >
-                            <X size={16} />
-                            Reprovar Todos
-                          </Button>
-                        </div>
-                      </div>
-                    </Card.Body>
-                    <Card.Body className="pt-0">
-                      {loading ? (
-                        <div className="d-flex justify-content-center align-items-center py-5">
-                          <Spinner animation="border" />
-                        </div>
-                      ) : (
-                        <>
-                          {/* Tabela Desktop */}
-                          <Table hover className="mb-0 turmas-table-desktop">
-                            <thead className="thead-sticky">
-                              <tr style={{ textAlign: 'center' }}>
-                                <th className='text-muted' style={{ width: '35%' }}>Aluno</th>
-                                <th className='text-muted'>Média Final</th>
-                                <th className='text-muted'>Situação</th>
-                                <th className='text-muted'>Ações</th>
-                                <th className='text-muted'>Boletim</th>
-                              </tr>
-                            </thead>
-                            <tbody className=''>
-                              {getAlunosFiltrados().length > 0 ? getAlunosFiltrados().map(aluno => {
-                                const mediaFinal = mediasAlunos[aluno.id];
-                                const corMedia = mediaFinal !== null && mediaFinal !== undefined
-                                  ? mediaFinal >= 7 ? 'text-success' : mediaFinal >= 5 ? 'text-warning' : 'text-danger'
-                                  : 'text-muted';
-
-                                return (
-                                  <tr key={aluno.id} className='align-middle linha-agenda' style={{ textAlign: 'center', height: '70px' }}>
-                                    <td style={{ textAlign: 'left' }}>
-                                      <div className="d-flex align-items-center gap-2">
-                                        <div className="user-icon-circle-frequencia">
-                                          <User size={24} color="#fff" />
-                                        </div>
-                                        <strong>{aluno.nome}</strong>
-                                      </div>
-                                    </td>
-                                    <td>
-                                      <span className={`fw-bold ${corMedia}`} style={{ fontSize: '1.1rem' }}>
-                                        {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal.toFixed(1) : '-'}
-                                      </span>
-                                    </td>
-                                    <td>
-                                      {getStatusBadge(aluno.id)}
-                                    </td>
-                                    <td>
-                                      {acaoFinalizada[aluno.id] && acaoFinalizada[aluno.id] !== 'transferido' ? (
-                                        // Mostrar badge quando ação foi finalizada (exceto transferido)
-                                        <div className="d-flex justify-content-center">
-                                          {acaoFinalizada[aluno.id] === 'promovido' && (
-                                            <span className="badge bg-success px-3 py-2" style={{ fontSize: '0.85rem' }}>
-                                              <Check size={14} className="me-1" />
-                                              Promovido
-                                            </span>
-                                          )}
-                                          {acaoFinalizada[aluno.id] === 'reprovado' && (
-                                            <span className="badge bg-danger px-3 py-2" style={{ fontSize: '0.85rem' }}>
-                                              <X size={14} className="me-1" />
-                                              Reprovado
-                                            </span>
-                                          )}
-                                        </div>
-                                      ) : (
-                                        // Mostrar botões quando ação não foi finalizada OU quando foi transferido
-                                        <div className="d-flex gap-2 justify-content-center">
-                                          <Button
-                                            className='btn-acao-aprovado'
-                                            size="sm"
-                                            onClick={() => {
-                                              setStatusPromocao(prev => {
-                                                // Se já está promovido, desseleciona
-                                                if (prev[aluno.id] === 'promovido') {
-                                                  const { [aluno.id]: _, ...rest } = prev;
-                                                  return rest;
-                                                }
-                                                // Senão, marca como promovido
-                                                return { ...prev, [aluno.id]: 'promovido' };
-                                              });
-                                              // Limpar transferência se estava selecionada
-                                              if (alunosTransferencia[aluno.id]) {
-                                                const novaTransferencia = { ...alunosTransferencia };
-                                                delete novaTransferencia[aluno.id];
-                                                setAlunosTransferencia(novaTransferencia);
-                                              }
-                                            }}
-                                            title="Aprovar"
-                                            style={{
-                                              padding: '0.25rem 0.5rem',
-                                              borderRadius: '6px',
-                                              fontWeight: '500',
-                                              backgroundColor: statusPromocao[aluno.id] === 'promovido' ? '#22c55e' : 'white',
-                                              color: statusPromocao[aluno.id] === 'promovido' ? 'white' : 'black',
-                                              border: '1px solid #cbd5e1',
-                                              height: '32px',
-                                              minWidth: '32px'
-                                            }}
-                                          >
-                                            <Check size={16} strokeWidth={2.5} />
-                                          </Button>
-                                          <Button
-                                            className='btn-acao-reprovado'
-                                            size="sm"
-                                            onClick={() => {
-                                              setStatusPromocao(prev => {
-                                                // Se já está reprovado, desseleciona
-                                                if (prev[aluno.id] === 'reprovado') {
-                                                  const { [aluno.id]: _, ...rest } = prev;
-                                                  return rest;
-                                                }
-                                                // Senão, marca como reprovado
-                                                return { ...prev, [aluno.id]: 'reprovado' };
-                                              });
-                                              // Limpar transferência se estava selecionada
-                                              if (alunosTransferencia[aluno.id]) {
-                                                const novaTransferencia = { ...alunosTransferencia };
-                                                delete novaTransferencia[aluno.id];
-                                                setAlunosTransferencia(novaTransferencia);
-                                              }
-                                            }}
-                                            title="Reprovar"
-                                            style={{
-                                              padding: '0.25rem 0.5rem',
-                                              borderRadius: '6px',
-                                              fontWeight: '500',
-                                              backgroundColor: statusPromocao[aluno.id] === 'reprovado' ? '#ef4444' : 'white',
-                                              color: statusPromocao[aluno.id] === 'reprovado' ? 'white' : 'black',
-                                              border: '1px solid #cbd5e1',
-                                              height: '32px',
-                                              minWidth: '32px'
-                                            }}
-                                          >
-                                            <X size={16} strokeWidth={2.5} />
-                                          </Button>
-                                          <Button
-                                            className="btn-acao-transferencia d-flex align-items-center gap-1"
-                                            size="sm"
-                                            onClick={() => handleAbrirModalTransferencia(aluno)}
-                                            title="Transferir"
-                                            style={{
-                                              padding: '0.25rem 0.5rem',
-                                              borderRadius: '6px',
-                                              fontWeight: '500',
-                                              backgroundColor: alunosTransferencia[aluno.id] ? '#3b82f6' : 'white',
-                                              color: alunosTransferencia[aluno.id] ? 'white' : 'black',
-                                              border: '1px solid #cbd5e1',
-                                              height: '32px',
-                                              minWidth: '32px'
-                                            }}
-                                          >
-                                            <ArrowLeftRight size={18} strokeWidth={2.5} />
-                                          </Button>
-                                        </div>
-                                      )}
-                                    </td>
-                                    <td>
-                                      <Button
-                                        variant="primary"
-                                        size="sm"
-                                        className="d-flex align-items-center gap-1"
-                                        onClick={() => handleAbrirBoletim(aluno)}
-                                        style={{
-                                          margin: '0 auto',
-                                          color: 'black',
-                                          background: 'white',
-                                          border: '1px solid #cbd5e1',
-                                        }}
-                                        title="Ver Boletim"
-                                      >
-                                        <BookText size={16} />
-                                      </Button>
-                                    </td>
-                                  </tr>
-                                );
-                              }) : (
-                                <tr>
-                                  <td colSpan={5} className="text-center py-4">
-                                    <div className="agenda-empty-state">
-                                      <div className="empty-icon">👥</div>
-                                      <h5>Nenhum aluno encontrado</h5>
-                                      <p className="text-muted">Tente ajustar os filtros ou verifique se há alunos cadastrados.</p>
-                                    </div>
-                                  </td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </Table>
-
-                          {/* Cards Mobile */}
-                          <div className="turmas-mobile-cards">
-                            {getAlunosFiltrados().length > 0 ? getAlunosFiltrados().map(aluno => {
-                              const mediaFinal = mediasAlunos[aluno.id];
-
-                              return (
-                                <div key={aluno.id} className="turmas-aluno-card">
-                                  <div className="turmas-aluno-header">
-                                    <div className="d-flex align-items-center gap-2">
-                                      <User size={18} />
-                                      <strong>{aluno.nome}</strong>
-                                    </div>
-                                  </div>
-
-                                  <div className="turmas-aluno-info">
-                                    <div className="info-row">
-                                      <span className="info-label">Média Final:</span>
-                                      <span style={{
-                                        fontWeight: '600',
-                                        color: mediaFinal !== null && mediaFinal !== undefined
-                                          ? mediaFinal >= 7 ? '#22c55e' : mediaFinal >= 5 ? '#eab308' : '#ef4444'
-                                          : '#6c757d'
-                                      }}>
-                                        {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal.toFixed(1) : '-'}
-                                      </span>
-                                    </div>
-
-                                    <div className="info-row">
-                                      <span className="info-label">Situação:</span>
-                                      {getStatusBadge(aluno.id)}
-                                    </div>
-                                  </div>
-
-                                  <div className="turmas-acoes-mobile">
-                                    {acaoFinalizada[aluno.id] && acaoFinalizada[aluno.id] !== 'transferido' ? (
-                                      <div className="d-flex justify-content-center">
-                                        {acaoFinalizada[aluno.id] === 'promovido' && (
-                                          <span className="badge bg-success px-3 py-2 w-100" style={{ fontSize: '0.85rem' }}>
-                                            <Check size={14} className="me-1" />
-                                            Promovido
-                                          </span>
-                                        )}
-                                        {acaoFinalizada[aluno.id] === 'reprovado' && (
-                                          <span className="badge bg-danger px-3 py-2 w-100" style={{ fontSize: '0.85rem' }}>
-                                            <X size={14} className="me-1" />
-                                            Reprovado
-                                          </span>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <>
-                                        <div className="d-flex gap-2 justify-content-center flex-wrap">
-                                          <Button
-                                            className="btn-mobile-acao"
-                                            size="sm"
-                                            onClick={() => {
-                                              setStatusPromocao(prev => {
-                                                if (prev[aluno.id] === 'promovido') {
-                                                  const { [aluno.id]: _, ...rest } = prev;
-                                                  return rest;
-                                                }
-                                                return { ...prev, [aluno.id]: 'promovido' };
-                                              });
-                                              if (alunosTransferencia[aluno.id]) {
-                                                const novaTransferencia = { ...alunosTransferencia };
-                                                delete novaTransferencia[aluno.id];
-                                                setAlunosTransferencia(novaTransferencia);
-                                              }
-                                            }}
-                                            title="Aprovar"
-                                            style={{
-                                              backgroundColor: statusPromocao[aluno.id] === 'promovido' ? '#22c55e' : 'white',
-                                              color: statusPromocao[aluno.id] === 'promovido' ? 'white' : 'black',
-                                              border: '1px solid #cbd5e1',
-                                              flex: 1
-                                            }}
-                                          >
-                                            <Check size={16} strokeWidth={2.5} />
-                                            <span className="ms-1">Aprovar</span>
-                                          </Button>
-                                          <Button
-                                            className="btn-mobile-acao"
-                                            size="sm"
-                                            onClick={() => {
-                                              setStatusPromocao(prev => {
-                                                if (prev[aluno.id] === 'reprovado') {
-                                                  const { [aluno.id]: _, ...rest } = prev;
-                                                  return rest;
-                                                }
-                                                return { ...prev, [aluno.id]: 'reprovado' };
-                                              });
-                                              if (alunosTransferencia[aluno.id]) {
-                                                const novaTransferencia = { ...alunosTransferencia };
-                                                delete novaTransferencia[aluno.id];
-                                                setAlunosTransferencia(novaTransferencia);
-                                              }
-                                            }}
-                                            title="Reprovar"
-                                            style={{
-                                              backgroundColor: statusPromocao[aluno.id] === 'reprovado' ? '#ef4444' : 'white',
-                                              color: statusPromocao[aluno.id] === 'reprovado' ? 'white' : 'black',
-                                              border: '1px solid #cbd5e1',
-                                              flex: 1
-                                            }}
-                                          >
-                                            <X size={16} strokeWidth={2.5} />
-                                            <span className="ms-1">Reprovar</span>
-                                          </Button>
-                                          <Button
-                                            className="btn-mobile-acao"
-                                            size="sm"
-                                            onClick={() => handleAbrirModalTransferencia(aluno)}
-                                            title="Transferir"
-                                            style={{
-                                              backgroundColor: alunosTransferencia[aluno.id] ? '#3b82f6' : 'white',
-                                              color: alunosTransferencia[aluno.id] ? 'white' : 'black',
-                                              border: '1px solid #cbd5e1',
-                                              flex: 1
-                                            }}
-                                          >
-                                            <ArrowLeftRight size={16} strokeWidth={2.5} />
-                                            <span className="ms-1">Transferir</span>
-                                          </Button>
-                                        </div>
-
-                                        <Button
-                                          variant="primary"
-                                          size="sm"
-                                          className="d-flex align-items-center justify-content-center gap-2 mt-2"
-                                          onClick={() => handleAbrirBoletim(aluno)}
-                                          style={{
-                                            width: '100%',
-                                            color: 'black',
-                                            background: 'white',
-                                            border: '1px solid #cbd5e1',
-                                          }}
-                                          title="Ver Boletim"
-                                        >
-                                          <BookText size={16} />
-                                          <span>Ver Boletim</span>
-                                        </Button>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            }) : (
-                              <div className="text-center py-4">
-                                <div className="agenda-empty-state">
-                                  <div className="empty-icon">👥</div>
-                                  <h5>Nenhum aluno encontrado</h5>
-                                  <p className="text-muted">Tente ajustar os filtros ou verifique se há alunos cadastrados.</p>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </Card.Body>
-                  </Card>
-                </>
-              )}
-            </>
+            <RematriculaTab
+              anoLetivoRematricula={anoLetivoRematricula}
+              setAnoLetivoRematricula={setAnoLetivoRematricula}
+              turmaFiltroRematricula={turmaFiltroRematricula}
+              setTurmaFiltroRematricula={setTurmaFiltroRematricula}
+              proximaTurma={proximaTurma}
+              setProximaTurma={setProximaTurma}
+              turmas={turmas}
+              getTurmasProximas={getTurmasProximas}
+              getAlunosFiltrados={getAlunosFiltrados}
+              statusPromocao={statusPromocao}
+              setStatusPromocao={setStatusPromocao}
+              alunosTransferencia={alunosTransferencia}
+              setAlunosTransferencia={setAlunosTransferencia}
+              handleAprovarTodos={handleAprovarTodos}
+              handleReprovarTodos={handleReprovarTodos}
+              loading={loading}
+              mediasAlunos={mediasAlunos}
+              getStatusBadge={getStatusBadge}
+              handleAbrirModalTransferencia={handleAbrirModalTransferencia}
+              handleAbrirBoletim={handleAbrirBoletim}
+              acaoFinalizada={acaoFinalizada}
+            />
           )}
 
-          <Modal show={showModal} onHide={closeModal} centered>
-            <Modal.Header closeButton>
-              <Modal.Title>{editId ? 'Editar Turma' : 'Nova Turma'}</Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-              <Form>
-                <Form.Group className="mb-3">
-                  <Form.Label>Nome da Turma</Form.Label>
-                  <Form.Control id="input-nome-turma" type="text" value={novaTurma} onChange={e => setNovaTurma(e.target.value)} />
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>Ano Letivo</Form.Label>
-                  <Form.Control type="number" value={anoLetivo} readOnly disabled />
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>Turno</Form.Label>
-                  <Form.Select value={turnoModal} onChange={e => setTurnoModal(e.target.value)}>
-                    <option>Manhã</option>
-                    <option>Tarde</option>
-                  </Form.Select>
-                </Form.Group>
-                {erro && <div className="text-danger mt-2">{erro}</div>}
-              </Form>
-            </Modal.Body>
-            <Modal.Footer>
-              <Button variant="secondary" onClick={closeModal}>Cancelar</Button>
-              <Button variant="primary" onClick={handleSalvarTurma}>Salvar</Button>
-            </Modal.Footer>
-          </Modal>
+          <TurmaFormModal
+            show={showModal}
+            onHide={closeModal}
+            editId={editId}
+            novaTurma={novaTurma}
+            setNovaTurma={setNovaTurma}
+            anoLetivo={anoLetivo}
+            turnoModal={turnoModal}
+            setTurnoModal={setTurnoModal}
+            erro={erro}
+            onSave={handleSalvarTurma}
+          />
 
 
 
           {/* Modal de Detalhes da Turma */}
-          <Modal show={showDetalhesModal} onHide={closeDetalhesModal} centered size="lg">
-            <Modal.Header closeButton>
-              <Modal.Title className="d-flex align-items-center gap-2">
-                <Users size={24} color="#2563eb" />
-                Detalhes da Turma - {turmaDetalhes?.nome}
-              </Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-              {turmaDetalhes && (
-                <div className="row g-4">
-                  {/* Card de Informações Gerais */}
-                  <div className="col-12">
-                    <Card className="shadow-sm">
-                      <div className="bg-white border-bottom px-3 py-2 d-flex align-items-center gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
-                        <BookOpen size={20} className="me-2 text-primary" />
-                        <span className="fw-bold" style={{ fontSize: '1.1rem', color: '#1e293b' }}>Informações Gerais</span>
-                      </div>
-                      <Card.Body>
-                        <div className="row">
-                          <div className="col-md-4">
-                            <div className="mb-3">
-                              <label className="form-label fw-semibold text-muted">Ano Letivo</label>
-                              <p className="mb-0">{turmaDetalhes.anoLetivo}</p>
-                            </div>
-                          </div>
-                          <div className="col-md-4">
-                            <div className="mb-3">
-                              <label className="form-label fw-semibold text-muted">Turno</label>
-                              <div>
-                                <span
-                                  className="badge px-2 py-1"
-                                  style={{
-                                    backgroundColor: getTurnoStyle(turmaDetalhes.turno).bg,
-                                    color: getTurnoStyle(turmaDetalhes.turno).color
-                                  }}
-                                >
-                                  {turmaDetalhes.turno}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="col-md-4">
-                            <div className="mb-3">
-                              <label className="form-label fw-semibold text-muted">Status</label>
-                              <div>
-                                <span className="badge bg-success px-2 py-1">
-                                  <CheckCircle2 size={12} className="me-1" />
-                                  Ativa
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </Card.Body>
-                    </Card>
-                  </div>
+          <TurmaDetailsModal
+            show={showDetalhesModal}
+            onHide={closeDetalhesModal}
+            turmaDetalhes={turmaDetalhes}
+            anoLetivo={anoLetivo}
+            getTurnoStyle={getTurnoStyle}
+            getProfessoresDaTurma={getProfessoresDaTurma}
+            getAlunosDaTurma={getAlunosDaTurma}
+          />
 
-                  {/* Card de Professores em cima do card de alunos */}
-                  <div className="col-md-12">
-                    <Card className="shadow-sm">
-                      <div className="bg-white border-bottom px-3 py-2 d-flex align-items-center gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
-                        <User size={20} className="me-2 text-primary" />
-                        <span className="fw-bold" style={{ fontSize: '1.1rem', color: '#1e293b' }}>
-                          Professores
-                          {turmaDetalhes.isVirtualizada && (
-                            <span className="text-muted ms-2" style={{ fontSize: '0.9rem', fontWeight: 'normal' }}>
-                              (do ano anterior)
-                            </span>
-                          )}
-                        </span>
-                        <span className="badge bg-primary ms-2" style={{ fontSize: '0.95rem' }}>{getProfessoresDaTurma(turmaDetalhes.id, turmaDetalhes).length}</span>
-                      </div>
-                      <Card.Body className="p-2">
-                        {getProfessoresDaTurma(turmaDetalhes.id, turmaDetalhes).length > 0 ? (
-                          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                            <div className="row g-2">
-                              {getProfessoresDaTurma(turmaDetalhes.id, turmaDetalhes).map((item, index) => (
-                                <div key={index} className="col-12 col-md-6">
-                                  <Card className={`mb-2 card-sm ${turmaDetalhes.isVirtualizada ? 'border-left-info' : 'border-left-primary'}`}>
-                                    <Card.Body className="py-2 px-3">
-                                      <div className="d-flex align-items-center">
-                                        <User size={16} className={`me-2 ${turmaDetalhes.isVirtualizada ? 'text-info' : 'text-primary'}`} />
-                                        <div className="flex-grow-1">
-                                          <h6 className="mb-1 fw-semibold text-dark">
-                                            {item.professor}
-                                            {turmaDetalhes.isVirtualizada && (
-                                              <span className="ms-2" style={{ fontSize: '0.7rem', opacity: 0.7 }}>
-                                                📅 {anoLetivo - 1}
-                                              </span>
-                                            )}
-                                          </h6>
-                                          <p className="mb-0 text-muted small">{item.materia}</p>
-                                        </div>
-                                      </div>
-                                    </Card.Body>
-                                  </Card>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-center text-muted py-3">
-                            <User size={32} className="mb-2 opacity-50" />
-                            <p className="mb-0">Nenhum professor vinculado</p>
-                          </div>
-                        )}
-                      </Card.Body>
-                    </Card>
-                  </div>
-
-                  {/* Card de Alunos abaixo do card de professores */}
-                  <div className="col-md-12">
-                    <Card className="shadow-sm h-100">
-                      <div className="bg-white border-bottom px-3 py-2 d-flex align-items-center gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
-                        <Users size={20} className="me-2 text-success" />
-                        <span className="fw-bold" style={{ fontSize: '1.1rem', color: '#1e293b' }}>Alunos Matriculados</span>
-                        <span className="badge bg-success ms-2" style={{ fontSize: '0.95rem' }}>{getAlunosDaTurma(turmaDetalhes.id).length}</span>
-                      </div>
-                      <Card.Body className="p-2">
-                        {getAlunosDaTurma(turmaDetalhes.id).length > 0 ? (
-                          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                            <div className="row g-2">
-                              {getAlunosDaTurma(turmaDetalhes.id).map((aluno) => (
-                                <div key={aluno.id} className="col-12 col-md-6">
-                                  <Card className="mb-2 card-sm border-left-success">
-                                    <Card.Body className="py-2 px-3">
-                                      <div className="d-flex align-items-center">
-                                        <Users size={16} className="me-2 text-success" />
-                                        <div className="flex-grow-1">
-                                          <h6 className="mb-1 fw-semibold text-dark">{aluno.nome}</h6>
-                                          <p className="mb-0 text-muted small">
-                                            {aluno.email || 'Email não cadastrado'}
-                                          </p>
-                                        </div>
-                                      </div>
-                                    </Card.Body>
-                                  </Card>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-center text-muted py-3">
-                            <Users size={32} className="mb-2 opacity-50" />
-                            <p className="mb-0">Nenhum aluno matriculado</p>
-                          </div>
-                        )}
-                      </Card.Body>
-                    </Card>
-                  </div>
-                </div>
-              )}
-            </Modal.Body>
-          </Modal>
-
-          {/* Modal de Histórico de Notas */}
-          <Modal
+          <HistoricoNotasModal
             show={showHistorico}
             onHide={() => setShowHistorico(false)}
-            centered
-            className="historico-modal"
-            size="lg"
-          >
-            <Modal.Header closeButton>
-              <Modal.Title>
-                Histórico de Notas - {historicoAluno?.nome}
-              </Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-              {/* Versão Desktop */}
-              <div className="d-none d-md-block" style={{ overflowX: 'auto' }}>
-                {historicoAluno?.dadosBoletim ? (
-                  <Table
-                    bordered
-                    size="sm"
-                    className="mb-0"
-                    style={{
-                      minWidth: 600,
-                      fontSize: '1rem',
-                      textAlign: 'center',
-                      borderRadius: 8,
-                      overflow: 'hidden',
-                      background: '#fff'
-                    }}
-                  >
-                    <thead className="fw-bold text-muted align-middle" style={{ background: '#f8f9fa' }}>
-                      <tr>
-                        <th style={{ width: '20%' }}>Matéria</th>
-                        {historicoAluno.dadosBoletim.bimestres.map((bimestre: string) => (
-                          <th key={bimestre} style={{ minWidth: '100px' }}>{bimestre} Bim</th>
-                        ))}
-                        <th style={{ minWidth: '100px', background: '#e9ecef' }}>Média Final</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {historicoAluno.dadosBoletim.materias.map((materia: string) => {
-                        // Calcular média final da matéria (média dos 4 bimestres)
-                        const notasBimestres = historicoAluno.dadosBoletim.bimestres
-                          .map((bim: string) => historicoAluno.dadosBoletim.notas[bim]?.[materia]?.mediaFinal)
-                          .filter((n: number | null | undefined) => n !== null && n !== undefined);
-
-                        const mediaFinalMateria = notasBimestres.length > 0
-                          ? (notasBimestres.reduce((sum: number, n: number) => sum + n, 0) / notasBimestres.length).toFixed(1)
-                          : null;
-
-                        const getNotaColor = (valor: number | null | undefined) => {
-                          if (valor === null || valor === undefined) return 'text-muted';
-                          if (valor >= 7) return 'text-success';
-                          if (valor >= 5) return 'text-warning';
-                          return 'text-danger';
-                        };
-
-                        return (
-                          <tr key={materia}>
-                            <td style={{ fontWeight: 600, background: '#f8f9fa', textAlign: 'center', paddingLeft: 0 }}>{materia}</td>
-                            {historicoAluno.dadosBoletim.bimestres.map((bimestre: string) => {
-                              const nota = historicoAluno.dadosBoletim.notas[bimestre]?.[materia];
-                              const mediaFinal = nota?.mediaFinal;
-
-                              return (
-                                <td
-                                  key={bimestre}
-                                  className={`fw-bold ${getNotaColor(mediaFinal)}`}
-                                  style={{
-                                    fontSize: '1rem',
-                                    padding: '6px 4px',
-                                    textAlign: 'center',
-                                    verticalAlign: 'middle'
-                                  }}
-                                >
-                                  {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal : '-'}
-                                </td>
-                              );
-                            })}
-                            <td
-                              className={`fw-bold ${getNotaColor(mediaFinalMateria ? parseFloat(mediaFinalMateria) : null)}`}
-                              style={{
-                                fontSize: '1.1rem',
-                                padding: '6px 4px',
-                                background: '#e9ecef',
-                                textAlign: 'center',
-                                verticalAlign: 'middle'
-                              }}
-                            >
-                              {mediaFinalMateria !== null ? mediaFinalMateria : '-'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </Table>
-                ) : (
-                  <div className="text-center py-4">
-                    <BookOpen size={48} className="mb-3 text-muted opacity-50" />
-                    <p className="text-muted mb-0">Nenhuma nota encontrada para este aluno.</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Versão Mobile */}
-              <div className="d-block d-md-none">
-                {historicoAluno?.dadosBoletim ? (
-                  <div>
-                    {/* Agrupar por matéria, mostrando bimestres como colunas */}
-                    {historicoAluno.dadosBoletim.materias.map((materia: string) => (
-                      <Card key={materia} className="mb-3">
-                        <Card.Header className="bg-primary text-white">
-                          <h6 className="mb-0">{materia}</h6>
-                        </Card.Header>
-                        <Card.Body className="p-2">
-                          <div className="row g-2">
-                            {historicoAluno.dadosBoletim.bimestres.map((bimestre: string) => {
-                              const nota = historicoAluno.dadosBoletim.notas[bimestre]?.[materia];
-                              const mediaFinal = nota?.mediaFinal;
-                              const getNotaColor = (valor: number | null | undefined) => {
-                                if (valor === null || valor === undefined) return 'text-muted';
-                                if (valor >= 7) return 'text-success';
-                                if (valor >= 5) return 'text-warning';
-                                return 'text-danger';
-                              };
-
-                              return (
-                                <div key={bimestre} className="col-6">
-                                  <div className="border rounded p-2 text-center">
-                                    <small className="text-muted d-block">{bimestre} Bim</small>
-                                    <span className={`fw-bold fs-5 ${getNotaColor(mediaFinal)}`}>
-                                      {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal : '-'}
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          {/* Média Final da Matéria */}
-                          <div className="mt-2 pt-2 border-top">
-                            <div className="d-flex justify-content-between align-items-center">
-                              <span className="fw-bold">Média Final:</span>
-                              <span className={`fw-bold fs-4 ${(() => {
-                                const notasBimestres = historicoAluno.dadosBoletim.bimestres
-                                  .map((bim: string) => historicoAluno.dadosBoletim.notas[bim]?.[materia]?.mediaFinal)
-                                  .filter((n: number | null | undefined) => n !== null && n !== undefined);
-
-                                const mediaFinalMateria = notasBimestres.length > 0
-                                  ? parseFloat((notasBimestres.reduce((sum: number, n: number) => sum + n, 0) / notasBimestres.length).toFixed(1))
-                                  : null;
-
-                                if (mediaFinalMateria === null) return 'text-muted';
-                                if (mediaFinalMateria >= 6) return 'text-success';
-                                if (mediaFinalMateria >= 5) return 'text-warning';
-                                return 'text-danger';
-                              })()}`}>
-                                {(() => {
-                                  const notasBimestres = historicoAluno.dadosBoletim.bimestres
-                                    .map((bim: string) => historicoAluno.dadosBoletim.notas[bim]?.[materia]?.mediaFinal)
-                                    .filter((n: number | null | undefined) => n !== null && n !== undefined);
-
-                                  const mediaFinalMateria = notasBimestres.length > 0
-                                    ? (notasBimestres.reduce((sum: number, n: number) => sum + n, 0) / notasBimestres.length).toFixed(1)
-                                    : null;
-
-                                  return mediaFinalMateria !== null ? mediaFinalMateria : '-';
-                                })()}
-                              </span>
-                            </div>
-                          </div>
-                        </Card.Body>
-                      </Card>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-4">
-                    <BookOpen size={48} className="mb-3 text-muted opacity-50" />
-                    <p className="text-muted mb-0">Nenhuma nota encontrada para este aluno.</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Remover versão mobile duplicada antiga */}
-              <div className="d-none">
-                {historicoAluno?.notas.length ? (
-                  <div className="historico-mobile-cards">
-                    {['1º', '2º', '3º', '4º'].map(bim => {
-                      const n = historicoAluno.notas.find(nota => nota.bimestre === bim);
-                      const mediaFinal = n ? calcularMediaFinal(n) : '-';
-                      return (
-                        <div key={bim} className="historico-bimestre-card">
-                          <div className="historico-bimestre-header">
-                            <span className="historico-bimestre-titulo">{bim} Bimestre</span>
-                            <span className={`historico-bimestre-media ${getNotaColor(typeof mediaFinal === 'number' ? mediaFinal : undefined)}`}>
-                              Média: {typeof mediaFinal === 'number' ? mediaFinal : '-'}
-                            </span>
-                          </div>
-
-                          <div className="historico-bimestre-body">
-                            <div className="historico-nota-row">
-                              <span className="historico-nota-label">Parcial:</span>
-                              <span className={`historico-nota-valor ${getNotaColor(n?.notaParcial)}`}>
-                                {n?.notaParcial ?? '-'}
-                              </span>
-                            </div>
-
-                            <div className="historico-nota-row">
-                              <span className="historico-nota-label">Global:</span>
-                              <span className={`historico-nota-valor ${getNotaColor(n?.notaGlobal)}`}>
-                                {n?.notaGlobal ?? '-'}
-                              </span>
-                            </div>
-
-                            <div className="historico-nota-row">
-                              <span className="historico-nota-label">Participação:</span>
-                              <span className={`historico-nota-valor ${getNotaColor(n?.notaParticipacao)}`}>
-                                {n?.notaParticipacao ?? '-'}
-                              </span>
-                            </div>
-
-                            <div className="historico-nota-row">
-                              <span className="historico-nota-label">Recuperação:</span>
-                              <span className={`historico-nota-valor ${getNotaColor(n?.notaRecuperacao)}`}>
-                                {n?.notaRecuperacao ?? '-'}
-                              </span>
-                            </div>
-                          </div>
-
-                          {n?.dataLancamento && (
-                            <div className="historico-bimestre-footer">
-                              <small className="text-muted">Lançado em: {n.dataLancamento}</small>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-center text-muted py-4">
-                    <BookOpen size={48} className="mb-3" style={{ opacity: 0.3 }} />
-                    <div>Nenhuma nota encontrada para este aluno.</div>
-                  </div>
-                )}
-              </div>
-            </Modal.Body>
-          </Modal>
-
+            historicoAluno={historicoAluno}
+            setShowHistorico={setShowHistorico}
+            getNotaColorUtil={getNotaColorUtil}
+            calcularMediaFinalUtil={calcularMediaFinalUtil}
+          />
         </div>
 
-        {/* Modal de Confirmação de Ações */}
-        <Modal
+        <ConfirmacaoAcoesModal
           show={showModalConfirmacao}
           onHide={() => setShowModalConfirmacao(false)}
-          centered
-        >
-          <Modal.Header closeButton>
-            <Modal.Title>
-              <CheckSquare size={24} className="me-2" />
-              Confirmar Promoção
-            </Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            <p className="text-muted mb-3">
-              Você está prestes a realizar a promoção da turma <strong>{turmas.find(t => t.id === turmaFiltroRematricula)?.nome}</strong>.
-            </p>
-
-            <Card className="border-0 shadow-sm">
-              <Card.Body>
-                <h6 className="mb-3">Resumo:</h6>
-                <div className="d-flex flex-column gap-2">
-                  {resumoDestinos.promovidos.length > 0 && (
-                    <div className="d-flex align-items-start gap-2">
-                      <CheckSquare size={18} className="text-success mt-1" />
-                      <span>
-                        <strong>{resumoDestinos.promovidos.length}</strong> aluno{resumoDestinos.promovidos.length > 1 ? 's' : ''} será{resumoDestinos.promovidos.length > 1 ? 'ão' : ''} promovido{resumoDestinos.promovidos.length > 1 ? 's' : ''} para <strong>{resumoDestinos.promovidos[0]?.turmaDestino}</strong>
-                      </span>
-                    </div>
-                  )}
-
-                  {resumoDestinos.reprovados.length > 0 && (
-                    <div className="d-flex align-items-start gap-2">
-                      <XSquare size={18} className="text-danger mt-1" />
-                      <span>
-                        <strong>{resumoDestinos.reprovados.length}</strong> aluno{resumoDestinos.reprovados.length > 1 ? 's' : ''} será{resumoDestinos.reprovados.length > 1 ? 'ão' : ''} reprovado{resumoDestinos.reprovados.length > 1 ? 's' : ''}
-                        {resumoDestinos.reprovados.length > 0 && (
-                          <>
-                            {' '}para{' '}
-                            {Array.from(new Set(resumoDestinos.reprovados.map(r => r.turmaDestino))).map((turma, idx, arr) => (
-                              <span key={idx}>
-                                <strong>{turma}</strong>{idx < arr.length - 1 ? ', ' : ''}
-                              </span>
-                            ))}
-                          </>
-                        )}
-                      </span>
-                    </div>
-                  )}
-
-                  {resumoDestinos.transferidos.length > 0 && (
-                    <div className="d-flex align-items-start gap-2">
-                      <ArrowRight size={18} className="text-primary mt-1" />
-                      <span>
-                        <strong>{resumoDestinos.transferidos.length}</strong> aluno{resumoDestinos.transferidos.length > 1 ? 's' : ''} será{resumoDestinos.transferidos.length > 1 ? 'ão' : ''} transferido{resumoDestinos.transferidos.length > 1 ? 's' : ''}
-                        {resumoDestinos.transferidos.length > 0 && (
-                          <>
-                            {' '}para{' '}
-                            {Array.from(new Set(resumoDestinos.transferidos.map(t => t.turmaDestino))).map((turma, idx, arr) => (
-                              <span key={idx}>
-                                <strong>{turma}</strong>{idx < arr.length - 1 ? ', ' : ''}
-                              </span>
-                            ))}
-                          </>
-                        )}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </Card.Body>
-            </Card>
-
-            <p className="text-muted small mt-3 mb-0">
-              Esta ação não poderá ser desfeita facilmente. Deseja continuar?
-            </p>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowModalConfirmacao(false)}>
-              Cancelar
-            </Button>
-            <Button variant="primary" onClick={handleConfirmarAcoes}>
-              Confirmar Promoção
-            </Button>
-          </Modal.Footer>
-        </Modal>
-
-        {/* Modal de Transferência Individual */}
-        <Modal
+          turmaNomeAtual={turmas.find(t => t.id === turmaFiltroRematricula)?.nome}
+          resumoDestinos={resumoDestinos}
+          onConfirm={handleConfirmarAcoes}
+        />
+        <TransferenciaModal
           show={showModalTransferencia}
           onHide={handleFecharModalTransferencia}
-          centered
-        >
-          <Modal.Header closeButton>
-            <Modal.Title>
-              <ArrowRight size={24} className="me-2" />
-              Transferir Aluno
-            </Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            {alunoTransferencia && (
-              <>
-                <Card className="border-0 shadow-sm mb-3">
-                  <Card.Body>
-                    <h5 className="mb-3">Informações do Aluno</h5>
-
-                    <div className="mb-3">
-                      <label className="form-label fw-semibold text-muted">Nome</label>
-                      <div className="p-2 bg-light rounded">
-                        <strong>{alunoTransferencia.nome}</strong>
-                      </div>
-                    </div>
-
-                    <div className="row">
-                      <div className="col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label fw-semibold text-muted">Turma Atual</label>
-                          <div className="p-2 bg-light rounded">
-                            {turmas.find(t => t.id === getTurmaAlunoNoAno(alunoTransferencia, anoLetivoRematricula))?.nome || 'N/A'}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label fw-semibold text-muted">Média Final</label>
-                          <div className="p-2 bg-light rounded">
-                            <span className={`fw-bold ${mediasAlunos[alunoTransferencia.id] !== null && mediasAlunos[alunoTransferencia.id] !== undefined
-                              ? mediasAlunos[alunoTransferencia.id]! >= 7 ? 'text-success'
-                                : mediasAlunos[alunoTransferencia.id]! >= 5 ? 'text-warning'
-                                  : 'text-danger'
-                              : 'text-muted'
-                              }`}>
-                              {mediasAlunos[alunoTransferencia.id] !== null && mediasAlunos[alunoTransferencia.id] !== undefined
-                                ? mediasAlunos[alunoTransferencia.id]!.toFixed(1)
-                                : '-'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mb-3">
-                      <label className="form-label fw-semibold text-muted">Situação Atual</label>
-                      <div className="p-2 bg-light rounded">
-                        {getStatusBadge(alunoTransferencia.id)}
-                      </div>
-                    </div>
-                  </Card.Body>
-                </Card>
-
-                <div className="mb-3">
-                  <label className="form-label fw-semibold">Selecione a Turma de Destino</label>
-                  <Form.Select
-                    value={turmaDestinoTransferencia}
-                    onChange={(e) => setTurmaDestinoTransferencia(e.target.value)}
-                  >
-                    <option value="">Selecione uma turma...</option>
-                    {turmas.filter(t =>
-                      t.anoLetivo === anoLetivoRematricula.toString() && t.isVirtualizada !== true
-                    ).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true })).map(turma => (
-                      <option key={turma.id} value={turma.id}>
-                        {turma.nome}
-                      </option>
-                    ))}
-                  </Form.Select>
-                  <Form.Text className="text-muted">
-                    Transferir para outra turma do mesmo ano letivo ({anoLetivoRematricula})
-                  </Form.Text>
-                </div>
-              </>
-            )}
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="secondary" onClick={handleFecharModalTransferencia} disabled={processandoTransferencia}>
-              Cancelar
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleConfirmarTransferenciaIndividual}
-              disabled={!turmaDestinoTransferencia || processandoTransferencia}
-            >
-              {processandoTransferencia ? (
-                <>
-                  <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                  Transferindo...
-                </>
-              ) : (
-                <>
-                  <ArrowRight size={18} className="me-1" />
-                  Confirmar Transferência
-                </>
-              )}
-            </Button>
-          </Modal.Footer>
-        </Modal>
+          alunoTransferencia={alunoTransferencia}
+          turmas={turmas}
+          anoLetivoRematricula={anoLetivoRematricula}
+          mediasAlunos={mediasAlunos}
+          getStatusBadge={getStatusBadge}
+          turmaDestinoTransferencia={turmaDestinoTransferencia}
+          setTurmaDestinoTransferencia={setTurmaDestinoTransferencia}
+          processandoTransferencia={processandoTransferencia}
+          onConfirm={handleConfirmarTransferenciaIndividual}
+        />
 
         {/* Botão flutuante de confirmar - só aparece na aba de rematrícula */}
         {activeTab === 'rematricula' && (

@@ -8,12 +8,12 @@ import {
   LineChart, Line, Cell
 } from 'recharts';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db } from '../services/firebase/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import { FaUserGraduate, FaChalkboardTeacher, FaUsers, FaClipboardList } from 'react-icons/fa';
 import { BarChart3, Filter } from 'lucide-react';
-import { loadTurmasByAnoLetivo, loadMaterias } from '../utils/dataLoaders';
+import { loadTurmasByAnoLetivo, loadMaterias } from '../services/data/dataLoaders';
 
 interface Counts {
   alunos: number;

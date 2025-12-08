@@ -9,7 +9,7 @@ import {
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc, doc
 } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db } from '../services/firebase/firebase';
 import { PlusCircle, PencilFill, TrashFill } from 'react-bootstrap-icons';
 import { Notebook } from 'lucide-react';
 

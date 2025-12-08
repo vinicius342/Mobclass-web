@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Card, Row, Col, Form, Button, Spinner, Modal, Dropdown } from 'react-bootstrap';
 import { collection, getDocs, query, where, doc, getDoc, Query, DocumentData } from 'firebase/firestore';
-import { db } from '../../services/firebase';
+import { db } from '../../services/firebase/firebase';
 import DatePicker from "react-datepicker";
 import { CheckCircle, XCircle } from 'react-bootstrap-icons';
 import { AlertTriangle, User } from "lucide-react";

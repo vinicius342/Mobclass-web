@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
-import { auth, db } from "../services/firebase";
+import { auth, db } from "../services/firebase/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import {
   Container,

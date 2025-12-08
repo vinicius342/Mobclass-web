@@ -8,7 +8,7 @@ import {
 } from 'firebase/firestore';
 
 import AppLayout from '../components/layout/AppLayout';
-import { db } from '../services/firebase';
+import { db } from '../services/firebase/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import AgendaGradeView from '../components/agenda/AgendaGradeView';
@@ -21,7 +21,7 @@ import {
   loadTurmasComVirtualizacao,
   type Turma as TurmaLoader,
   type Vinculo as VinculoLoader
-} from '../utils/dataLoaders';
+} from '../services/data/dataLoaders';
 
 import {
   exportarAgendaPDF,

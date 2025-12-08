@@ -1,6 +1,6 @@
 // src/utils/dataLoaders.ts
 import { collection, getDocs, query, where, getDoc, doc } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db } from '../firebase/firebase';
 
 /**
  * Interface para dados básicos de coleções

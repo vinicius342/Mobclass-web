@@ -16,7 +16,7 @@ import {
   loadMateriasByIds,
   type Turma as TurmaLoader,
   type Vinculo as VinculoLoader
-} from '../utils/dataLoaders';
+} from '../services/data/dataLoaders';
 import FrequenciaLancamento from '../components/frequencia/FrequenciaLancamento';
 import FrequenciaRelatorios from '../components/frequencia/FrequenciaRelatorios';
 

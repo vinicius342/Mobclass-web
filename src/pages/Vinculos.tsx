@@ -10,7 +10,7 @@ import Paginacao from '../components/common/Paginacao';
 import {
   collection, getDocs, addDoc, deleteDoc, doc, query, where
 } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db } from '../services/firebase/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 
