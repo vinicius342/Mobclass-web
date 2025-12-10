@@ -8,6 +8,12 @@ export type NotaLike = {
   notaParticipacao?: number | null;
   notaRecuperacao?: number | null;
 };
+export type TurmaLike = { turmaOriginalId?: string };
+
+// Verifica se uma turma é virtualizada (gerada dinamicamente no frontend)
+export function isTurmaVirtualizada(turma: TurmaLike): boolean {
+  return !!turma.turmaOriginalId;
+}
 
 // Obtém a turma do aluno para um ano específico considerando histórico de turmas
 export function getTurmaAlunoNoAnoUtil(aluno: AlunoLike, ano: number): string {

@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../services/firebase/firebase';
 import { loadAdminData, loadProfessorData, loadTurmasComVirtualizacao, loadProfessores } from '../services/data/dataLoaders';
-import { getTurmaAlunoNoAnoUtil, calcularMediaFinalUtil, getNotaColorUtil } from '../utils/turmasHelpers';
+import { getTurmaAlunoNoAnoUtil, calcularMediaFinalUtil, getNotaColorUtil, isTurmaVirtualizada } from '../utils/turmasHelpers';
 import { useAuth } from '../contexts/AuthContext';
 import Paginacao from '../components/common/Paginacao';
 import { Users, BookOpen, Clock } from 'lucide-react';
@@ -32,8 +32,7 @@ interface Turma {
   anoLetivo: string;
   turno: string;
   isVirtual?: boolean; // Para identificar se pode ser virtualizada (false impede virtualização)
-  isVirtualizada?: boolean; // Para identificar turmas virtualizadas do ano anterior
-  turmaOriginalId?: string; // ID da turma original quando virtualizada
+  turmaOriginalId?: string; // ID da turma original quando virtualizada (indica que é virtual)
 }
 interface Aluno {
   id: string;
@@ -300,7 +299,7 @@ export default function Turmas() {
     // Verificar se é uma turma virtualizada
     const turma = turmas.find(t => t.id === id);
 
-    if (turma?.isVirtualizada && turma?.turmaOriginalId) {
+    if (turma?.turmaOriginalId) {
       // É uma turma virtual - desativar virtualização da turma original
       if (!window.confirm('Deseja desativar a virtualização desta turma?')) return;
 
@@ -394,8 +393,8 @@ export default function Turmas() {
   const getProfessoresDaTurma = (turmaId: string, turmaObj?: Turma) => {
     // Se for turma virtualizada, buscar vínculos pela turmaOriginalId
     let targetTurmaId = turmaId;
-    if (turmaObj && turmaObj.isVirtualizada && turmaObj.turmaOriginalId) {
-      targetTurmaId = turmaObj.turmaOriginalId;
+    if (turmaObj && isTurmaVirtualizada(turmaObj)) {
+      targetTurmaId = turmaObj.turmaOriginalId!;
     } else if (turmaId.startsWith('virtual_')) {
       const turma = turmas.find(t => t.id === turmaId);
       targetTurmaId = turma?.turmaOriginalId || turmaId;
@@ -425,7 +424,7 @@ export default function Turmas() {
   };
 
   const handleMaterializarTurma = async (turma: Turma) => {
-    if (!turma.isVirtualizada || !turma.turmaOriginalId) return;
+    if (!isTurmaVirtualizada(turma)) return;
 
     if (!window.confirm(
       `Deseja materializar a turma "${turma.nome}" para ${anoLetivo}?\n\n` +
@@ -458,7 +457,7 @@ export default function Turmas() {
       }
 
       // Marcar turma original como não virtualizável
-      await updateDoc(doc(db, 'turmas', turma.turmaOriginalId), {
+      await updateDoc(doc(db, 'turmas', turma.turmaOriginalId!), {
         isVirtual: false
       });
 
@@ -651,12 +650,12 @@ export default function Turmas() {
 
     // Turmas reais do próximo ano (aquelas que têm anoLetivo do próximo ano e NÃO são virtualizadas localmente)
     const turmasReaisProximoAno = turmas.filter(t =>
-      t.anoLetivo === anoProximoStr && t.isVirtualizada !== true
+      t.anoLetivo === anoProximoStr && !isTurmaVirtualizada(t)
     );
 
     // Turmas do ano atual que podem ser virtualizadas para o próximo ano
     const turmasAtuais = turmas.filter(t =>
-      t.anoLetivo === anoAtualStr && t.isVirtualizada !== true
+      t.anoLetivo === anoAtualStr && !isTurmaVirtualizada(t)
     );
 
     const turmasVirtualizadasProximoAno: Turma[] = [];
@@ -671,7 +670,6 @@ export default function Turmas() {
           ...turmaAtual,
           id: `virtual_proximo_${turmaAtual.id}`,
           anoLetivo: anoProximoStr,
-          isVirtualizada: true,
           turmaOriginalId: turmaAtual.id
         });
       }
@@ -787,7 +785,7 @@ export default function Turmas() {
     }
 
     // Se não é virtual, retornar o próprio ID
-    if (!turmaVirtual.isVirtualizada || !turmaVirtual.turmaOriginalId) {
+    if (!isTurmaVirtualizada(turmaVirtual)) {
       return turmaId;
     }
 
@@ -845,7 +843,7 @@ export default function Turmas() {
       }
 
       // Marcar turma original como não virtualizável
-      await updateDoc(doc(db, 'turmas', turmaVirtual.turmaOriginalId), {
+      await updateDoc(doc(db, 'turmas', turmaVirtual.turmaOriginalId!), {
         isVirtual: false
       });
 
@@ -941,8 +939,8 @@ export default function Turmas() {
         const nomeAtualAluno = turmaAtualAluno?.nome || '';
 
         // Gerar turmas virtualizadas (mesmo código da confirmação)
-        const turmasReaisProximoAno = turmas.filter(t => t.anoLetivo === anoProximoStr && t.isVirtualizada !== true);
-        const turmasAtuais = turmas.filter(t => t.anoLetivo === anoAtualStr && t.isVirtualizada !== true);
+        const turmasReaisProximoAno = turmas.filter(t => t.anoLetivo === anoProximoStr && !isTurmaVirtualizada(t));
+        const turmasAtuais = turmas.filter(t => t.anoLetivo === anoAtualStr && !isTurmaVirtualizada(t));
 
         const turmasVirtualizadasProximoAno: Turma[] = [];
         for (const turmaAtual of turmasAtuais) {
@@ -954,7 +952,6 @@ export default function Turmas() {
               ...turmaAtual,
               id: `virtual_proximo_${turmaAtual.id}`,
               anoLetivo: anoProximoStr,
-              isVirtualizada: true,
               turmaOriginalId: turmaAtual.id
             });
           }
@@ -1194,11 +1191,11 @@ export default function Turmas() {
 
           // GERAR TURMAS VIRTUALIZADAS PARA O ANO SEGUINTE
           const turmasReaisProximoAno = turmas.filter(t =>
-            t.anoLetivo === anoProximoStr && t.isVirtualizada !== true
+            t.anoLetivo === anoProximoStr && !isTurmaVirtualizada(t)
           );
 
           const turmasAtuais = turmas.filter(t =>
-            t.anoLetivo === anoAtualStr && t.isVirtualizada !== true
+            t.anoLetivo === anoAtualStr && !isTurmaVirtualizada(t)
           );
 
           const turmasVirtualizadasProximoAno: Turma[] = [];
@@ -1212,7 +1209,6 @@ export default function Turmas() {
                 ...turmaAtual,
                 id: `virtual_proximo_${turmaAtual.id}`,
                 anoLetivo: anoProximoStr,
-                isVirtualizada: true,
                 turmaOriginalId: turmaAtual.id
               });
             }
