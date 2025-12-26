@@ -8,11 +8,16 @@ import {
 } from 'react-bootstrap';
 import { PlusCircle } from 'react-bootstrap-icons';
 import {
-  collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, documentId, getDoc,
+  collection, getDocs, addDoc, updateDoc, doc, query, where,
 } from 'firebase/firestore';
 import { db } from '../services/firebase/firebase';
-import { loadAdminData, loadProfessorData, loadTurmasComVirtualizacao, loadProfessores } from '../services/data/dataLoaders';
+import { loadAdminData, loadProfessorData, loadProfessores } from '../services/data/dataLoaders';
 import { getTurmaAlunoNoAnoUtil, calcularMediaFinalUtil, getNotaColorUtil, isTurmaVirtualizada } from '../utils/turmasHelpers';
+import { turmaService } from '../services/turma/TurmaService';
+import type { Turma } from '../models/Turma';
+import type { Aluno } from '../models/Aluno';
+import { AlunoService } from '../services/usuario/AlunoService';
+import { FirebaseAlunoRepository } from '../repositories/FirebaseAlunoRepository';
 import { useAuth } from '../contexts/AuthContext';
 import Paginacao from '../components/common/Paginacao';
 import { Users, BookOpen, Clock } from 'lucide-react';
@@ -26,23 +31,10 @@ import TurmasListDesktop from '../components/turmas/TurmasListDesktop';
 import TurmasListMobile from '../components/turmas/TurmasListMobile';
 import TransferenciaModal from '../components/turmas/TransferenciaModal';
 
-interface Turma {
-  id: string;
-  nome: string;
-  anoLetivo: string;
-  turno: string;
-  isVirtual?: boolean; // Para identificar se pode ser virtualizada (false impede virtualização)
-  turmaOriginalId?: string; // ID da turma original quando virtualizada (indica que é virtual)
-}
-interface Aluno {
-  id: string;
-  nome: string;
-  turmaId: string;
-  email?: string;
-  uid?: string; // UID do Firebase Auth
-  historicoTurmas?: { [anoLetivo: string]: string }; // Histórico de turmas por ano letivo
-  historicoStatus?: { [anoLetivo: string]: 'promovido' | 'reprovado' | 'transferido' }; // Status de cada ano
-}
+// Lista auxiliar de turmas reais do próximo ano
+// (usada para montar o select de Próxima Turma corretamente)
+// Será preenchida no fetchData
+
 interface Professor {
   id: string;
   nome: string;
@@ -71,12 +63,17 @@ interface Nota {
   dataLancamento: string;
 }
 
+// Instanciar AlunoService
+const alunoRepository = new FirebaseAlunoRepository();
+const alunoService = new AlunoService(alunoRepository);
+
 export default function Turmas() {
-  const { anoLetivo, carregandoAnos } = useAnoLetivoAtual();
+  const { anoLetivo, carregandoAnos, anosDisponiveis } = useAnoLetivoAtual();
   const authContext = useAuth();
   const userData = authContext?.userData;
 
   const [turmas, setTurmas] = useState<Turma[]>([]);
+  const [turmasRematricula, setTurmasRematricula] = useState<Turma[]>([]);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [professores, setProfessores] = useState<Professor[]>([]);
   const [materias, setMaterias] = useState<Materia[]>([]);
@@ -107,6 +104,8 @@ export default function Turmas() {
   // Estados para rematrícula de alunos
   const [turmaFiltroRematricula, setTurmaFiltroRematricula] = useState('');
   const [proximaTurma, setProximaTurma] = useState('');
+  // Cache síncrono de turmas do próximo ano (reais + virtualizadas) para uso em UI
+  const [turmasProximasCache, setTurmasProximasCache] = useState<Turma[]>([]);
   const [anoLetivoRematricula, setAnoLetivoRematricula] = useState<number>(anoLetivo); // Filtro local que sobrepõe o contexto
   const [statusPromocao, setStatusPromocao] = useState<Record<string, 'promovido' | 'reprovado' | null>>({});
   const [alunosTransferencia, setAlunosTransferencia] = useState<Record<string, string>>({});
@@ -137,16 +136,41 @@ export default function Turmas() {
   const [turmaDestinoTransferencia, setTurmaDestinoTransferencia] = useState<string>('');
   const [processandoTransferencia, setProcessandoTransferencia] = useState(false);
 
+  // useEffect 1: Carregar dados e sincronizar ano letivo quando userData ou anoLetivo mudarem
   useEffect(() => {
     if (!userData || carregandoAnos) return;
     fetchData();
+    setAnoLetivoRematricula(anoLetivo);
   }, [userData, carregandoAnos, anoLetivo]);
 
-  // Sincronizar anoLetivoRematricula quando o contexto mudar
+  // Carregar turmas do ano selecionado na Rematrícula
   useEffect(() => {
-    setAnoLetivoRematricula(anoLetivo);
-  }, [anoLetivo]);
+    const carregarTurmasRematricula = async () => {
+      if (!userData || carregandoAnos) return;
+      try {
+        const isAdmin = userData && (userData as any).tipo === 'administradores';
+        const todasTurmas = await turmaService.listarComVirtualizacao(anoLetivoRematricula.toString());
 
+        if (isAdmin) {
+          setTurmasRematricula(todasTurmas.sort((a, b) => a.nome.localeCompare(b.nome)));
+        } else {
+          const turmaIds = ((userData as any)?.turmas || []) as string[];
+          const turmasProfessor = turmaIds.length > 0
+            ? todasTurmas.filter(t => {
+                if (!t.turmaOriginalId) return turmaIds.includes(t.id);
+                return turmaIds.includes(t.turmaOriginalId);
+              })
+            : [];
+          setTurmasRematricula(turmasProfessor.sort((a, b) => a.nome.localeCompare(b.nome)));
+        }
+      } catch (error) {
+        console.error('Erro ao carregar turmas da rematrícula:', error);
+      }
+    };
+    carregarTurmasRematricula();
+  }, [anoLetivoRematricula, userData, carregandoAnos]);
+
+  // useEffect 2: Focus no input do modal quando abrir
   useEffect(() => {
     if (showModal) {
       setTimeout(() => {
@@ -155,17 +179,17 @@ export default function Turmas() {
     }
   }, [showModal]);
 
-  // Calcular status dos alunos quando a lista de alunos filtrados muda
+  // useEffect 3: Calcular status, médias e ações finalizadas dos alunos filtrados
   useEffect(() => {
-    const alunosFiltrados = getAlunosFiltrados();
-    if (alunosFiltrados.length > 0) {
-      calcularStatusAlunosPaginaAtual(alunosFiltrados, anoLetivoRematricula);
-    }
-  }, [alunos, turmaFiltroRematricula, anoLetivoRematricula]);
+    const processarAlunosFiltrados = async () => {
+      const alunosFiltrados = getAlunosFiltrados();
 
-  // Carregar ações finalizadas do Firebase
-  useEffect(() => {
-    const carregarAcoesFinalizadas = () => {
+      if (alunosFiltrados.length === 0) return;
+
+      // Calcular status dos alunos
+      calcularStatusAlunosPaginaAtual(alunosFiltrados, anoLetivoRematricula);
+
+      // Carregar ações finalizadas do histórico
       const anoAtualStr = anoLetivoRematricula.toString();
       const novasAcoesFinalizadas: Record<string, 'promovido' | 'reprovado' | 'transferido'> = {};
 
@@ -176,12 +200,21 @@ export default function Turmas() {
       });
 
       setAcaoFinalizada(novasAcoesFinalizadas);
+
+      // Carregar médias (apenas se houver turma selecionada)
+      if (turmaFiltroRematricula) {
+        const novasMedias: Record<string, number | null> = {};
+        for (const aluno of alunosFiltrados) {
+          novasMedias[aluno.id] = await calcularMediaFinalAluno(aluno.id, anoLetivoRematricula);
+        }
+        setMediasAlunos(novasMedias);
+      }
     };
 
     if (alunos.length > 0) {
-      carregarAcoesFinalizadas();
+      processarAlunosFiltrados();
     }
-  }, [alunos, anoLetivoRematricula]);
+  }, [alunos, turmaFiltroRematricula, anoLetivoRematricula]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -191,28 +224,13 @@ export default function Turmas() {
 
       // Carregamentos em paralelo conforme perfil
       if (isAdmin) {
-        const [adminData, turmasComVirtual, alunosSnap, todasTurmasSnap] = await Promise.all([
+        const [adminData, turmasDoAno, alunosSnap] = await Promise.all([
           loadAdminData(anoLetivo),
-          loadTurmasComVirtualizacao(anoLetivo),
-          getDocs(collection(db, 'alunos')),
-          getDocs(collection(db, 'turmas'))
+          turmaService.listarComVirtualizacao(anoLetivo.toString()),
+          getDocs(collection(db, 'alunos'))
         ]);
 
-        // Apenas as virtualizadas do loader (para manter o mesmo comportamento anterior)
-        const virtualizadasLocal: Turma[] = turmasComVirtual
-          .filter(t => t.isVirtualizada)
-          .map(t => ({
-            id: t.id,
-            nome: t.nome,
-            anoLetivo: String(t.anoLetivo ?? anoLetivo),
-            isVirtualizada: t.isVirtualizada,
-            turmaOriginalId: t.turmaOriginalId,
-            turno: 'Manhã'
-          }));
-        const todasTurmas = todasTurmasSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Turma[];
-        const turmasFinais = [...todasTurmas, ...virtualizadasLocal].sort((a, b) => a.nome.localeCompare(b.nome));
-
-        setTurmas(turmasFinais);
+        setTurmas(turmasDoAno.sort((a, b) => a.nome.localeCompare(b.nome)));
         setAlunos(alunosSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
         setProfessores(adminData.professores);
         setMaterias(adminData.materias);
@@ -220,30 +238,26 @@ export default function Turmas() {
       } else {
         const turmaIds = (userData?.turmas || []) as string[];
 
-        const [profData, turmasComVirtual, alunosSnap, professoresList, todasTurmasSnap] = await Promise.all([
+        const [profData, todasTurmas, alunosSnap, professoresList] = await Promise.all([
           loadProfessorData(userData!.uid, anoLetivo),
-          loadTurmasComVirtualizacao(anoLetivo),
+          turmaService.listarComVirtualizacao(anoLetivo.toString()),
           getDocs(collection(db, 'alunos')),
-          loadProfessores(), // para mapear nomes nas listagens de vínculos
-          turmaIds.length
-            ? getDocs(query(collection(db, 'turmas'), where(documentId(), 'in', turmaIds)))
-            : Promise.resolve({ docs: [] } as any)
+          loadProfessores() // para mapear nomes nas listagens de vínculos
         ]);
 
-        const virtualizadasLocal: Turma[] = turmasComVirtual
-          .filter(t => t.isVirtualizada)
-          .map(t => ({
-            id: t.id,
-            nome: t.nome,
-            anoLetivo: String(t.anoLetivo ?? anoLetivo),
-            isVirtualizada: t.isVirtualizada,
-            turmaOriginalId: t.turmaOriginalId,
-            turno: 'Manhã'
-          }));
-        const todasTurmas = (todasTurmasSnap.docs || []).map((d: any) => ({ id: d.id, ...(d.data() as any) })) as Turma[];
-        const turmasFinais = [...todasTurmas, ...virtualizadasLocal].sort((a, b) => a.nome.localeCompare(b.nome));
+        // Filtrar apenas turmas do professor (incluindo virtualizadas)
+        const turmasProfessor = turmaIds.length > 0
+          ? todasTurmas.filter(t => {
+            // Para turmas reais, verificar se o ID está na lista
+            if (!t.turmaOriginalId) {
+              return turmaIds.includes(t.id);
+            }
+            // Para turmas virtualizadas, verificar se a turma original está na lista
+            return turmaIds.includes(t.turmaOriginalId);
+          })
+          : [];
 
-        setTurmas(turmasFinais);
+        setTurmas(turmasProfessor.sort((a, b) => a.nome.localeCompare(b.nome)));
         setAlunos(alunosSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
         setProfessores(professoresList);
         setMaterias(profData.materias);
@@ -281,10 +295,10 @@ export default function Turmas() {
 
     try {
       if (editId) {
-        await updateDoc(doc(db, 'turmas', editId), payload);
+        await turmaService.atualizar(editId, payload);
         setToast({ show: true, message: 'Turma atualizada com sucesso.', variant: 'success' });
       } else {
-        await addDoc(collection(db, 'turmas'), payload);
+        await turmaService.criar(payload);
         setToast({ show: true, message: 'Turma cadastrada com sucesso.', variant: 'success' });
       }
       closeModal();
@@ -304,7 +318,7 @@ export default function Turmas() {
       if (!window.confirm('Deseja desativar a virtualização desta turma?')) return;
 
       try {
-        await updateDoc(doc(db, 'turmas', turma.turmaOriginalId), {
+        await turmaService.atualizar(turma.turmaOriginalId, {
           isVirtual: false
         });
         setToast({ show: true, message: 'Virtualização desativada.', variant: 'success' });
@@ -318,7 +332,7 @@ export default function Turmas() {
       if (!window.confirm('Deseja realmente excluir esta turma?')) return;
 
       try {
-        await deleteDoc(doc(db, 'turmas', id));
+        await turmaService.excluir(id);
         setToast({ show: true, message: 'Turma excluída.', variant: 'success' });
         fetchData();
       } catch (error) {
@@ -370,13 +384,19 @@ export default function Turmas() {
   const getStatusStyle = (status: string) => {
     switch (status) {
       case 'Aprovado':
-        return { bg: '#dcfce7', color: '#166534' }; // verde suave
+        return { bg: '#dcfce7', color: '#166534' };
       case 'Reprovado':
-        return { bg: '#fecaca', color: '#dc2626' }; // vermelho suave
+        return { bg: '#fecaca', color: '#dc2626' };
       case 'Em Andamento':
-        return { bg: '#fef3c7', color: '#d97706' }; // amarelo suave
+        return { bg: '#fef3c7', color: '#d97706' };
+      case 'promovido':
+        return { bg: '#dcfce7', color: '#166534' };
+      case 'reprovado':
+        return { bg: '#fecaca', color: '#e43838ff' };
+      case 'transferido':
+        return { bg: '#dbeafe', color: '#1e40af' };
       default:
-        return { bg: '#f3f4f6', color: '#6b7280' }; // cinza
+        return { bg: '#f3f4f6', color: '#6b7280' };
     }
   };
 
@@ -496,7 +516,7 @@ export default function Turmas() {
   // Função para calcular status do aluno baseado nas notas finais
   const calcularStatusAluno = async (aluno: Aluno, anoParaCalculo: number = anoLetivo): Promise<string> => {
     try {
-      const alunoUidParaBusca = aluno.uid || aluno.id;
+      const alunoUidParaBusca = aluno.id;
 
       // Obter a turma do aluno no ano letivo usando o histórico
       const turmaIdNoAno = getTurmaAlunoNoAnoUtil(aluno, anoParaCalculo);
@@ -609,7 +629,7 @@ export default function Turmas() {
   };
 
   // Função para obter o badge do status
-  const getStatusBadge = (alunoId: string) => {
+  const getSituacaoBadge = (alunoId: string) => {
     const status = statusAlunos.get(alunoId) || 'Em Andamento';
     const statusStyle = getStatusStyle(status);
 
@@ -627,59 +647,25 @@ export default function Turmas() {
     );
   };
 
-  // Função para extrair número da série (sem sufixo)
-  const extrairNumeroSerie = (nomeTurma: string): number => {
-    // Extrair apenas o número da série (1, 2, 3, 6, 7, 8, 9)
-    const match = nomeTurma.match(/^(\d+)/);
-    if (match) {
-      const numero = parseInt(match[1]);
-      return numero;
-    }
+  
 
-    return 0;
-  };
-
-  // Função para obter turmas do próximo ano (reais + virtualizadas)
-  const getTurmasProximas = (): Turma[] => {
-    if (!turmaFiltroRematricula) return [];
-
-    const anoAtualNum = parseInt(anoLetivoRematricula.toString());
-    const anoProximoNum = anoAtualNum + 1;
-    const anoProximoStr = anoProximoNum.toString();
-    const anoAtualStr = anoLetivoRematricula.toString();
-
-    // Turmas reais do próximo ano (aquelas que têm anoLetivo do próximo ano e NÃO são virtualizadas localmente)
-    const turmasReaisProximoAno = turmas.filter(t =>
-      t.anoLetivo === anoProximoStr && !isTurmaVirtualizada(t)
-    );
-
-    // Turmas do ano atual que podem ser virtualizadas para o próximo ano
-    const turmasAtuais = turmas.filter(t =>
-      t.anoLetivo === anoAtualStr && !isTurmaVirtualizada(t)
-    );
-
-    const turmasVirtualizadasProximoAno: Turma[] = [];
-
-    for (const turmaAtual of turmasAtuais) {
-      // Pode virtualizar se isVirtual não for false E se não existe turma real com mesmo nome no próximo ano
-      const podeVirtualizar = turmaAtual.isVirtual !== false;
-      const jaExisteNoProximoAno = turmasReaisProximoAno.some(t => t.nome === turmaAtual.nome);
-
-      if (podeVirtualizar && !jaExisteNoProximoAno) {
-        turmasVirtualizadasProximoAno.push({
-          ...turmaAtual,
-          id: `virtual_proximo_${turmaAtual.id}`,
-          anoLetivo: anoProximoStr,
-          turmaOriginalId: turmaAtual.id
-        });
+  // Atualizar cache de turmas próximas quando filtros/ano mudarem
+  useEffect(() => {
+    const atualizarCache = async () => {
+      if (!turmaFiltroRematricula) {
+        setTurmasProximasCache([]);
+        return;
       }
-    }
+      const anoAtualStr = anoLetivoRematricula.toString();
+      const lista = await turmaService.obterProximoAnoComVirtualizacao(anoAtualStr);
+      setTurmasProximasCache(lista);
+    };
+    atualizarCache();
+  }, [turmaFiltroRematricula, anoLetivoRematricula, turmas]);
 
-    // Combinar turmas reais + virtualizadas e ordenar
-    const resultado = [...turmasReaisProximoAno, ...turmasVirtualizadasProximoAno]
-      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
-
-    return resultado;
+  // Função síncrona para obter turmas do próximo ano a partir do cache
+  const getTurmasProximas = (): Turma[] => {
+    return turmasProximasCache;
   };
 
   // Função para calcular média final do aluno (soma de todas as médias finais / total de matérias)
@@ -688,7 +674,7 @@ export default function Turmas() {
       const aluno = alunos.find(a => a.id === alunoId);
       if (!aluno) return null;
 
-      const alunoUidParaBusca = aluno.uid || aluno.id;
+      const alunoUidParaBusca = aluno.id;
       const turmaIdNoAno = getTurmaAlunoNoAnoUtil(aluno, anoParaCalculo);
 
       // Buscar todas as notas do aluno na turma do ano letivo atual
@@ -742,23 +728,7 @@ export default function Turmas() {
   // Estado para armazenar médias dos alunos
   const [mediasAlunos, setMediasAlunos] = useState<Record<string, number | null>>({});
 
-  // Buscar médias dos alunos quando a lista muda
-  useEffect(() => {
-    const carregarMedias = async () => {
-      const alunosFiltrados = getAlunosFiltrados();
-      const novasMedias: Record<string, number | null> = {};
-
-      for (const aluno of alunosFiltrados) {
-        novasMedias[aluno.id] = await calcularMediaFinalAluno(aluno.id, anoLetivoRematricula);
-      }
-
-      setMediasAlunos(novasMedias);
-    };
-
-    if (turmaFiltroRematricula) {
-      carregarMedias();
-    }
-  }, [turmaFiltroRematricula, alunos, anoLetivoRematricula]);
+  // (Médias são carregadas no useEffect consolidado acima junto com status e ações finalizadas)
 
   // Função auxiliar para materializar turma virtual
   const materializarTurmaVirtual = async (turmaIdOuObjeto: string | Turma): Promise<string> => {
@@ -771,7 +741,7 @@ export default function Turmas() {
 
       // Se não encontrou, buscar nas turmas virtualizadas geradas
       if (!turmaVirtual) {
-        const turmasProximas = getTurmasProximas();
+        const turmasProximas = await getTurmasProximas();
         turmaVirtual = turmasProximas.find(t => t.id === turmaIdOuObjeto);
       }
     } else {
@@ -799,15 +769,8 @@ export default function Turmas() {
     const turmasReaisSnap = await getDocs(turmasReaisQuery);
 
     if (turmasReaisSnap.empty) {
-      // Materializar a turma virtual
-      const novaTurmaData = {
-        nome: turmaVirtual.nome,
-        anoLetivo: turmaVirtual.anoLetivo,
-        turno: turmaVirtual.turno
-      };
-
-      const novaTurmaRef = await addDoc(collection(db, 'turmas'), novaTurmaData);
-      const turmaRealId = novaTurmaRef.id;
+      // Materializar a turma virtual usando o service
+      const turmaRealId = await turmaService.materializarTurma(turmaVirtual);
 
       // Copiar vínculos professor-matéria da turma original
       const vinculosOriginaisQuery = query(
@@ -842,11 +805,6 @@ export default function Turmas() {
         });
       }
 
-      // Marcar turma original como não virtualizável
-      await updateDoc(doc(db, 'turmas', turmaVirtual.turmaOriginalId!), {
-        isVirtual: false
-      });
-
       return turmaRealId;
     } else {
       // Turma real já existe, usar ela
@@ -856,7 +814,7 @@ export default function Turmas() {
   };
 
   // Função para abrir modal de confirmação
-  const handleAbrirModalConfirmacao = () => {
+  const handleAbrirModalConfirmacao = async () => {
     const alunosComAcao = Object.keys(statusPromocao).filter(
       alunoId => statusPromocao[alunoId] !== null || alunosTransferencia[alunoId]
     );
@@ -875,30 +833,21 @@ export default function Turmas() {
       return;
     }
 
-    // NOVA VALIDAÇÃO: Se tem promovido, validar que próxima turma é maior que a atual
+    // VALIDAÇÃO via service: promoção deve ser para série superior
     if (temPromovido && proximaTurma && turmaFiltroRematricula) {
-      const turmaAtual = turmas.find(t => t.id === turmaFiltroRematricula);
+      const turmaAtual = turmasRematricula.find(t => t.id === turmaFiltroRematricula);
 
-      // Buscar turma próxima (pode ser real ou virtual gerada dinamicamente)
-      let turmaProxima = turmas.find(t => t.id === proximaTurma);
-
-      // Se não encontrou, pode ser uma turma virtual - buscar nas turmas geradas
+      // Buscar turma próxima (real ou virtual do cache)
+      let turmaProxima = turmasRematricula.find(t => t.id === proximaTurma);
       if (!turmaProxima) {
         const turmasProximas = getTurmasProximas();
-        turmaProxima = turmasProximas.find(t => t.id === proximaTurma);
+        turmaProxima = turmasProximas.find((t: Turma) => t.id === proximaTurma);
       }
 
       if (turmaAtual && turmaProxima) {
-        const serieAtual = extrairNumeroSerie(turmaAtual.nome);
-        const serieProxima = extrairNumeroSerie(turmaProxima.nome);
-
-        // VALIDAÇÃO: Para promover, a série da próxima turma DEVE ser maior
-        if (serieProxima <= serieAtual) {
-          setToast({
-            show: true,
-            message: 'Para promover alunos, a próxima turma deve ser de uma série superior à atual',
-            variant: 'danger'
-          });
+        const validacao = turmaService.validarPromocao(turmaAtual, turmaProxima);
+        if (!validacao.ok) {
+          setToast({ show: true, message: validacao.motivo || 'Promoção inválida', variant: 'danger' });
           return;
         }
       }
@@ -909,74 +858,56 @@ export default function Turmas() {
     const reprovados: { alunoId: string; turmaDestino: string }[] = [];
     const transferidos: { alunoId: string; turmaDestino: string }[] = [];
 
-    const anoProximoStr = (anoLetivoRematricula + 1).toString();
-    const anoAtualStr = anoLetivoRematricula.toString();
+    // Variáveis de ano não são mais necessárias aqui após centralização no service
 
-    alunosComAcao.forEach(alunoId => {
+    for (const alunoId of alunosComAcao) {
       const aluno = alunos.find(a => a.id === alunoId);
-      if (!aluno) return;
+      if (!aluno) continue;
 
       // Promovidos
       if (statusPromocao[alunoId] === 'promovido' && proximaTurma) {
-        // Buscar primeiro nas turmas reais
-        let turmaDestino = turmas.find(t => t.id === proximaTurma);
-
-        // Se não encontrou, buscar nas turmas virtualizadas do próximo ano
-        if (!turmaDestino) {
-          const turmasProximas = getTurmasProximas();
-          turmaDestino = turmasProximas.find(t => t.id === proximaTurma);
-        }
+        const turmaAtualAluno = turmasRematricula.find(t => t.id === getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula));
+        const destinoPromo = turmaAtualAluno
+          ? await turmaService.resolverDestinoPromocao(turmaAtualAluno, anoLetivoRematricula.toString(), proximaTurma)
+          : null;
 
         promovidos.push({
           alunoId: aluno.id,
-          turmaDestino: turmaDestino?.nome || 'Desconhecida'
+          turmaDestino: destinoPromo?.nome || 'Desconhecida'
         });
       }
 
       // Reprovados
       if (statusPromocao[alunoId] === 'reprovado') {
-        const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula));
+        const turmaAtualAluno = turmasRematricula.find(t => t.id === getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula));
         const nomeAtualAluno = turmaAtualAluno?.nome || '';
 
-        // Gerar turmas virtualizadas (mesmo código da confirmação)
-        const turmasReaisProximoAno = turmas.filter(t => t.anoLetivo === anoProximoStr && !isTurmaVirtualizada(t));
-        const turmasAtuais = turmas.filter(t => t.anoLetivo === anoAtualStr && !isTurmaVirtualizada(t));
+        // Resolver destino usando o TurmaService para evitar inconsistências
+        const destino = turmaAtualAluno
+          ? await turmaService.resolverDestinoReprovacao(turmaAtualAluno, anoLetivoRematricula.toString())
+          : undefined;
 
-        const turmasVirtualizadasProximoAno: Turma[] = [];
-        for (const turmaAtual of turmasAtuais) {
-          const podeVirtualizar = turmaAtual.isVirtual !== false;
-          const jaExisteNoProximoAno = turmasReaisProximoAno.some(t => t.nome === turmaAtual.nome);
-
-          if (podeVirtualizar && !jaExisteNoProximoAno) {
-            turmasVirtualizadasProximoAno.push({
-              ...turmaAtual,
-              id: `virtual_proximo_${turmaAtual.id}`,
-              anoLetivo: anoProximoStr,
-              turmaOriginalId: turmaAtual.id
-            });
-          }
-        }
-
-        const todasTurmasProximoAno = [...turmasReaisProximoAno, ...turmasVirtualizadasProximoAno];
-        const serieAtual = extrairNumeroSerie(turmaAtualAluno?.nome || '');
-        const turmasMesmaSerie = todasTurmasProximoAno.filter(t => extrairNumeroSerie(t.nome) === serieAtual);
-        const turmaDestino = turmasMesmaSerie.find(t => t.nome === nomeAtualAluno) || turmasMesmaSerie[0];
+        console.log('🔍 DEBUG Reprovação (service):', {
+          aluno: aluno.nome,
+          turmaAtual: nomeAtualAluno,
+          destino: destino?.nome
+        });
 
         reprovados.push({
           alunoId: aluno.id,
-          turmaDestino: turmaDestino?.nome || 'Desconhecida'
+          turmaDestino: destino?.nome || 'Desconhecida'
         });
       }
 
       // Transferidos
       if (alunosTransferencia[alunoId]) {
-        const turmaDestino = turmas.find(t => t.id === alunosTransferencia[alunoId]);
+        const turmaDestino = turmasRematricula.find(t => t.id === alunosTransferencia[alunoId]);
         transferidos.push({
           alunoId: aluno.id,
           turmaDestino: turmaDestino?.nome || 'Desconhecida'
         });
       }
-    });
+    }
 
     setResumoDestinos({ promovidos, reprovados, transferidos });
 
@@ -986,7 +917,7 @@ export default function Turmas() {
   // Função para copiar notas e frequências de uma turma para outra
   const copiarNotasEFrequencias = async (aluno: Aluno, turmaOrigemId: string, turmaDestinoId: string) => {
     try {
-      const alunoUidParaBusca = aluno.uid || aluno.id;
+      const alunoUidParaBusca = aluno.id;
 
       // 1. COPIAR NOTAS
       const notasQuery = query(
@@ -1062,7 +993,6 @@ export default function Turmas() {
         return;
       }
 
-      const anoAtualStr = anoLetivoRematricula.toString();
       const anoProximoStr = (anoLetivoRematricula + 1).toString();
 
       // Processar cada aluno
@@ -1072,19 +1002,6 @@ export default function Turmas() {
           continue;
         }
 
-        const alunoRef = doc(db, 'alunos', alunoId);
-        const alunoDoc = await getDoc(alunoRef);
-
-        if (!alunoDoc.exists()) {
-          continue;
-        }
-
-        const alunoData = alunoDoc.data();
-
-        const historicoTurmas = alunoData?.historicoTurmas || {};
-        const historicoStatus = alunoData?.historicoStatus || {};
-
-
         // Se for transferência
         if (alunosTransferencia[alunoId]) {
           const turmaDestinoIdOriginal = alunosTransferencia[alunoId];
@@ -1092,43 +1009,26 @@ export default function Turmas() {
           // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO
           const turmaDestinoId = await materializarTurmaVirtual(turmaDestinoIdOriginal);
 
-          const turmaDestino = turmas.find(t => t.id === turmaDestinoIdOriginal);
+          const turmaDestino = turmasRematricula.find(t => t.id === turmaDestinoIdOriginal);
 
           if (turmaDestino) {
-            const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula));
-            const serieAtual = extrairNumeroSerie(turmaAtualAluno?.nome || '');
-            const serieDestino = extrairNumeroSerie(turmaDestino.nome);
-
-            // Verificar se é série superior (não permitido para transferência)
-            if (serieDestino > serieAtual + 1) {
-              setToast({ show: true, message: `Aluno ${aluno.nome} não pode ser transferido para série superior`, variant: 'danger' });
+            const turmaAtualAluno = turmasRematricula.find(t => t.id === getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula));
+            const valid = turmaAtualAluno ? turmaService.validarTransferencia(turmaAtualAluno, turmaDestino) : { ok: true };
+            if (!valid.ok) {
+              setToast({ show: true, message: `Aluno ${aluno.nome}: ${valid.motivo}`, variant: 'danger' });
               continue;
             }
 
             // IMPORTANTE: Preservar a turma atual no histórico do ano atual
             const turmaAtualId = getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula);
 
-            if (!historicoTurmas[anoAtualStr]) {
-              historicoTurmas[anoAtualStr] = turmaAtualId;
-            }
-
-            // Adicionar a turma de destino no histórico do ano da turma de destino (USAR TURMA MATERIALIZADA)
-            historicoTurmas[turmaDestino.anoLetivo] = turmaDestinoId;
-            historicoStatus[anoAtualStr] = 'transferido';
-
-            // Encontrar o maior ano no histórico para definir a turma atual
-            const anosHistorico = Object.keys(historicoTurmas).map(ano => parseInt(ano));
-            const maiorAno = Math.max(...anosHistorico);
-            const turmaIdAtual = historicoTurmas[maiorAno.toString()];
-
-            const updateData = {
-              turmaId: turmaIdAtual, // Sempre usar a turma do maior ano do histórico
-              historicoTurmas: historicoTurmas,
-              historicoStatus: historicoStatus,
-              ultimaAtualizacao: new Date()
-            };
-
-            await updateDoc(alunoRef, updateData);
+            // Usar AlunoService para transferir
+            await alunoService.transferirAluno(
+              alunoId,
+              anoLetivoRematricula.toString(),
+              turmaDestino.anoLetivo,
+              turmaDestinoId
+            );
 
             // COPIAR NOTAS E FREQUÊNCIAS DA TURMA ANTIGA PARA A NOVA
             await copiarNotasEFrequencias(aluno, turmaAtualId, turmaDestinoId);
@@ -1142,122 +1042,57 @@ export default function Turmas() {
             continue;
           }
 
-          // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO
-          const turmaDestinoId = await materializarTurmaVirtual(proximaTurma);
+          // Resolver destino de promoção via service e validar
+          const turmaAtualAluno = turmasRematricula.find(t => t.id === getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula));
+          const turmaDestinoObj = turmaAtualAluno
+            ? await turmaService.resolverDestinoPromocao(turmaAtualAluno, anoLetivoRematricula.toString(), proximaTurma)
+            : null;
 
-          // Buscar turma destino (pode ser real ou virtual)
-          let turmaDestino = turmas.find(t => t.id === proximaTurma);
-
-          // Se não encontrou nas turmas reais, buscar nas virtualizadas
-          if (!turmaDestino) {
-            const turmasProximas = getTurmasProximas();
-            turmaDestino = turmasProximas.find(t => t.id === proximaTurma);
+          if (!turmaDestinoObj) {
+            setToast({ show: true, message: `Promoção inválida para ${aluno.nome}`, variant: 'danger' });
+            continue;
           }
 
-          if (turmaDestino) {
-            // IMPORTANTE: Preservar a turma atual no histórico do ano atual
-            const turmaAtualId = getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula);
+          // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO (passando objeto)
+          const turmaDestinoId = await materializarTurmaVirtual(turmaDestinoObj);
 
-            if (!historicoTurmas[anoAtualStr]) {
-              historicoTurmas[anoAtualStr] = turmaAtualId;
-            }
-
-            // Adicionar a nova turma no histórico do ano seguinte (USAR TURMA MATERIALIZADA)
-            historicoTurmas[anoProximoStr] = turmaDestinoId;
-            historicoStatus[anoAtualStr] = 'promovido';
-
-            // Encontrar o maior ano no histórico para definir a turma atual
-            const anosHistorico = Object.keys(historicoTurmas).map(ano => parseInt(ano));
-            const maiorAno = Math.max(...anosHistorico);
-            const turmaIdAtual = historicoTurmas[maiorAno.toString()];
-
-            const updateData = {
-              turmaId: turmaIdAtual, // Sempre usar a turma do maior ano do histórico
-              historicoTurmas: historicoTurmas,
-              historicoStatus: historicoStatus,
-              ultimaAtualizacao: new Date()
-            };
-
-            await updateDoc(alunoRef, updateData);
+          if (turmaDestinoObj) {
+            // Usar AlunoService para promover
+            await alunoService.promoverAluno(
+              alunoId,
+              anoLetivoRematricula.toString(),
+              anoProximoStr,
+              turmaDestinoId
+            );
 
             setAcaoFinalizada(prev => ({ ...prev, [alunoId]: 'promovido' }));
           }
         }
         // Se for reprovação
         else if (statusPromocao[alunoId] === 'reprovado') {
-          // Para reprovados: sempre buscar turma da mesma série no ano seguinte
+          // Para reprovados: usar o TurmaService para resolver destino
           const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula));
-          const serieAtual = extrairNumeroSerie(turmaAtualAluno?.nome || '');
-
-          // GERAR TURMAS VIRTUALIZADAS PARA O ANO SEGUINTE
-          const turmasReaisProximoAno = turmas.filter(t =>
-            t.anoLetivo === anoProximoStr && !isTurmaVirtualizada(t)
-          );
-
-          const turmasAtuais = turmas.filter(t =>
-            t.anoLetivo === anoAtualStr && !isTurmaVirtualizada(t)
-          );
-
-          const turmasVirtualizadasProximoAno: Turma[] = [];
-
-          for (const turmaAtual of turmasAtuais) {
-            const podeVirtualizar = turmaAtual.isVirtual !== false;
-            const jaExisteNoProximoAno = turmasReaisProximoAno.some(t => t.nome === turmaAtual.nome);
-
-            if (podeVirtualizar && !jaExisteNoProximoAno) {
-              turmasVirtualizadasProximoAno.push({
-                ...turmaAtual,
-                id: `virtual_proximo_${turmaAtual.id}`,
-                anoLetivo: anoProximoStr,
-                turmaOriginalId: turmaAtual.id
-              });
-            }
+          if (!turmaAtualAluno) {
+            setToast({ show: true, message: `Turma atual não encontrada para ${aluno.nome}`, variant: 'danger' });
+            continue;
           }
 
-          // Combinar turmas reais + virtualizadas do próximo ano
-          const todasTurmasProximoAno = [...turmasReaisProximoAno, ...turmasVirtualizadasProximoAno];
-
-          // Buscar turma da mesma série no ano seguinte (incluindo virtuais)
-          const turmasMesmaSerie = todasTurmasProximoAno.filter(t =>
-            extrairNumeroSerie(t.nome) === serieAtual
-          );
-
-          if (turmasMesmaSerie.length === 0) {
+          const turmaDestinoObj = await turmaService.resolverDestinoReprovacao(turmaAtualAluno, anoLetivoRematricula.toString());
+          if (!turmaDestinoObj) {
             setToast({ show: true, message: `Nenhuma turma da mesma série encontrada para ${aluno.nome}`, variant: 'danger' });
             continue;
           }
 
-          // Buscar turma com MESMO NOME exato, senão qualquer uma da mesma série
-          const nomeAtualAluno = turmaAtualAluno?.nome || '';
-          const turmaDestino = turmasMesmaSerie.find(t => t.nome === nomeAtualAluno) || turmasMesmaSerie[0];
-
           // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO (passar objeto completo)
-          const turmaDestinoIdFinal = await materializarTurmaVirtual(turmaDestino);
+          const turmaDestinoIdFinal = await materializarTurmaVirtual(turmaDestinoObj);
 
-          // IMPORTANTE: Preservar a turma atual no histórico do ano atual
-          const turmaAtualId = getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula);
-
-          if (!historicoTurmas[anoAtualStr]) {
-            historicoTurmas[anoAtualStr] = turmaAtualId;
-          }
-
-          // Adicionar a turma de destino no histórico do ano seguinte (USAR TURMA MATERIALIZADA)
-          historicoTurmas[anoProximoStr] = turmaDestinoIdFinal;
-          historicoStatus[anoAtualStr] = 'reprovado';
-
-          // Encontrar o maior ano no histórico para definir a turma atual
-          const anosHistorico = Object.keys(historicoTurmas).map(ano => parseInt(ano));
-          const maiorAno = Math.max(...anosHistorico);
-          const turmaIdAtual = historicoTurmas[maiorAno.toString()];
-
-          const updateData = {
-            turmaId: turmaIdAtual, // Sempre usar a turma do maior ano do histórico
-            historicoTurmas: historicoTurmas,
-            historicoStatus: historicoStatus,
-            ultimaAtualizacao: new Date()
-          };
-
-          await updateDoc(alunoRef, updateData);
+          // Usar AlunoService para reprovar
+          await alunoService.reprovarAluno(
+            alunoId,
+            anoLetivoRematricula.toString(),
+            anoProximoStr,
+            turmaDestinoIdFinal
+          );
 
           setAcaoFinalizada(prev => ({ ...prev, [alunoId]: 'reprovado' }));
         }
@@ -1287,8 +1122,8 @@ export default function Turmas() {
   // Função para abrir modal de histórico de notas
   const handleAbrirBoletim = async (aluno: Aluno) => {
     try {
-      // Usar o UID do aluno (campo uid) em vez do ID do documento
-      const alunoUidParaBusca = aluno.uid || aluno.id;
+      // Usar o ID do aluno
+      const alunoUidParaBusca = aluno.id;
 
       // Obter a turma do aluno no ano letivo selecionado (rematrícula) usando o histórico
       const turmaIdNoAno = getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula);
@@ -1401,73 +1236,47 @@ export default function Turmas() {
     setProcessandoTransferencia(true);
 
     try {
-      // Executar a transferência imediatamente
-      const alunoRef = doc(db, 'alunos', alunoTransferencia.id);
-      const alunoDoc = await getDoc(alunoRef);
+      // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO
+      const turmaDestinoId = await materializarTurmaVirtual(turmaDestinoTransferencia);
 
-      if (!alunoDoc.exists()) {
-        setToast({ show: true, message: 'Aluno não encontrado', variant: 'danger' });
+      const turmaDestino = turmasRematricula.find(t => t.id === turmaDestinoTransferencia);
+      if (!turmaDestino) {
+        setToast({ show: true, message: 'Turma de destino não encontrada', variant: 'danger' });
         setProcessandoTransferencia(false);
         return;
       }
 
-      const alunoData = alunoDoc.data();
-      const historicoTurmas = alunoData?.historicoTurmas || {};
-      const historicoStatus = alunoData?.historicoStatus || {};
-      const anoAtualStr = anoLetivoRematricula.toString();
-
-      // MATERIALIZAR TURMA VIRTUAL SE NECESSÁRIO
-      const turmaDestinoId = await materializarTurmaVirtual(turmaDestinoTransferencia);
-
-      const turmaDestino = turmas.find(t => t.id === turmaDestinoTransferencia);
-
-      if (turmaDestino) {
-        const turmaAtualAluno = turmas.find(t => t.id === getTurmaAlunoNoAnoUtil(alunoTransferencia, anoLetivoRematricula));
-        const serieAtual = extrairNumeroSerie(turmaAtualAluno?.nome || '');
-        const serieDestino = extrairNumeroSerie(turmaDestino.nome);
-
-        // Verificar se é série superior (não permitido para transferência)
-        if (serieDestino > serieAtual + 1) {
-          setToast({ show: true, message: `Não é permitido transferir para série superior`, variant: 'danger' });
-          setProcessandoTransferencia(false);
-          return;
-        }
-
-        // IMPORTANTE: Preservar a turma atual no histórico do ano atual
-        const turmaAtualId = getTurmaAlunoNoAnoUtil(alunoTransferencia, anoLetivoRematricula);
-
-        if (!historicoTurmas[anoAtualStr]) {
-          historicoTurmas[anoAtualStr] = turmaAtualId;
-        }
-
-        // Adicionar a turma de destino no histórico do ano da turma de destino (USAR TURMA MATERIALIZADA)
-        historicoTurmas[turmaDestino.anoLetivo] = turmaDestinoId;
-        historicoStatus[anoAtualStr] = 'transferido';
-
-        // Encontrar o maior ano no histórico para definir a turma atual
-        const anosHistorico = Object.keys(historicoTurmas).map(ano => parseInt(ano));
-        const maiorAno = Math.max(...anosHistorico);
-        const turmaIdAtual = historicoTurmas[maiorAno.toString()];
-
-        const updateData = {
-          turmaId: turmaIdAtual, // Sempre usar a turma do maior ano do histórico
-          historicoTurmas: historicoTurmas,
-          historicoStatus: historicoStatus,
-          ultimaAtualizacao: new Date()
-        };
-
-        await updateDoc(alunoRef, updateData);
-
-        // COPIAR NOTAS E FREQUÊNCIAS DA TURMA ANTIGA PARA A NOVA
-        await copiarNotasEFrequencias(alunoTransferencia, turmaAtualId, turmaDestinoId);
-
-        setToast({ show: true, message: `${alunoTransferencia.nome} transferido com sucesso!`, variant: 'success' });
-
-        // Atualizar a lista de alunos
-        await fetchData();
-
-        handleFecharModalTransferencia();
+      // Validar via TurmaService
+      const turmaAtualAluno = turmasRematricula.find(
+        t => t.id === getTurmaAlunoNoAnoUtil(alunoTransferencia, anoLetivoRematricula)
+      );
+      const valid = turmaAtualAluno ? turmaService.validarTransferencia(turmaAtualAluno, turmaDestino) : { ok: true };
+      if (!valid.ok) {
+        setToast({ show: true, message: valid.motivo || 'Transferência inválida', variant: 'danger' });
+        setProcessandoTransferencia(false);
+        return;
       }
+
+      // Preservar origem para cópia de notas/frequências
+      const turmaOrigemId = getTurmaAlunoNoAnoUtil(alunoTransferencia, anoLetivoRematricula);
+
+      // Atualizar histórico via AlunoService
+      await alunoService.transferirAluno(
+        alunoTransferencia.id,
+        anoLetivoRematricula.toString(),
+        turmaDestino.anoLetivo,
+        turmaDestinoId
+      );
+
+      // Copiar notas e frequências
+      await copiarNotasEFrequencias(alunoTransferencia, turmaOrigemId, turmaDestinoId);
+
+      setToast({ show: true, message: `${alunoTransferencia.nome} transferido com sucesso!`, variant: 'success' });
+
+      // Atualizar a lista de alunos
+      await fetchData();
+
+      handleFecharModalTransferencia();
     } catch (error) {
       console.error('❌ Erro ao transferir aluno:', error);
       setToast({ show: true, message: 'Erro ao transferir aluno', variant: 'danger' });
@@ -1699,11 +1508,12 @@ export default function Turmas() {
             <RematriculaTab
               anoLetivoRematricula={anoLetivoRematricula}
               setAnoLetivoRematricula={setAnoLetivoRematricula}
+              anosDisponiveis={anosDisponiveis}
               turmaFiltroRematricula={turmaFiltroRematricula}
               setTurmaFiltroRematricula={setTurmaFiltroRematricula}
               proximaTurma={proximaTurma}
               setProximaTurma={setProximaTurma}
-              turmas={turmas}
+              turmas={turmasRematricula}
               getTurmasProximas={getTurmasProximas}
               getAlunosFiltrados={getAlunosFiltrados}
               statusPromocao={statusPromocao}
@@ -1714,10 +1524,11 @@ export default function Turmas() {
               handleReprovarTodos={handleReprovarTodos}
               loading={loading}
               mediasAlunos={mediasAlunos}
-              getStatusBadge={getStatusBadge}
+              getSituacaoBadge={getSituacaoBadge}
               handleAbrirModalTransferencia={handleAbrirModalTransferencia}
               handleAbrirBoletim={handleAbrirBoletim}
               acaoFinalizada={acaoFinalizada}
+              getStatusStyle={getStatusStyle}
             />
           )}
 
@@ -1760,7 +1571,7 @@ export default function Turmas() {
         <ConfirmacaoAcoesModal
           show={showModalConfirmacao}
           onHide={() => setShowModalConfirmacao(false)}
-          turmaNomeAtual={turmas.find(t => t.id === turmaFiltroRematricula)?.nome}
+          turmaNomeAtual={turmasRematricula.find(t => t.id === turmaFiltroRematricula)?.nome}
           resumoDestinos={resumoDestinos}
           onConfirm={handleConfirmarAcoes}
         />
@@ -1771,7 +1582,7 @@ export default function Turmas() {
           turmas={turmas}
           anoLetivoRematricula={anoLetivoRematricula}
           mediasAlunos={mediasAlunos}
-          getStatusBadge={getStatusBadge}
+          getStatusBadge={getSituacaoBadge}
           turmaDestinoTransferencia={turmaDestinoTransferencia}
           setTurmaDestinoTransferencia={setTurmaDestinoTransferencia}
           processandoTransferencia={processandoTransferencia}

@@ -47,9 +47,14 @@ export const AnoLetivoProvider: React.FC<AnoLetivoProviderProps> = ({ children }
         const anosEncontrados = new Set<number>();
         
         snapshot.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.anoLetivo && typeof data.anoLetivo === 'number') {
-            anosEncontrados.add(data.anoLetivo);
+          const data = doc.data() as any;
+          const raw = data.anoLetivo;
+          if (raw === undefined || raw === null) return;
+          if (typeof raw === 'number' && !isNaN(raw)) {
+            anosEncontrados.add(raw);
+          } else if (typeof raw === 'string') {
+            const parsed = parseInt(raw, 10);
+            if (!isNaN(parsed)) anosEncontrados.add(parsed);
           }
         });
 
@@ -58,10 +63,11 @@ export const AnoLetivoProvider: React.FC<AnoLetivoProviderProps> = ({ children }
           anosEncontrados.add(new Date().getFullYear());
         }
 
-        // Adiciona o próximo ano automaticamente
-        const anoAtual = new Date().getFullYear();
-        const proximoAno = anoAtual + 1;
-        anosEncontrados.add(proximoAno);
+        // Adiciona o próximo ano com base no maior ano encontrado (ou ano atual)
+        const anoBase = anosEncontrados.size > 0
+          ? Math.max(...Array.from(anosEncontrados))
+          : new Date().getFullYear();
+        anosEncontrados.add(anoBase + 1);
 
         // Converte para array e ordena
         const anosOrdenados = Array.from(anosEncontrados).sort((a, b) => b - a);

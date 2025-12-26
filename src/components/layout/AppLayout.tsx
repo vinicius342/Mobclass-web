@@ -107,7 +107,7 @@ export default function AppLayout({ children }: Props) {
                 >
                   {anosDisponiveis.map(ano => (
                     <option key={ano} value={ano}>
-                      {ano} {ano === new Date().getFullYear() && '(Atual)'} {ano === new Date().getFullYear() + 1 && '(Próximo)'}
+                      {ano} {ano === new Date().getFullYear() && '- Atual'} {ano === new Date().getFullYear() + 1 && ''}
                     </option>
                   ))}
                 </Form.Select>

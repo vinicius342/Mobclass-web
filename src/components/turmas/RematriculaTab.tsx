@@ -3,28 +3,13 @@ import { Card, Row, Col, Form, Button, Spinner, Table } from 'react-bootstrap';
 import { ArrowLeftRight, ArrowRight, BookText, Check, CheckCircle2, User, X, Users } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircleExclamation } from '@fortawesome/free-solid-svg-icons';
-
-// Tipos mínimos esperados pelo componente
-export type Turma = {
-  id: string;
-  nome: string;
-  anoLetivo: string;
-  isVirtualizada?: boolean;
-};
-
-export type Aluno = { 
-  id: string; 
-  nome: string;
-  turmaId: string;
-  email?: string;
-  uid?: string;
-  historicoTurmas?: { [anoLetivo: string]: string };
-  historicoStatus?: { [anoLetivo: string]: 'promovido' | 'reprovado' | 'transferido' };
-};
+import type { Turma } from '../../models/Turma';
+import type { Aluno } from '../../models/Aluno';
 
 type Props = {
   anoLetivoRematricula: number;
   setAnoLetivoRematricula: (v: number) => void;
+  anosDisponiveis: number[];
   turmaFiltroRematricula: string;
   setTurmaFiltroRematricula: (v: string) => void;
   proximaTurma: string;
@@ -40,15 +25,17 @@ type Props = {
   handleReprovarTodos: () => void;
   loading: boolean;
   mediasAlunos: Record<string, number | null>;
-  getStatusBadge: (alunoId: string) => React.ReactNode;
+  getSituacaoBadge: (alunoId: string) => React.ReactNode;
   handleAbrirModalTransferencia: (aluno: Aluno) => void;
   handleAbrirBoletim: (aluno: Aluno) => void;
   acaoFinalizada: Record<string, 'promovido' | 'reprovado' | 'transferido'>;
+  getStatusStyle: (status: string) => { bg: string; color: string };
 };
 
 const RematriculaTab: React.FC<Props> = ({
   anoLetivoRematricula,
   setAnoLetivoRematricula,
+  anosDisponiveis,
   turmaFiltroRematricula,
   setTurmaFiltroRematricula,
   proximaTurma,
@@ -64,9 +51,10 @@ const RematriculaTab: React.FC<Props> = ({
   handleReprovarTodos,
   loading,
   mediasAlunos,
-  getStatusBadge,
+  getSituacaoBadge: getSituacaoBadge,
   handleAbrirModalTransferencia,
   handleAbrirBoletim,
+  getStatusStyle,
 }) => {
   return (
     <>
@@ -88,7 +76,8 @@ const RematriculaTab: React.FC<Props> = ({
                   setProximaTurma('');
                 }}
               >
-                {[...new Set(turmas.filter(t => !t.isVirtualizada).map(t => parseInt(t.anoLetivo)))]
+                {anosDisponiveis
+                  .slice()
                   .sort((a, b) => a - b)
                   .map(ano => (
                     <option key={ano} value={ano}>{ano}</option>
@@ -102,7 +91,7 @@ const RematriculaTab: React.FC<Props> = ({
                 setProximaTurma('');
               }}>
                 <option value="">Selecione a turma atual</option>
-                {turmas.filter(t => !t.isVirtualizada && t.anoLetivo === anoLetivoRematricula.toString()).map(turma => (
+                {turmas.filter(t => !t.turmaOriginalId && t.anoLetivo === anoLetivoRematricula.toString()).map(turma => (
                   <option key={turma.id} value={turma.id}>{turma.nome}</option>
                 ))}
               </Form.Select>
@@ -276,6 +265,8 @@ const RematriculaTab: React.FC<Props> = ({
                         const corMedia = mediaFinal !== null && mediaFinal !== undefined
                           ? mediaFinal >= 7 ? 'text-success' : mediaFinal >= 5 ? 'text-warning' : 'text-danger'
                           : 'text-muted';
+                        const status = aluno.historicoStatus?.[anoLetivoRematricula.toString()] || '';
+                        const badgeStyle = getStatusStyle(status);
 
                         return (
                           <tr key={aluno.id} className='align-middle linha-agenda' style={{ textAlign: 'center', height: '70px' }}>
@@ -293,92 +284,103 @@ const RematriculaTab: React.FC<Props> = ({
                               </span>
                             </td>
                             <td>
-                              {getStatusBadge(aluno.id)}
+                              {getSituacaoBadge(aluno.id)}
                             </td>
                             <td>
                               {/* Ações por aluno */}
-                              <div className="d-flex gap-2 justify-content-center">
-                                <Button
-                                  className='btn-acao-aprovado'
-                                  size="sm"
-                                  onClick={() => {
-                                    setStatusPromocao(prev => {
-                                      if (prev[aluno.id] === 'promovido') {
-                                        const { [aluno.id]: _, ...rest } = prev;
-                                        return rest;
+                              {!status ? (
+                                <div className="d-flex gap-2 justify-content-center">
+                                  <Button
+                                    className='btn-acao-aprovado'
+                                    size="sm"
+                                    onClick={() => {
+                                      setStatusPromocao(prev => {
+                                        if (prev[aluno.id] === 'promovido') {
+                                          const { [aluno.id]: _, ...rest } = prev;
+                                          return rest;
+                                        }
+                                        return { ...prev, [aluno.id]: 'promovido' };
+                                      });
+                                      if (alunosTransferencia[aluno.id]) {
+                                        const novaTransferencia = { ...alunosTransferencia };
+                                        delete novaTransferencia[aluno.id];
+                                        setAlunosTransferencia(novaTransferencia);
                                       }
-                                      return { ...prev, [aluno.id]: 'promovido' };
-                                    });
-                                    if (alunosTransferencia[aluno.id]) {
-                                      const novaTransferencia = { ...alunosTransferencia };
-                                      delete novaTransferencia[aluno.id];
-                                      setAlunosTransferencia(novaTransferencia);
-                                    }
-                                  }}
-                                  title="Aprovar"
-                                  style={{
-                                    padding: '0.25rem 0.5rem',
-                                    borderRadius: '6px',
-                                    fontWeight: '500',
-                                    backgroundColor: statusPromocao[aluno.id] === 'promovido' ? '#22c55e' : 'white',
-                                    color: statusPromocao[aluno.id] === 'promovido' ? 'white' : 'black',
-                                    border: '1px solid #cbd5e1',
-                                    height: '32px',
-                                    minWidth: '32px'
-                                  }}
-                                >
-                                  <Check size={16} strokeWidth={2.5} />
-                                </Button>
-                                <Button
-                                  className='btn-acao-reprovado'
-                                  size="sm"
-                                  onClick={() => {
-                                    setStatusPromocao(prev => {
-                                      if (prev[aluno.id] === 'reprovado') {
-                                        const { [aluno.id]: _, ...rest } = prev;
-                                        return rest;
+                                    }}
+                                    title="Aprovar"
+                                    style={{
+                                      padding: '0.25rem 0.5rem',
+                                      borderRadius: '6px',
+                                      fontWeight: '500',
+                                      backgroundColor: statusPromocao[aluno.id] === 'promovido' ? '#22c55e' : 'white',
+                                      color: statusPromocao[aluno.id] === 'promovido' ? 'white' : 'black',
+                                      border: '1px solid #cbd5e1',
+                                      height: '32px',
+                                      minWidth: '32px'
+                                    }}
+                                  >
+                                    <Check size={16} strokeWidth={2.5} />
+                                  </Button>
+                                  <Button
+                                    className='btn-acao-reprovado'
+                                    size="sm"
+                                    onClick={() => {
+                                      setStatusPromocao(prev => {
+                                        if (prev[aluno.id] === 'reprovado') {
+                                          const { [aluno.id]: _, ...rest } = prev;
+                                          return rest;
+                                        }
+                                        return { ...prev, [aluno.id]: 'reprovado' };
+                                      });
+                                      if (alunosTransferencia[aluno.id]) {
+                                        const novaTransferencia = { ...alunosTransferencia };
+                                        delete novaTransferencia[aluno.id];
+                                        setAlunosTransferencia(novaTransferencia);
                                       }
-                                      return { ...prev, [aluno.id]: 'reprovado' };
-                                    });
-                                    if (alunosTransferencia[aluno.id]) {
-                                      const novaTransferencia = { ...alunosTransferencia };
-                                      delete novaTransferencia[aluno.id];
-                                      setAlunosTransferencia(novaTransferencia);
-                                    }
-                                  }}
-                                  title="Reprovar"
-                                  style={{
-                                    padding: '0.25rem 0.5rem',
-                                    borderRadius: '6px',
-                                    fontWeight: '500',
-                                    backgroundColor: statusPromocao[aluno.id] === 'reprovado' ? '#ef4444' : 'white',
-                                    color: statusPromocao[aluno.id] === 'reprovado' ? 'white' : 'black',
-                                    border: '1px solid #cbd5e1',
-                                    height: '32px',
-                                    minWidth: '32px'
-                                  }}
-                                >
-                                  <X size={16} strokeWidth={2.5} />
-                                </Button>
-                                <Button
-                                  className="btn-acao-transferencia d-flex align-items-center gap-1"
-                                  size="sm"
-                                  onClick={() => handleAbrirModalTransferencia(aluno)}
-                                  title="Transferir"
-                                  style={{
-                                    padding: '0.25rem 0.5rem',
-                                    borderRadius: '6px',
-                                    fontWeight: '500',
-                                    backgroundColor: alunosTransferencia[aluno.id] ? '#3b82f6' : 'white',
-                                    color: alunosTransferencia[aluno.id] ? 'white' : 'black',
-                                    border: '1px solid #cbd5e1',
-                                    height: '32px',
-                                    minWidth: '32px'
-                                  }}
-                                >
-                                  <ArrowLeftRight size={18} strokeWidth={2.5} />
-                                </Button>
-                              </div>
+                                    }}
+                                    title="Reprovar"
+                                    style={{
+                                      padding: '0.25rem 0.5rem',
+                                      borderRadius: '6px',
+                                      fontWeight: '500',
+                                      backgroundColor: statusPromocao[aluno.id] === 'reprovado' ? '#ef4444' : 'white',
+                                      color: statusPromocao[aluno.id] === 'reprovado' ? 'white' : 'black',
+                                      border: '1px solid #cbd5e1',
+                                      height: '32px',
+                                      minWidth: '32px'
+                                    }}
+                                  >
+                                    <X size={16} strokeWidth={2.5} />
+                                  </Button>
+                                  <Button
+                                    className="btn-acao-transferencia d-flex align-items-center gap-1"
+                                    size="sm"
+                                    onClick={() => handleAbrirModalTransferencia(aluno)}
+                                    title="Transferir"
+                                    style={{
+                                      padding: '0.25rem 0.5rem',
+                                      borderRadius: '6px',
+                                      fontWeight: '500',
+                                      backgroundColor: alunosTransferencia[aluno.id] ? '#3b82f6' : 'white',
+                                      color: alunosTransferencia[aluno.id] ? 'white' : 'black',
+                                      border: '1px solid #cbd5e1',
+                                      height: '32px',
+                                      minWidth: '32px'
+                                    }}
+                                  >
+                                    <ArrowLeftRight size={18} strokeWidth={2.5} />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div>
+                                  <span
+                                    className="badge badge-status-acoes"
+                                    style={{ backgroundColor: badgeStyle.bg, color: badgeStyle.color }}
+                                  >
+                                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                                  </span>
+                                </div>
+                              )}
                             </td>
                             <td>
                               <Button
@@ -439,7 +441,7 @@ const RematriculaTab: React.FC<Props> = ({
                             </div>
                             <div className="info-row">
                               <span className="info-label">Situação:</span>
-                              {getStatusBadge(aluno.id)}
+                              {getSituacaoBadge(aluno.id)}
                             </div>
                           </div>
                           <div className="turmas-acoes-mobile">

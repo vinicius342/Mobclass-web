@@ -1,6 +1,3 @@
-// src/utils/turmasHelpers.ts
-
-// Tipos leves para evitar dependência de tipos das páginas
 export type AlunoLike = { turmaId: string; historicoTurmas?: Record<string, string> };
 export type NotaLike = {
   notaParcial?: number | null;
