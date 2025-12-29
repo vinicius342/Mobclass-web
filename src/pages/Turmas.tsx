@@ -16,8 +16,13 @@ import { getTurmaAlunoNoAnoUtil, calcularMediaFinalUtil, getNotaColorUtil, isTur
 import { turmaService } from '../services/turma/TurmaService';
 import type { Turma } from '../models/Turma';
 import type { Aluno } from '../models/Aluno';
+import type { Nota } from '../models/Nota';
 import { AlunoService } from '../services/usuario/AlunoService';
 import { FirebaseAlunoRepository } from '../repositories/FirebaseAlunoRepository';
+import { NotaService } from '../services/nota/NotaService';
+import { FirebaseNotaRepository } from '../repositories/FirebaseNotaRepository';
+import { FrequenciaService } from '../services/frequencia/FrequenciaService';
+import { FirebaseFrequenciaRepository } from '../repositories/FirebaseFrequenciaRepository';
 import { useAuth } from '../contexts/AuthContext';
 import Paginacao from '../components/common/Paginacao';
 import { Users, BookOpen, Clock } from 'lucide-react';
@@ -49,23 +54,16 @@ interface Vinculo {
   materiaId: string;
   turmaId: string;
 }
-interface Nota {
-  id: string;
-  turmaId: string;
-  materiaId: string;
-  bimestre: string;
-  notaParcial: number;
-  notaGlobal: number;
-  notaParticipacao: number;
-  notaRecuperacao?: number;
-  alunoUid: string;
-  nomeAluno: string;
-  dataLancamento: string;
-}
 
-// Instanciar AlunoService
+// Instanciar Services
 const alunoRepository = new FirebaseAlunoRepository();
 const alunoService = new AlunoService(alunoRepository);
+
+const notaRepository = new FirebaseNotaRepository();
+const notaService = new NotaService(notaRepository);
+
+const frequenciaRepository = new FirebaseFrequenciaRepository();
+const frequenciaService = new FrequenciaService(frequenciaRepository);
 
 export default function Turmas() {
   const { anoLetivo, carregandoAnos, anosDisponiveis } = useAnoLetivoAtual();
@@ -84,8 +82,7 @@ export default function Turmas() {
   const [showDetalhesModal, setShowDetalhesModal] = useState(false);
   const [turmaDetalhes, setTurmaDetalhes] = useState<Turma | null>(null);
   const [novaTurma, setNovaTurma] = useState('');
-  // Removido estado local de anoLetivo, usar apenas o do context
-  // Separar estado do turno para filtro e para o modal
+
   const [turnoFiltro, setTurnoFiltro] = useState('');
   const [turnoModal, setTurnoModal] = useState('');
   const [editId, setEditId] = useState<string | null>(null);
@@ -157,9 +154,9 @@ export default function Turmas() {
           const turmaIds = ((userData as any)?.turmas || []) as string[];
           const turmasProfessor = turmaIds.length > 0
             ? todasTurmas.filter(t => {
-                if (!t.turmaOriginalId) return turmaIds.includes(t.id);
-                return turmaIds.includes(t.turmaOriginalId);
-              })
+              if (!t.turmaOriginalId) return turmaIds.includes(t.id);
+              return turmaIds.includes(t.turmaOriginalId);
+            })
             : [];
           setTurmasRematricula(turmasProfessor.sort((a, b) => a.nome.localeCompare(b.nome)));
         }
@@ -224,24 +221,24 @@ export default function Turmas() {
 
       // Carregamentos em paralelo conforme perfil
       if (isAdmin) {
-        const [adminData, turmasDoAno, alunosSnap] = await Promise.all([
+        const [adminData, turmasDoAno, alunosList] = await Promise.all([
           loadAdminData(anoLetivo),
           turmaService.listarComVirtualizacao(anoLetivo.toString()),
-          getDocs(collection(db, 'alunos'))
+          alunoRepository.findAll()
         ]);
 
         setTurmas(turmasDoAno.sort((a, b) => a.nome.localeCompare(b.nome)));
-        setAlunos(alunosSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+        setAlunos(alunosList);
         setProfessores(adminData.professores);
         setMaterias(adminData.materias);
         setVinculos(adminData.vinculos);
       } else {
         const turmaIds = (userData?.turmas || []) as string[];
 
-        const [profData, todasTurmas, alunosSnap, professoresList] = await Promise.all([
+        const [profData, todasTurmas, alunosList, professoresList] = await Promise.all([
           loadProfessorData(userData!.uid, anoLetivo),
           turmaService.listarComVirtualizacao(anoLetivo.toString()),
-          getDocs(collection(db, 'alunos')),
+          alunoRepository.findAll(),
           loadProfessores() // para mapear nomes nas listagens de vínculos
         ]);
 
@@ -258,7 +255,7 @@ export default function Turmas() {
           : [];
 
         setTurmas(turmasProfessor.sort((a, b) => a.nome.localeCompare(b.nome)));
-        setAlunos(alunosSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+        setAlunos(alunosList);
         setProfessores(professoresList);
         setMaterias(profData.materias);
         setVinculos(profData.vinculos);
@@ -516,20 +513,11 @@ export default function Turmas() {
   // Função para calcular status do aluno baseado nas notas finais
   const calcularStatusAluno = async (aluno: Aluno, anoParaCalculo: number = anoLetivo): Promise<string> => {
     try {
-      const alunoUidParaBusca = aluno.id;
-
       // Obter a turma do aluno no ano letivo usando o histórico
       const turmaIdNoAno = getTurmaAlunoNoAnoUtil(aluno, anoParaCalculo);
 
-      // Buscar todas as notas do aluno na turma do ano letivo atual
-      const notasQuery = query(
-        collection(db, 'notas'),
-        where('alunoUid', '==', alunoUidParaBusca),
-        where('turmaId', '==', turmaIdNoAno)
-      );
-
-      const notasSnap = await getDocs(notasQuery);
-      const notasData = notasSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Nota[];
+      // Buscar notas usando NotaService
+      const notasData = await notaService.listarPorAlunoETurma(aluno.id, turmaIdNoAno);
 
       if (notasData.length === 0) {
         return 'Em Andamento'; // Sem notas = em andamento
@@ -647,7 +635,7 @@ export default function Turmas() {
     );
   };
 
-  
+
 
   // Atualizar cache de turmas próximas quando filtros/ano mudarem
   useEffect(() => {
@@ -674,22 +662,16 @@ export default function Turmas() {
       const aluno = alunos.find(a => a.id === alunoId);
       if (!aluno) return null;
 
-      const alunoUidParaBusca = aluno.id;
       const turmaIdNoAno = getTurmaAlunoNoAnoUtil(aluno, anoParaCalculo);
 
-      // Buscar todas as notas do aluno na turma do ano letivo atual
-      const notasSnap = await getDocs(query(
-        collection(db, 'notas'),
-        where('alunoUid', '==', alunoUidParaBusca),
-        where('turmaId', '==', turmaIdNoAno)
-      ));
+      // Buscar notas usando NotaService
+      const notasData = await notaService.listarPorAlunoETurma(aluno.id, turmaIdNoAno);
 
-      if (notasSnap.empty) return null;
+      if (notasData.length === 0) return null;
 
       // Organizar notas por matéria e bimestre
       const notasPorMateria: Record<string, number[]> = {};
-      notasSnap.docs.forEach(docSnap => {
-        const data = docSnap.data() as Nota;
+      notasData.forEach(data => {
         const materiaId = data.materiaId;
 
         // Verificar se a nota tem dados válidos antes de calcular
@@ -917,62 +899,13 @@ export default function Turmas() {
   // Função para copiar notas e frequências de uma turma para outra
   const copiarNotasEFrequencias = async (aluno: Aluno, turmaOrigemId: string, turmaDestinoId: string) => {
     try {
-      const alunoUidParaBusca = aluno.id;
+      // Usar services para copiar notas e frequências
+      await Promise.all([
+        notaService.copiarNotas(aluno.id, turmaOrigemId, turmaDestinoId),
+        frequenciaService.copiarFrequencias(aluno.id, turmaOrigemId, turmaDestinoId)
+      ]);
 
-      // 1. COPIAR NOTAS
-      const notasQuery = query(
-        collection(db, 'notas'),
-        where('alunoUid', '==', alunoUidParaBusca),
-        where('turmaId', '==', turmaOrigemId)
-      );
-
-      const notasSnap = await getDocs(notasQuery);
-
-      for (const notaDoc of notasSnap.docs) {
-        const notaData = notaDoc.data();
-
-        // Criar nova nota com o turmaId da turma de destino
-        const novaNota = {
-          alunoUid: notaData.alunoUid,
-          bimestre: notaData.bimestre,
-          dataLancamento: notaData.dataLancamento,
-          materiaId: notaData.materiaId,
-          notaGlobal: notaData.notaGlobal,
-          notaParcial: notaData.notaParcial,
-          notaParticipacao: notaData.notaParticipacao,
-          notaRecuperacao: notaData.notaRecuperacao,
-          turmaId: turmaDestinoId, // Nova turma
-          nomeAluno: notaData.nomeAluno || aluno.nome
-        };
-
-        await addDoc(collection(db, 'notas'), novaNota);
-      }
-
-      // 2. COPIAR FREQUÊNCIAS
-      const frequenciasQuery = query(
-        collection(db, 'frequencias'),
-        where('alunoId', '==', aluno.id),
-        where('turmaId', '==', turmaOrigemId)
-      );
-
-      const frequenciasSnap = await getDocs(frequenciasQuery);
-
-      for (const freqDoc of frequenciasSnap.docs) {
-        const freqData = freqDoc.data();
-
-        // Criar nova frequência com o turmaId da turma de destino
-        const novaFrequencia = {
-          alunoId: freqData.alunoId,
-          data: freqData.data,
-          materiaId: freqData.materiaId,
-          presenca: freqData.presenca,
-          turmaId: turmaDestinoId // Nova turma
-        };
-
-        await addDoc(collection(db, 'frequencias'), novaFrequencia);
-      }
-
-      console.log(`✅ Notas e frequências copiadas para ${aluno.nome} - ${notasSnap.size} notas, ${frequenciasSnap.size} frequências`);
+      console.log(`✅ Notas e frequências copiadas para ${aluno.nome}`);
 
     } catch (error) {
       console.error('❌ Erro ao copiar notas e frequências:', error);
@@ -1122,22 +1055,13 @@ export default function Turmas() {
   // Função para abrir modal de histórico de notas
   const handleAbrirBoletim = async (aluno: Aluno) => {
     try {
-      // Usar o ID do aluno
-      const alunoUidParaBusca = aluno.id;
-
-      // Obter a turma do aluno no ano letivo selecionado (rematrícula) usando o histórico
+      // Obter a turma do aluno no ano letivo selecionado usando o histórico
       const turmaIdNoAno = getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula);
 
-      // Buscar as notas do aluno na turma do ano letivo atual
-      const notasSnap = await getDocs(query(
-        collection(db, 'notas'),
-        where('alunoUid', '==', alunoUidParaBusca),
-        where('turmaId', '==', turmaIdNoAno)
-      ));
+      // Buscar notas usando NotaService
+      const notas = await notaService.listarPorAlunoETurma(aluno.id, turmaIdNoAno);
 
-      if (notasSnap.docs.length === 0) {
-        // Vamos tentar procurar por uid ou nome
-
+      if (notas.length === 0) {
         setHistoricoAluno({ nome: aluno.nome, notas: [] });
         setShowHistorico(true);
         return;
@@ -1154,44 +1078,32 @@ export default function Turmas() {
       const notasPorMateriaBimestre: any = {};
       const materiasEncontradas = new Set();
 
-      notasSnap.docs.forEach(docSnap => {
-        const data = docSnap.data() as any;
-        const materiaId = data.materiaId;
-        const bimestre = data.bimestre;
-        const nomeMateria = materiasMap.get(materiaId) || data.materiaId;
-
+      notas.forEach(nota => {
+        const nomeMateria = materiasMap.get(nota.materiaId) || nota.materiaId;
         materiasEncontradas.add(nomeMateria);
 
-        if (!notasPorMateriaBimestre[bimestre]) {
-          notasPorMateriaBimestre[bimestre] = {};
+        if (!notasPorMateriaBimestre[nota.bimestre]) {
+          notasPorMateriaBimestre[nota.bimestre] = {};
         }
 
-        // Calcular média final
-        const notaParcial = data.notaParcial;
-        const notaGlobal = data.notaGlobal;
-        const notaParticipacao = data.notaParticipacao;
-        const notaRecuperacao = data.notaRecuperacao;
-
+        // Calcular média final usando a mesma função do badge
         let mediaFinal = null;
 
-        // Verificar se tem todas as 3 notas básicas OU nota de recuperação (igual ao badge)
         const temTresNotas =
-          typeof notaParcial === 'number' &&
-          typeof notaGlobal === 'number' &&
-          typeof notaParticipacao === 'number';
+          typeof nota.notaParcial === 'number' &&
+          typeof nota.notaGlobal === 'number' &&
+          typeof nota.notaParticipacao === 'number';
 
-        const temRecuperacao = typeof notaRecuperacao === 'number';
+        const temRecuperacao = typeof nota.notaRecuperacao === 'number';
 
         if (temTresNotas || temRecuperacao) {
-          // Usar a mesma função do badge que já compara corretamente
-          mediaFinal = calcularMediaFinalUtil(data);
+          mediaFinal = calcularMediaFinalUtil(nota);
         }
 
-        notasPorMateriaBimestre[bimestre][nomeMateria] = {
+        notasPorMateriaBimestre[nota.bimestre][nomeMateria] = {
           mediaFinal: mediaFinal
         };
       });
-
 
       // Preparar dados para o modal no formato de boletim
       const dadosBoletim = {
