@@ -1,11 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   Container, Button, Modal, Form
 } from 'react-bootstrap';
-import {
-  collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, getDoc
-} from 'firebase/firestore';
-import { db } from '../services/firebase/firebase';
 import AppLayout from '../components/layout/AppLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
@@ -16,59 +12,27 @@ import { GraduationCap, Plus, Trash2 } from "lucide-react";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faX, faCircleExclamation, faCheck } from '@fortawesome/free-solid-svg-icons';
 
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
 import React from 'react';
 
-// -------------------- Tipagens --------------------
-interface Entrega {
-  id: string;
-  alunoId: string;
-  tarefaId: string;
-  dataEntrega: string;
-  status: string;
-  dataConclusao?: string;
-  anexoUrl?: string;
-  observacoes?: string;
-}
+// Models
+import { Tarefa } from '../models/Tarefa';
+import { Entrega } from '../models/Entrega';
+import { Aluno } from '../models/Aluno';
+import { Turma } from '../models/Turma';
+import { Materia } from '../models/Materia';
+import { ProfessorMateria as Vinculo } from '../models/ProfessorMateria';
 
-interface Aluno {
-  id: string;
-  nome: string;
-  turmaId: string;
-}
-
-interface Tarefa {
-  id: string;
-  materiaId: string;
-  titulo?: string;
-  descricao: string;
-  turmaId: string;
-  dataEntrega: string;
-  excluida?: boolean;
-  bloqueado?: boolean; // (opcional) se quiser marcar tarefa por ter links ruins
-  links?: Array<{
-    url: string;
-    titulo: string;
-  }>;
-}
-
-interface Turma {
-  id: string;
-  nome: string;
-}
-
-interface Materia {
-  id: string;
-  nome: string;
-}
-
-interface Vinculo {
-  professorId: string;
-  materiaId: string;
-  turmaId: string;
-}
+// Services
+import { TarefaService } from '../services/data/TarefaService';
+import { FirebaseTarefaRepository } from '../repositories/tarefa/FirebaseTarefaRepository';
+import { FirebaseEntregaRepository } from '../repositories/entrega/FirebaseEntregaRepository';
+import { turmaService } from '../services/data/TurmaService';
+import { MateriaService } from '../services/data/MateriaService';
+import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
+import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
+import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
+import { AlunoService } from '../services/usuario/AlunoService';
+import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
 
 export default function Tarefas() {
   const { userData } = useAuth()!;
@@ -77,6 +41,18 @@ export default function Tarefas() {
 
   // Novo sistema de validação de URLs com segurança avançada
   const { validateUrl } = useUrlValidator();
+
+  // Service instances
+  const tarefaService = useMemo(() => {
+    return new TarefaService(
+      new FirebaseTarefaRepository(),
+      new FirebaseEntregaRepository()
+    );
+  }, []);
+
+  const materiaService = useMemo(() => new MateriaService(new FirebaseMateriaRepository()), []);
+  const professorMateriaService = useMemo(() => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()), []);
+  const alunoService = useMemo(() => new AlunoService(new FirebaseAlunoRepository()), []);
 
   // Função auxiliar para verificar se um link é seguro (async)
   const isSafeLink = async (url: string): Promise<boolean> => {
@@ -92,26 +68,10 @@ export default function Tarefas() {
   // Estado para links filtrados (para renderização)
   const [linksSegurosFiltrados, setLinksSegurosFiltrados] = useState<{ [tarefaId: string]: Array<{ url: string; titulo: string }> }>({});
 
-  // Função para filtrar links seguros de todas as tarefas
+  // Função para filtrar links seguros de todas as tarefas usando o service
   const filtrarLinksSegurosDasTarefas = async (tarefasList: Tarefa[]) => {
-    const linksSegurosPorTarefa: { [tarefaId: string]: Array<{ url: string; titulo: string }> } = {};
-
-    for (const tarefa of tarefasList) {
-      if (tarefa.links && tarefa.links.length > 0) {
-        const linksValidos = [];
-        for (const link of tarefa.links) {
-          const isSeguro = await isSafeLink(link.url);
-          if (isSeguro) {
-            linksValidos.push(link);
-          }
-        }
-        linksSegurosPorTarefa[tarefa.id] = linksValidos;
-      } else {
-        linksSegurosPorTarefa[tarefa.id] = [];
-      }
-    }
-
-    setLinksSegurosFiltrados(linksSegurosPorTarefa);
+    const resultado = await tarefaService.filtrarLinksSegurosDeTarefas(tarefasList, isSafeLink);
+    setLinksSegurosFiltrados(resultado);
   };
 
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
@@ -163,62 +123,28 @@ export default function Tarefas() {
 
   const exportarPDF = () => {
     if (!atividadeSelecionada) return;
-
-    const doc = new jsPDF();
-    doc.text(`Relatório de Acompanhamento - ${atividadeSelecionada.titulo || atividadeSelecionada.descricao}`, 14, 15);
-
-    autoTable(doc, {
-      startY: 20,
-      head: [['Status', 'Aluno', 'Data Conclusao', 'Anexo']],
-      body: alunosFiltrados
-        .sort((a, b) => a.nome.localeCompare(b.nome))
-        .map(aluno => {
-          const entrega = entregas.find(e => e.alunoId === aluno.id && e.tarefaId === atividadeSelecionada.id);
-          return [
-            entrega?.status ?? 'Não entregue',
-            aluno.nome,
-            entrega?.dataConclusao ? formatarDataBR(entrega.dataConclusao) : '-',
-            entrega?.anexoUrl ? 'Sim' : 'Não'
-          ];
-        })
-    });
-
-    doc.save(`acompanhamento_${atividadeSelecionada.titulo || atividadeSelecionada.descricao}.pdf`);
+    tarefaService.exportarPDF(
+      atividadeSelecionada,
+      alunosFiltrados,
+      entregas,
+      tarefaService.formatarDataBR
+    );
   };
 
   const exportarExcel = () => {
     if (!atividadeSelecionada) return;
-
-    const data = alunosFiltrados.map(aluno => {
-      const entrega = entregas.find(e => e.alunoId === aluno.id && e.tarefaId === atividadeSelecionada.id);
-      return {
-        Aluno: aluno.nome,
-        Status: entrega?.status ?? 'Não entregue',
-        'Data de Conclusão': entrega?.dataConclusao ? formatarDataBR(entrega.dataConclusao) : '-',
-        Anexo: entrega?.anexoUrl ? 'Sim' : 'Não'
-      };
-    });
-
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    worksheet['!cols'] = [
-      { wch: 35 },
-      { wch: 15 },
-      { wch: 20 },
-      { wch: 10 }
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Acompanhamento');
-    XLSX.writeFile(
-      workbook,
-      `acompanhamento_${atividadeSelecionada.titulo || atividadeSelecionada.descricao}.xlsx`
+    tarefaService.exportarExcel(
+      atividadeSelecionada,
+      alunosFiltrados,
+      entregas,
+      tarefaService.formatarDataBR
     );
   };
 
   const handleSaveObs = async () => {
     if (!editingId) return;
     try {
-      await updateDoc(doc(db, "entregas", editingId), { observacoes: currentObs });
+      await tarefaService.atualizarObservacoes(editingId, currentObs);
       setEntregas(prev => prev.map(item => (item.id === editingId ? { ...item, observacoes: currentObs } : item)));
       setShowObsModal(false);
       setEditingId(null);
@@ -232,70 +158,61 @@ export default function Tarefas() {
   const fetchData = async () => {
     setLoading(true);
 
-    let turmaDocs: any[] = [];
-    if (isAdmin) {
-      turmaDocs = (await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())))).docs;
-    } else {
-      if (!userData) {
-        setLoading(false);
-        return;
+    try {
+      // Buscar turmas usando service
+      const todasTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+
+      // Buscar vínculos professor-matéria usando service
+      let vincList: Vinculo[];
+      if (isAdmin) {
+        vincList = await professorMateriaService.listar();
+      } else {
+        if (!userData) {
+          setLoading(false);
+          return;
+        }
+        vincList = await professorMateriaService.listarPorProfessor(userData.uid);
       }
-      const vincSnap = await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userData.uid)));
-      const vincList = vincSnap.docs.map(d => d.data() as Vinculo);
       setVinculos(vincList);
 
-      const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-      const turmaDocsTemp = await Promise.all(
-        turmaIds.map(async id => await getDoc(doc(db, 'turmas', id)))
-      );
-      // Filtrar apenas turmas do ano letivo atual
-      turmaDocs = turmaDocsTemp.filter(d => d.data()?.anoLetivo?.toString() === anoLetivo.toString());
+      // Filtrar turmas do professor se não for admin
+      let turmasFiltradas: Turma[];
+      if (isAdmin) {
+        turmasFiltradas = todasTurmas;
+      } else {
+        const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
+        turmasFiltradas = todasTurmas.filter(t => turmaIds.includes(t.id));
+      }
+      setTurmas(turmasFiltradas);
+
+      // Buscar entregas usando service
+      const entregasList = await tarefaService.listarEntregas();
+      setEntregas(entregasList);
+
+      // Buscar matérias usando service
+      const materiaIds = [...new Set(vincList.map(v => v.materiaId))];
+      const todasMaterias = await materiaService.listar();
+      const materiasFiltradas = todasMaterias.filter(m => materiaIds.includes(m.id));
+      setMaterias(materiasFiltradas);
+
+      // Buscar tarefas usando service
+      const todasTarefas = await tarefaService.listarTarefas();
+      const tarefasFiltradas = isAdmin
+        ? todasTarefas
+        : todasTarefas.filter(tarefa => materiaIds.includes(tarefa.materiaId));
+      setTarefas(tarefasFiltradas);
+
+      // Filtrar links seguros das tarefas carregadas
+      await filtrarLinksSegurosDasTarefas(tarefasFiltradas);
+
+      // Buscar alunos usando service
+      const alunosList = await alunoService.listar();
+      setAlunos(alunosList);
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+    } finally {
+      setLoading(false);
     }
-    setTurmas(turmaDocs.map(d => ({ id: d.id, nome: d.data()?.nome || '-' })));
-
-    const vincSnap2 = isAdmin
-      ? await getDocs(collection(db, 'professores_materias'))
-      : userData
-        ? await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userData.uid)))
-        : { docs: [] as any[] };
-
-    const vincList2 = vincSnap2.docs.map(d => d.data() as Vinculo);
-    setVinculos(vincList2);
-
-    const entregasSnap = await getDocs(collection(db, 'entregas'));
-    setEntregas(entregasSnap.docs.map(docu => {
-      const { id: _id, ...data } = docu.data() as Entrega;
-      return { id: docu.id, ...data };
-    }));
-
-    const materiaIds = [...new Set(vincList2.map(v => v.materiaId))];
-    const materiasSnap = await Promise.all(
-      materiaIds.map(async id => {
-        const m = await getDoc(doc(db, 'materias', id));
-        return { id: m.id, nome: m.data()?.nome || '-' };
-      })
-    );
-    setMaterias(materiasSnap);
-
-    const tarefasSnap = await getDocs(collection(db, 'tarefas'));
-    const tarefasFiltradas = isAdmin
-      ? tarefasSnap.docs
-      : tarefasSnap.docs.filter(docu => materiaIds.includes(docu.data().materiaId));
-
-    setTurmas(turmaDocs.map(d => ({ id: d.id, nome: d.data()?.nome || '-' })));
-    const tarefasProcessadas = tarefasFiltradas.map(d => ({ id: d.id, ...(d.data() as any) }));
-    setTarefas(tarefasProcessadas);
-
-    // Filtrar links seguros das tarefas carregadas
-    filtrarLinksSegurosDasTarefas(tarefasProcessadas);
-
-    setLoading(false);
-
-    const alunosSnap = await getDocs(collection(db, 'alunos'));
-    setAlunos(alunosSnap.docs.map(docu => {
-      const data = docu.data() as Omit<Aluno, 'id'>;
-      return { ...data, id: docu.id };
-    }));
   };
 
   const handleClose = () => {
@@ -316,37 +233,24 @@ export default function Tarefas() {
     if (!materiaSelecionada || !descricao || !turmaId || !dataEntrega) return;
     if (!userData) return;
 
-    // Valida e sanitiza links usando o novo sistema (agora assíncrono)
-    const validatedLinks = [];
-    for (const link of links) {
-      const validation = await validateUrl(link.url);
-      if (validation.isValid) {
-        validatedLinks.push({
-          url: validation.sanitizedUrl || link.url,
-          titulo: link.titulo
-        });
-      }
-    }
+    // Valida e sanitiza links usando o service
+    const validatedLinks = await tarefaService.validarESanitizarLinks(links, validateUrl);
 
-    const payload: any = {
-      materiaId: materiaSelecionada,
+    const payload = tarefaService.prepararDadosTarefa(
+      materiaSelecionada,
       titulo,
       descricao,
       turmaId,
       dataEntrega,
-      professorId: userData.uid,
-      links: validatedLinks
-    };
-
-    // Se houver diferença (links foram removidos por segurança)
-    if (links.length > 0 && validatedLinks.length < links.length) {
-      payload.bloqueado = false; // Pode marcar como bloqueado se preferir
-    }
+      userData.uid,
+      validatedLinks,
+      links.length
+    );
 
     if (editandoId) {
-      await updateDoc(doc(db, 'tarefas', editandoId), payload);
+      await tarefaService.atualizarTarefa(editandoId, payload);
     } else {
-      await addDoc(collection(db, 'tarefas'), payload);
+      await tarefaService.criarTarefa(payload);
     }
     handleClose();
     fetchData();
@@ -354,31 +258,34 @@ export default function Tarefas() {
 
   const atualizarEntrega = async (alunoId: string, status: string) => {
     if (!atividadeSelecionada) return;
+    
+    const entregaId = await tarefaService.atualizarOuCriarEntrega(
+      alunoId,
+      atividadeSelecionada.id,
+      status
+    );
 
+    // Atualiza estado local
     const entregaExistente = entregas.find(
       e => e.alunoId === alunoId && e.tarefaId === atividadeSelecionada.id
     );
 
-    // Prepara os dados para atualização
-    const updateData: any = { status };
-    if (status === 'concluida') {
-      updateData.dataConclusao = new Date().toISOString();
-    } else {
-      updateData.dataConclusao = null; // Remove a data se não está concluída
-    }
-
     if (entregaExistente) {
-      const entregaRef = doc(db, 'entregas', entregaExistente.id);
-      await updateDoc(entregaRef, { status });
-      setEntregas(prev => prev.map(e => (e.id === entregaExistente.id ? { ...e, status } : e)));
+      setEntregas(prev => prev.map(e => 
+        e.id === entregaExistente.id 
+          ? { ...e, status, dataConclusao: status === 'concluida' ? new Date().toISOString() : undefined } 
+          : e
+      ));
     } else {
-      const novaEntrega = {
+      const novaEntrega: Entrega = {
+        id: entregaId,
         alunoId,
         tarefaId: atividadeSelecionada.id,
-        ...updateData
+        dataEntrega: new Date().toISOString(),
+        status,
+        ...(status === 'concluida' && { dataConclusao: new Date().toISOString() })
       };
-      const docRef = await addDoc(collection(db, 'entregas'), novaEntrega);
-      setEntregas(prev => [...prev, { id: docRef.id, ...novaEntrega }]);
+      setEntregas(prev => [...prev, novaEntrega]);
     }
   };
 
@@ -395,29 +302,18 @@ export default function Tarefas() {
     setDescricao(tarefa.descricao);
     setTurmaId(tarefa.turmaId);
     setDataEntrega(tarefa.dataEntrega);
-    // Valida e higieniza os links ao abrir para edição (agora assíncrono)
-    const validatedLinks = [];
+    // Valida e higieniza os links ao abrir para edição usando o service
     if (tarefa.links) {
-      for (const link of tarefa.links) {
-        const validation = await validateUrl(link.url);
-        if (validation.isValid) {
-          validatedLinks.push({
-            url: validation.sanitizedUrl || link.url,
-            titulo: link.titulo
-          });
-        }
-      }
+      const validatedLinks = await tarefaService.validarESanitizarLinks(tarefa.links, validateUrl);
+      setLinks(validatedLinks);
+    } else {
+      setLinks([]);
     }
-    setLinks(validatedLinks);
     setShowModal(true);
   };
 
   const excluirTarefa = async (tarefaId: string) => {
-    await deleteDoc(doc(db, 'tarefas', tarefaId));
-    const entregasQuery = query(collection(db, 'entregas'), where('tarefaId', '==', tarefaId));
-    const entregasSnap = await getDocs(entregasQuery);
-    const promises = entregasSnap.docs.map(entregaDoc => deleteDoc(doc(db, 'entregas', entregaDoc.id)));
-    await Promise.all(promises);
+    await tarefaService.excluirTarefa(tarefaId);
     fetchData();
   };
 
@@ -435,15 +331,16 @@ export default function Tarefas() {
       return;
     }
 
-    // Usa o novo sistema de validação avançada (agora assíncrono)
-    const validation = await validateUrl(novoLinkUrl.trim());
+    // Usa o service para validar a URL
+    const validation = await tarefaService.validarUrl(novoLinkUrl.trim(), validateUrl);
 
-    if (!validation.isValid) {
-      setUrlError(`🚫 BLOQUEADO: ${validation.error || 'URL inválida'}`);
+    // Processa a validação usando o service
+    const resultado = tarefaService.processarValidacaoLink(validation);
+
+    if (resultado.erro) {
+      setUrlError(resultado.erro);
       setUrlSuccess('');
       setSecurityWarnings([]);
-
-      // Log detalhado para debug
       console.error('[Security Block]', {
         url: novoLinkUrl.trim(),
         error: validation.error,
@@ -453,40 +350,10 @@ export default function Tarefas() {
       return;
     }
 
-    // URL válida - mostra sucesso e warnings se houver
+    // URL válida
     setUrlError('');
-
-    // Mostra informações baseadas na categoria do domínio
-    const warnings = validation.warnings || [];
-    const score = validation.securityScore || 100;
-    const category = validation.domainCategory || 'unknown';
-
-    let successMessage = '';
-
-    switch (category) {
-      case 'trusted':
-        successMessage = `✅ Site confiável validado (Score: ${score}/100)`;
-        break;
-      case 'educational':
-        successMessage = `🎓 Site educacional aceito (Score: ${score}/100)`;
-        break;
-      case 'unknown':
-        if (validation.allowWithWarning) {
-          successMessage = `⚠️ Site aceito com verificação extra (Score: ${score}/100)`;
-          warnings.unshift('Este site não está na lista de confiáveis, mas passou na verificação de segurança');
-        } else {
-          successMessage = `✅ URL aceita (Score: ${score}/100)`;
-        }
-        break;
-    }
-
-    if (score < 80) {
-      warnings.push(`⚠️ Score de segurança moderado: ${score}/100`);
-      console.warn(`[Security Warning] URL com score baixo: ${score}`, validation.warnings);
-    }
-
-    setSecurityWarnings(warnings);
-    setUrlSuccess(successMessage);
+    setUrlSuccess(resultado.sucesso || '');
+    setSecurityWarnings(resultado.avisos);
 
     const novoLink = {
       url: validation.sanitizedUrl || novoLinkUrl.trim(),
@@ -497,13 +364,12 @@ export default function Tarefas() {
     setNovoLinkUrl('');
     setNovoLinkTitulo('');
 
-    // Limpa mensagens após 5 segundos para dar tempo de ler
+    // Limpa mensagens após 5 segundos
     setTimeout(() => {
       setUrlSuccess('');
       setSecurityWarnings([]);
     }, 5000);
 
-    // Log de sucesso
     console.info('[URL Security] Link adicionado com sucesso:', {
       originalUrl: novoLinkUrl.trim(),
       sanitizedUrl: validation.sanitizedUrl,
@@ -517,12 +383,9 @@ export default function Tarefas() {
     setLinks(prev => prev.filter((_, i) => i !== index));
   };
 
-  function formatarDataBR(data: string) {
-    if (!data) return '-';
-    const d = new Date(data);
-    if (isNaN(d.getTime())) return data;
-    return d.toLocaleDateString('pt-BR');
-  }
+  const formatarDataBR = (data: string) => {
+    return tarefaService.formatarDataBR(data);
+  };
 
   // -------------------- Render --------------------
   return (

@@ -1,6 +1,6 @@
 import { collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, query, where, Timestamp } from 'firebase/firestore';
-import { db } from '../services/firebase/firebase';
-import { Aluno } from '../models/Aluno';
+import { db } from '../../services/firebase/firebase';
+import { Aluno } from '../../models/Aluno';
 import { IAlunoRepository } from './IAlunoRepository';
 
 export class FirebaseAlunoRepository implements IAlunoRepository {

@@ -10,8 +10,8 @@ import {
   where,
   Timestamp
 } from 'firebase/firestore';
-import { db } from '../services/firebase/firebase';
-import { Nota } from '../models/Nota';
+import { db } from '../../services/firebase/firebase';
+import { Nota } from '../../models/Nota';
 import { INotaRepository } from './INotaRepository';
 
 export class FirebaseNotaRepository implements INotaRepository {

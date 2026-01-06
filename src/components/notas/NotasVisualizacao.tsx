@@ -1,5 +1,5 @@
 // src/components/notas/NotasVisualizacao.tsx
-import { JSX, useState } from 'react';
+import { JSX, useState, useMemo } from 'react';
 import { Row, Col, Card, FormControl, Dropdown, Button, Modal, Table } from 'react-bootstrap';
 import { BarChart, Award, Activity, TrendingDown, ArrowDownUp, Download } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -11,16 +11,13 @@ import Paginacao from '../common/Paginacao';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-
-interface Turma { id: string; nome: string; }
-interface Aluno { uid: string; nome: string; turmaId: string; }
-interface Materia { id: string; nome: string; turmaId?: string; }
-interface Nota {
-  id: string; turmaId: string; materiaId: string; bimestre: string;
-  notaParcial: number; notaGlobal: number; notaParticipacao: number;
-  notaRecuperacao?: number;
-  alunoUid: string; nomeAluno: string; dataLancamento: string;
-}
+import { Turma } from '../../models/Turma';
+import { Aluno } from '../../models/Aluno';
+import { Materia } from '../../models/Materia';
+import { Nota } from '../../models/Nota';
+import { NotaService } from '../../services/data/NotaService';
+import { FirebaseNotaRepository } from '../../repositories/nota/FirebaseNotaRepository';
+import { FirebaseMateriaRepository } from '../../repositories/materia/FirebaseMateriaRepository';
 
 interface NotasVisualizacaoProps {
   filtroTurma: string;
@@ -57,12 +54,11 @@ export default function NotasVisualizacao({
   const [historicoAluno, setHistoricoAluno] = useState<{ nome: string, notas: Nota[] } | null>(null);
   const [ordenacao, setOrdenacao] = useState<'nome' | 'parcial' | 'global' | 'participacao' | 'recuperacao' | 'media' | 'data'>('nome');
 
-  const getNotaColor = (valor: number | undefined) => {
-    if (typeof valor !== 'number') return '';
-    if (valor >= 9) return 'text-success';
-    if (valor >= 6) return 'text-warning';
-    return 'text-danger';
-  };
+  // Inicializar NotaService
+  const notaService = useMemo(
+    () => new NotaService(new FirebaseNotaRepository(), new FirebaseMateriaRepository()),
+    []
+  );
 
   if (!filtroTurma || !filtroMateria || !filtroBimestre) {
     return (
@@ -77,28 +73,22 @@ export default function NotasVisualizacao({
     );
   }
 
-  // Filtrar e deduplicar notas (mantém apenas a mais recente por aluno/matéria)
-  const resultadosMap = new Map<string, Nota>();
-  notas.forEach(n => {
-    const aluno = alunos.find(a => a.uid === n.alunoUid);
+  // Filtrar notas por alunos ativos e deduplicar
+  const notasFiltradas = notas.filter(n => {
+    const aluno = alunos.find(a => a.id === n.alunoUid);
     const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
-    
-    if (!alunoAtivo || n.turmaId !== filtroTurma || n.materiaId !== filtroMateria || 
-        n.bimestre !== filtroBimestre || !n.nomeAluno.toLowerCase().includes(busca.toLowerCase()) ||
-        (!isAdmin && !materias.some(m => m.id === n.materiaId))) {
-      return;
-    }
-
-    const chave = `${n.alunoUid}-${n.materiaId}`;
-    const existente = resultadosMap.get(chave);
-    const dataAtual = new Date(n.dataLancamento.split('/').reverse().join('-')).getTime();
-    const dataExistente = existente ? new Date(existente.dataLancamento.split('/').reverse().join('-')).getTime() : 0;
-    if (!existente || dataAtual > dataExistente) {
-      resultadosMap.set(chave, n);
-    }
+    return alunoAtivo && (isAdmin || materias.some(m => m.id === n.materiaId));
   });
 
-  const resultadosFiltrados = Array.from(resultadosMap.values()).sort((a, b) => a.nomeAluno.localeCompare(b.nomeAluno));
+  const materiaIds = isAdmin ? undefined : materias.map(m => m.id);
+  const resultadosFiltrados = notaService.deduplicarNotasPorAluno(
+    notasFiltradas,
+    filtroTurma,
+    filtroMateria,
+    filtroBimestre,
+    busca,
+    materiaIds
+  );
 
   if (resultadosFiltrados.length === 0) {
     return (
@@ -116,14 +106,6 @@ export default function NotasVisualizacao({
   const totalPaginas = Math.ceil(resultadosFiltrados.length / itensPorPagina);
   const paginaAtual = paginaAtualPorBimestre[filtroBimestre] || 1;
 
-  const calcularMediaFinal = (n: Nota) => {
-    const parcial = typeof n.notaParcial === 'number' ? n.notaParcial : 0;
-    const global = typeof n.notaGlobal === 'number' ? n.notaGlobal : 0;
-    const participacao = typeof n.notaParticipacao === 'number' ? n.notaParticipacao : 0;
-    const media = ((parcial + global) / 2) + participacao;
-    return Math.min(parseFloat(media.toFixed(1)), 10);
-  };
-
   // Função para exportar PDF das notas
   const downloadPDF = () => {
     const turmaNome = turmas.find(t => t.id === filtroTurma)?.nome || 'Desconhecida';
@@ -133,15 +115,15 @@ export default function NotasVisualizacao({
     doc.text(`Relatório de Notas - ${turmaNome} - ${materiaNome} - ${filtroBimestre} Bimestre`, 14, 15);
 
     const dadosParaTabela = resultadosFiltrados.map(nota => {
-      const mediaFinal = calcularMediaFinal(nota);
+      const mediaFinal = notaService.calcularMediaFinal(nota);
       return [
-        nota.nomeAluno,
+        nota.nomeAluno || 'Desconhecido',
         nota.notaParcial?.toString() || '-',
         nota.notaGlobal?.toString() || '-',
         nota.notaParticipacao?.toString() || '-',
         nota.notaRecuperacao?.toString() || '-',
         mediaFinal.toString(),
-        nota.dataLancamento
+        notaService.formatarData(nota.dataLancamento)
       ];
     });
 
@@ -171,15 +153,15 @@ export default function NotasVisualizacao({
     const materiaNome = materias.find(m => m.id === filtroMateria)?.nome || 'Desconhecida';
 
     const dadosParaExcel = resultadosFiltrados.map(nota => {
-      const mediaFinal = calcularMediaFinal(nota);
+      const mediaFinal = notaService.calcularMediaFinal(nota);
       return {
-        'Aluno': nota.nomeAluno,
+        'Aluno': nota.nomeAluno || 'Desconhecido',
         'Nota Parcial': nota.notaParcial || '-',
         'Nota Global': nota.notaGlobal || '-',
         'Nota Participação': nota.notaParticipacao || '-',
         'Nota Recuperação': nota.notaRecuperacao || '-',
         'Média Final': mediaFinal,
-        'Data Lançamento': nota.dataLancamento
+        'Data Lançamento': notaService.formatarData(nota.dataLancamento)
       };
     });
 
@@ -194,51 +176,13 @@ export default function NotasVisualizacao({
     XLSX.writeFile(workbook, `notas-${turmaNome}-${materiaNome}-${filtroBimestre}-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const mediasFinais = resultadosFiltrados.map(calcularMediaFinal);
-  const totalAlunos = mediasFinais.length;
-  const mediaTurma = totalAlunos ? (mediasFinais.reduce((a, b) => a + b, 0) / totalAlunos).toFixed(1) : '-';
+  const estatisticas = notaService.calcularEstatisticasTurma(resultadosFiltrados);
+  const { mediaTurma } = estatisticas;
 
-  const faixa = (min: number, max: number) =>
-    mediasFinais.filter(m => m >= min && m <= max).length;
-
-  const estatisticas = {
-    excelentes: faixa(9, 10),
-    boas: faixa(7, 8.9),
-    regulares: faixa(6, 8.9),
-    baixas: faixa(0, 5.9),
-  };
-
-  // Função reutilizável para ordenar e paginar resultados
+  // Ordenar e paginar usando métodos do service
   const ordenarDados = (dados: Nota[]) => {
-    let dadosOrdenados = [...dados];
-    switch (ordenacao) {
-      case 'nome':
-        dadosOrdenados.sort((a, b) => a.nomeAluno.localeCompare(b.nomeAluno));
-        break;
-      case 'parcial':
-        dadosOrdenados.sort((a, b) => (b.notaParcial ?? 0) - (a.notaParcial ?? 0));
-        break;
-      case 'global':
-        dadosOrdenados.sort((a, b) => (b.notaGlobal ?? 0) - (a.notaGlobal ?? 0));
-        break;
-      case 'participacao':
-        dadosOrdenados.sort((a, b) => (b.notaParticipacao ?? 0) - (a.notaParticipacao ?? 0));
-        break;
-      case 'recuperacao':
-        dadosOrdenados.sort((a, b) => (b.notaRecuperacao ?? 0) - (a.notaRecuperacao ?? 0));
-        break;
-      case 'media':
-        dadosOrdenados.sort((a, b) => calcularMediaFinal(b) - calcularMediaFinal(a));
-        break;
-      case 'data':
-        dadosOrdenados.sort((a, b) => {
-          const da = a.dataLancamento.split('/').reverse().join('-');
-          const db = b.dataLancamento.split('/').reverse().join('-');
-          return new Date(db).getTime() - new Date(da).getTime();
-        });
-        break;
-    }
-    return dadosOrdenados.slice((paginaAtual - 1) * itensPorPagina, paginaAtual * itensPorPagina);
+    const dadosOrdenados = notaService.ordenarNotas(dados, ordenacao);
+    return notaService.paginarNotas(dadosOrdenados, paginaAtual, itensPorPagina);
   };
 
   return (
@@ -379,13 +323,13 @@ export default function NotasVisualizacao({
                   data={
                     resultadosFiltrados
                       .filter(nota => {
-                        const aluno = alunos.find(a => a.uid === nota.alunoUid);
+                        const aluno = alunos.find(a => a.id === nota.alunoUid);
                         const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
                         return alunoAtivo && nota.turmaId === filtroTurma;
                       })
                       .map(nota => ({
                         nome: nota.nomeAluno,
-                        media: calcularMediaFinal(nota)
+                        media: notaService.calcularMediaFinal(nota)
                       }))
                       .sort((a, b) => b.media - a.media)
                       .slice(0, 5)
@@ -483,19 +427,19 @@ export default function NotasVisualizacao({
 
           <div className="d-flex flex-column">
             {ordenarDados(resultadosFiltrados).map(nota => {
-              const mediaFinal = calcularMediaFinal(nota);
+              const mediaFinal = notaService.calcularMediaFinal(nota);
               return (
                 <div
                   key={nota.id}
                   className="d-flex flex-wrap justify-content-between align-items-center px-2 py-3 border-bottom text-center align-middle medium"
                 >
-                  <div style={{ width: '20%', fontWeight: 600 }}>{nota.nomeAluno}</div>
-                  <div style={{ width: '10%' }} className={`fw-bold ${getNotaColor(nota.notaParcial)}`}>{nota.notaParcial ?? '-'}</div>
-                  <div style={{ width: '10%' }} className={`fw-bold ${getNotaColor(nota.notaGlobal)}`}>{nota.notaGlobal ?? '-'}</div>
-                  <div style={{ width: '12%' }} className={`fw-bold ${getNotaColor(nota.notaParticipacao)}`}>{nota.notaParticipacao ?? '-'}</div>
-                  <div style={{ width: '12%' }} className={`fw-bold ${getNotaColor(nota.notaRecuperacao)}`}>{nota.notaRecuperacao ?? '-'}</div>
-                  <div style={{ width: '11%' }} className={`fw-bold ${getNotaColor(mediaFinal)}`}>{mediaFinal}</div>
-                  <div style={{ width: '14%' }} className="text-muted"><small>{nota.dataLancamento}</small></div>
+                  <div style={{ width: '20%', fontWeight: 600 }}>{nota.nomeAluno || 'Desconhecido'}</div>
+                  <div style={{ width: '10%' }} className={`fw-bold ${notaService.getNotaColor(nota.notaParcial)}`}>{nota.notaParcial ?? '-'}</div>
+                  <div style={{ width: '10%' }} className={`fw-bold ${notaService.getNotaColor(nota.notaGlobal)}`}>{nota.notaGlobal ?? '-'}</div>
+                  <div style={{ width: '12%' }} className={`fw-bold ${notaService.getNotaColor(nota.notaParticipacao)}`}>{nota.notaParticipacao ?? '-'}</div>
+                  <div style={{ width: '12%' }} className={`fw-bold ${notaService.getNotaColor(nota.notaRecuperacao)}`}>{nota.notaRecuperacao ?? '-'}</div>
+                  <div style={{ width: '11%' }} className={`fw-bold ${notaService.getNotaColor(mediaFinal)}`}>{mediaFinal}</div>
+                  <div style={{ width: '14%' }} className="text-muted"><small>{notaService.formatarData(nota.dataLancamento)}</small></div>
                   <div style={{ width: '11%' }}>
                     <Button
                       size="sm"
@@ -516,7 +460,7 @@ export default function NotasVisualizacao({
                       onClick={() => {
                         const historicoNotas = notas
                           .filter(n => {
-                            const aluno = alunos.find(a => a.uid === n.alunoUid);
+                            const aluno = alunos.find(a => a.id === n.alunoUid);
                             const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
                             return alunoAtivo && n.alunoUid === nota.alunoUid && 
                                    n.materiaId === filtroMateria && n.turmaId === filtroTurma;
@@ -525,7 +469,7 @@ export default function NotasVisualizacao({
                             const ordem = ['1º', '2º', '3º', '4º'];
                             return ordem.indexOf(a.bimestre) - ordem.indexOf(b.bimestre);
                           });
-                        setHistoricoAluno({ nome: nota.nomeAluno, notas: historicoNotas });
+                        setHistoricoAluno({ nome: nota.nomeAluno || 'Desconhecido', notas: historicoNotas });
                         setShowHistorico(true);
                       }}
                     >
@@ -541,12 +485,12 @@ export default function NotasVisualizacao({
         {/* Versão Mobile */}
         <div className="notas-mobile-cards d-block d-md-none">
           {ordenarDados(resultadosFiltrados).map(nota => {
-            const mediaFinal = calcularMediaFinal(nota);
+            const mediaFinal = notaService.calcularMediaFinal(nota);
             return (
               <div key={nota.id} className="notas-resultado-card">
                 <div className="notas-resultado-header">
                   <div className="notas-resultado-nome">{nota.nomeAluno}</div>
-                  <div className={`notas-resultado-media ${getNotaColor(mediaFinal)}`}>
+                  <div className={`notas-resultado-media ${notaService.getNotaColor(mediaFinal)}`}>
                     {mediaFinal}
                   </div>
                 </div>
@@ -554,35 +498,35 @@ export default function NotasVisualizacao({
                 <div className="notas-resultado-body">
                   <div className="notas-resultado-row">
                     <span className="notas-resultado-label">Parcial:</span>
-                    <span className={`notas-resultado-valor ${getNotaColor(nota.notaParcial)}`}>
+                    <span className={`notas-resultado-valor ${notaService.getNotaColor(nota.notaParcial)}`}>
                       {nota.notaParcial ?? '-'}
                     </span>
                   </div>
 
                   <div className="notas-resultado-row">
                     <span className="notas-resultado-label">Global:</span>
-                    <span className={`notas-resultado-valor ${getNotaColor(nota.notaGlobal)}`}>
+                    <span className={`notas-resultado-valor ${notaService.getNotaColor(nota.notaGlobal)}`}>
                       {nota.notaGlobal ?? '-'}
                     </span>
                   </div>
 
                   <div className="notas-resultado-row">
                     <span className="notas-resultado-label">Participação:</span>
-                    <span className={`notas-resultado-valor ${getNotaColor(nota.notaParticipacao)}`}>
+                    <span className={`notas-resultado-valor ${notaService.getNotaColor(nota.notaParticipacao)}`}>
                       {nota.notaParticipacao ?? '-'}
                     </span>
                   </div>
 
                   <div className="notas-resultado-row">
                     <span className="notas-resultado-label">Recuperação:</span>
-                    <span className={`notas-resultado-valor ${getNotaColor(nota.notaRecuperacao)}`}>
+                    <span className={`notas-resultado-valor ${notaService.getNotaColor(nota.notaRecuperacao)}`}>
                       {nota.notaRecuperacao ?? '-'}
                     </span>
                   </div>
                 </div>
 
                 <div className="notas-resultado-footer">
-                  <span className="notas-resultado-data">{nota.dataLancamento}</span>
+                  <span className="notas-resultado-data">{notaService.formatarData(nota.dataLancamento)}</span>
                   <Button
                     size="sm"
                     variant="outline-primary"
@@ -590,7 +534,7 @@ export default function NotasVisualizacao({
                     onClick={() => {
                       const historicoNotas = notas
                         .filter(n => {
-                          const aluno = alunos.find(a => a.uid === n.alunoUid);
+                          const aluno = alunos.find(a => a.id === n.alunoUid);
                           const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
                           return alunoAtivo && n.alunoUid === nota.alunoUid && 
                                  n.materiaId === filtroMateria && n.turmaId === filtroTurma;
@@ -599,7 +543,7 @@ export default function NotasVisualizacao({
                           const ordem = ['1º', '2º', '3º', '4º'];
                           return ordem.indexOf(a.bimestre) - ordem.indexOf(b.bimestre);
                         });
-                      setHistoricoAluno({ nome: nota.nomeAluno, notas: historicoNotas });
+                      setHistoricoAluno({ nome: nota.nomeAluno || 'Desconhecido', notas: historicoNotas });
                       setShowHistorico(true);
                     }}
                   >
@@ -657,7 +601,7 @@ export default function NotasVisualizacao({
                             doc.text(`Histórico de Notas - ${historicoAluno.nome} - ${turmaNome} - ${materiaNome}`, 14, 15);
                             const dadosParaTabela = ['1º', '2º', '3º', '4º'].map(bim => {
                               const nota = historicoAluno.notas.find(n => n.bimestre === bim);
-                              const mediaFinal = nota ? calcularMediaFinal(nota) : '-';
+                              const mediaFinal = nota ? notaService.calcularMediaFinal(nota) : '-';
                               return [
                                 bim,
                                 nota?.notaParcial?.toString() || '-',
@@ -665,7 +609,7 @@ export default function NotasVisualizacao({
                                 nota?.notaParticipacao?.toString() || '-',
                                 nota?.notaRecuperacao?.toString() || '-',
                                 typeof mediaFinal === 'number' ? mediaFinal.toString() : '-',
-                                nota?.dataLancamento || '-'
+                                nota?.dataLancamento ? notaService.formatarData(nota.dataLancamento) : '-'
                               ];
                             });
                             autoTable(doc, {
@@ -693,7 +637,7 @@ export default function NotasVisualizacao({
                             const materiaNome = materias.find(m => m.id === filtroMateria)?.nome || 'Desconhecida';
                             const dadosParaExcel = ['1º', '2º', '3º', '4º'].map(bim => {
                               const nota = historicoAluno.notas.find(n => n.bimestre === bim);
-                              const mediaFinal = nota ? calcularMediaFinal(nota) : '-';
+                              const mediaFinal = nota ? notaService.calcularMediaFinal(nota) : '-';
                               return {
                                 'Bimestre': bim,
                                 'Nota Parcial': nota?.notaParcial || '-',
@@ -701,7 +645,7 @@ export default function NotasVisualizacao({
                                 'Nota Participação': nota?.notaParticipacao || '-',
                                 'Nota Recuperação': nota?.notaRecuperacao || '-',
                                 'Média Final': typeof mediaFinal === 'number' ? mediaFinal : '-',
-                                'Data Lançamento': nota?.dataLancamento || '-'
+                                'Data Lançamento': nota?.dataLancamento ? notaService.formatarData(nota.dataLancamento) : '-'
                               };
                             });
                             const worksheet = XLSX.utils.json_to_sheet(dadosParaExcel);
@@ -742,16 +686,16 @@ export default function NotasVisualizacao({
                 <tbody>
                   {['1º', '2º', '3º', '4º'].map(bim => {
                     const n = historicoAluno.notas.find(nota => nota.bimestre === bim);
-                    const mediaFinal = n ? calcularMediaFinal(n) : '-';
+                    const mediaFinal = n ? notaService.calcularMediaFinal(n) : '-';
                     return (
                       <tr key={bim}>
                         <td style={{ fontWeight: 600 }}>{bim}</td>
-                        <td className={`fw-bold ${getNotaColor(n?.notaParcial)}`}>{n?.notaParcial ?? '-'}</td>
-                        <td className={`fw-bold ${getNotaColor(n?.notaGlobal)}`}>{n?.notaGlobal ?? '-'}</td>
-                        <td className={`fw-bold ${getNotaColor(n?.notaParticipacao)}`}>{n?.notaParticipacao ?? '-'}</td>
-                        <td className={`fw-bold ${getNotaColor(n?.notaRecuperacao)}`}>{n?.notaRecuperacao ?? '-'}</td>
-                        <td className={`fw-bold ${getNotaColor(typeof mediaFinal === 'number' ? mediaFinal : undefined)}`}>{typeof mediaFinal === 'number' ? mediaFinal : '-'}</td>
-                        <td className="text-muted"><small>{n?.dataLancamento ?? '-'}</small></td>
+                        <td className={`fw-bold ${notaService.getNotaColor(n?.notaParcial)}`}>{n?.notaParcial ?? '-'}</td>
+                        <td className={`fw-bold ${notaService.getNotaColor(n?.notaGlobal)}`}>{n?.notaGlobal ?? '-'}</td>
+                        <td className={`fw-bold ${notaService.getNotaColor(n?.notaParticipacao)}`}>{n?.notaParticipacao ?? '-'}</td>
+                        <td className={`fw-bold ${notaService.getNotaColor(n?.notaRecuperacao)}`}>{n?.notaRecuperacao ?? '-'}</td>
+                        <td className={`fw-bold ${notaService.getNotaColor(typeof mediaFinal === 'number' ? mediaFinal : undefined)}`}>{typeof mediaFinal === 'number' ? mediaFinal : '-'}</td>
+                        <td className="text-muted"><small>{n?.dataLancamento ? notaService.formatarData(n.dataLancamento) : '-'}</small></td>
                       </tr>
                     );
                   })}
@@ -771,44 +715,44 @@ export default function NotasVisualizacao({
               <div className="historico-mobile-cards">
                 {['1º', '2º', '3º', '4º'].map(bim => {
                   const n = historicoAluno.notas.find(nota => nota.bimestre === bim);
-                  const mediaFinal = n ? calcularMediaFinal(n) : '-';
+                  const mediaFinal = n ? notaService.calcularMediaFinal(n) : '-';
                   return (
                     <div key={bim} className="historico-bimestre-card">
                       <div className="historico-bimestre-header">
                         <span className="historico-bimestre-titulo">{bim} Bimestre</span>
-                        <span className={`historico-bimestre-media ${getNotaColor(typeof mediaFinal === 'number' ? mediaFinal : undefined)}`}>
+                        <span className={`historico-bimestre-media ${notaService.getNotaColor(typeof mediaFinal === 'number' ? mediaFinal : undefined)}`}>
                           Média: {typeof mediaFinal === 'number' ? mediaFinal : '-'}
                         </span>
                       </div>
                       <div className="historico-bimestre-body">
                         <div className="historico-nota-row">
                           <span className="historico-nota-label">Parcial:</span>
-                          <span className={`historico-nota-valor ${getNotaColor(n?.notaParcial)}`}>
+                          <span className={`historico-nota-valor ${notaService.getNotaColor(n?.notaParcial)}`}>
                             {n?.notaParcial ?? '-'}
                           </span>
                         </div>
                         <div className="historico-nota-row">
                           <span className="historico-nota-label">Global:</span>
-                          <span className={`historico-nota-valor ${getNotaColor(n?.notaGlobal)}`}>
+                          <span className={`historico-nota-valor ${notaService.getNotaColor(n?.notaGlobal)}`}>
                             {n?.notaGlobal ?? '-'}
                           </span>
                         </div>
                         <div className="historico-nota-row">
                           <span className="historico-nota-label">Participação:</span>
-                          <span className={`historico-nota-valor ${getNotaColor(n?.notaParticipacao)}`}>
+                          <span className={`historico-nota-valor ${notaService.getNotaColor(n?.notaParticipacao)}`}>
                             {n?.notaParticipacao ?? '-'}
                           </span>
                         </div>
                         <div className="historico-nota-row">
                           <span className="historico-nota-label">Recuperação:</span>
-                          <span className={`historico-nota-valor ${getNotaColor(n?.notaRecuperacao)}`}>
+                          <span className={`historico-nota-valor ${notaService.getNotaColor(n?.notaRecuperacao)}`}>
                             {n?.notaRecuperacao ?? '-'}
                           </span>
                         </div>
                       </div>
                       {n?.dataLancamento && (
                         <div className="historico-bimestre-footer">
-                          <small className="text-muted">Lançado em: {n.dataLancamento}</small>
+                          <small className="text-muted">Lançado em: {notaService.formatarData(n.dataLancamento)}</small>
                         </div>
                       )}
                     </div>

@@ -3,50 +3,51 @@ import {
   Container, Button, Modal, Form, Row, Col,
 } from 'react-bootstrap';
 import { Calendar, X, Trash2 } from "lucide-react";
-import {
-  collection, getDocs, addDoc, updateDoc, deleteDoc, doc
-} from 'firebase/firestore';
 
 import AppLayout from '../components/layout/AppLayout';
-import { db } from '../services/firebase/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import AgendaGradeView from '../components/agenda/AgendaGradeView';
 import AgendaCadastroView from '../components/agenda/AgendaCadastroView';
 
-import {
-  loadAdminData,
-  loadProfessorData,
-  loadProfessores,
-  loadTurmasComVirtualizacao,
-  type Turma as TurmaLoader,
-  type Vinculo as VinculoLoader
-} from '../services/data/dataLoaders';
+import { turmaService } from '../services/data/TurmaService';
+import { MateriaService } from '../services/data/MateriaService';
+import { ProfessorService } from '../services/data/ProfessorService';
+import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
+import { AgendaService } from '../services/data/AgendaService';
+import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
+import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
+import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
+import { FirebaseAgendaRepository } from '../repositories/agenda/FirebaseAgendaRepository';
+import type { Turma } from '../models/Turma';
+import type { ProfessorMateria } from '../models/ProfessorMateria';
+import type { Agenda } from '../models/Agenda';
+import type { Materia } from '../models/Materia';
+import type { Professor } from '../models/Professor';
 
 import {
   exportarAgendaPDF,
   exportarAgendaExcel
 } from '../utils/agendaExport';
+import {
+  getDayColor,
+  getTurnoNome,
+  getShiftColor,
+  formatarNomeProfessor
+} from '../utils/agendaUtils';
 
-interface AgendaItem {
-  id: string;
-  diaSemana: string;
-  horario: string;
-  materiaId: string;
-  turmaId: string;
-}
+// Instanciar services
+const materiaRepository = new FirebaseMateriaRepository();
+const materiaService = new MateriaService(materiaRepository);
 
-type Turma = TurmaLoader;
-type Vinculo = VinculoLoader;
+const professorRepository = new FirebaseProfessorRepository();
+const professorService = new ProfessorService(professorRepository);
 
-interface Materia {
-  id: string;
-  nome: string;
-}
-interface Professor {
-  id: string;
-  nome: string;
-}
+const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
+const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
+
+const agendaRepository = new FirebaseAgendaRepository();
+const agendaService = new AgendaService(agendaRepository);
 
 const diasSemana = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira'];
 const diasIndexMap = Object.fromEntries(diasSemana.map((d, i) => [d, i]));
@@ -56,16 +57,16 @@ export default function Agenda() {
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
 
-  const [agendaPorTurma, setAgendaPorTurma] = useState<Record<string, AgendaItem[]>>({});
+  const [agendaPorTurma, setAgendaPorTurma] = useState<Record<string, Agenda[]>>({});
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [materias, setMaterias] = useState<Materia[]>([]);
   const [professores, setProfessores] = useState<Professor[]>([]);
-  const [vinculos, setVinculos] = useState<Vinculo[]>([]);
+  const [vinculos, setVinculos] = useState<ProfessorMateria[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState<AgendaItem | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<Agenda | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>('cadastro');
 
@@ -99,23 +100,43 @@ export default function Agenda() {
         setLoading(true);
 
         if (isAdmin) {
-          const adminData = await loadAdminData(anoLetivo);
+          const [allProfessores, allTurmas, allMaterias, allVinculos] = await Promise.all([
+            professorService.listar(),
+            turmaService.listarComVirtualizacao(anoLetivo.toString()),
+            materiaService.listar(),
+            professorMateriaService.listar()
+          ]);
 
-          const turmasComVirtual = await loadTurmasComVirtualizacao(anoLetivo);
+          // Filtrar vínculos apenas de turmas do ano atual
+          const turmaIds = new Set(allTurmas.map((t: Turma) => t.id));
+          const vinculosFiltrados = allVinculos.filter((v: ProfessorMateria) => turmaIds.has(v.turmaId));
 
-          setProfessores(adminData.professores);
-          setVinculos(adminData.vinculos);
-          setTurmas(turmasComVirtual);
-          setMaterias(adminData.materias);
+          setProfessores(allProfessores);
+          setVinculos(vinculosFiltrados);
+          setTurmas(allTurmas);
+          setMaterias(allMaterias);
         } else if (userData?.uid) {
-          const professorData = await loadProfessorData(userData.uid, anoLetivo);
+          const [allProfessores, professorVinculos] = await Promise.all([
+            professorService.listar(),
+            professorMateriaService.listarPorProfessor(userData.uid)
+          ]);
 
-          const professores = await loadProfessores();
+          // Extrair IDs únicos
+          const turmaIds = [...new Set(professorVinculos.map((v: ProfessorMateria) => v.turmaId))];
+          const materiaIds = [...new Set(professorVinculos.map((v: ProfessorMateria) => v.materiaId))];
 
-          setProfessores(professores);
-          setVinculos(professorData.vinculos);
-          setTurmas(professorData.turmas);
-          setMaterias(professorData.materias);
+          // Buscar turmas do ano letivo do professor
+          const allTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+          const turmasProfessor = allTurmas.filter((t: Turma) => turmaIds.includes(t.id));
+
+          // Buscar matérias do professor
+          const allMaterias = await materiaService.listar();
+          const materiasProfessor = allMaterias.filter((m: Materia) => materiaIds.includes(m.id));
+
+          setProfessores(allProfessores);
+          setVinculos(professorVinculos);
+          setTurmas(turmasProfessor);
+          setMaterias(materiasProfessor);
         }
       } catch (error) {
         console.error('Erro ao carregar dados iniciais:', error);
@@ -130,12 +151,11 @@ export default function Agenda() {
   }, [userData, anoLetivo, isAdmin, turmas, loading, filtroBusca, filtroTurma, filtroProfessor, filtroTurno, filtroDia]);
 
   const fetchAgendaPorTurma = async () => {
-    const snap = await getDocs(collection(db, 'agenda'));
-    const data = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as AgendaItem[];
+    const data = await agendaService.listar();
 
     const turmaIdsValidos = new Set<string>();
     turmas.forEach(t => {
-      if (t.isVirtualizada && t.turmaOriginalId) {
+      if (t.turmaOriginalId && t.turmaOriginalId) {
         turmaIdsValidos.add(t.turmaOriginalId);
       } else {
         turmaIdsValidos.add(t.id);
@@ -146,10 +166,10 @@ export default function Agenda() {
       return turmaIdsValidos.has(item.turmaId);
     });
 
-    const agrupado: Record<string, AgendaItem[]> = {};
+    const agrupado: Record<string, Agenda[]> = {};
     dataFiltrada.forEach(item => {
       const turma = turmas.find(t => {
-        if (t.isVirtualizada && t.turmaOriginalId) {
+        if (t.turmaOriginalId && t.turmaOriginalId) {
           return t.turmaOriginalId === item.turmaId;
         }
         return t.id === item.turmaId;
@@ -190,17 +210,6 @@ export default function Agenda() {
     return expandedDays[turmaId]?.[day] ?? defaultState;
   };
 
-  const isValidProfessor = (nome: string | undefined) => {
-    if (!nome) return false;
-    const semEspacos = nome.trim();
-    return /[a-zA-ZÀ-ÿ0-9]/.test(semEspacos);
-  };
-
-  const formatarNomeProfessor = (nome: string | undefined) => {
-    if (!nome || !isValidProfessor(nome)) return '---';
-    return `Prof. ${nome}`;
-  };
-
   const limparFiltros = () => {
     setFiltroBusca('');
     setFiltroTurma('');
@@ -226,13 +235,16 @@ export default function Agenda() {
     if (!turmaId || !diaSemana || !inicio || !fim || !materiaId || !turno || !professorId) return;
     const horario = `${inicio} - ${fim}`;
     const payload = { turmaId, diaSemana, horario, materiaId, turno, professorId };
-    if (editId) await updateDoc(doc(db, 'agenda', editId), payload);
-    else await addDoc(collection(db, 'agenda'), payload);
+    if (editId) {
+      await agendaService.atualizar(editId, payload);
+    } else {
+      await agendaService.criar(payload);
+    }
     handleClose();
     fetchAgendaPorTurma();
   };
 
-  const handleEditar = (item: AgendaItem) => {
+  const handleEditar = (item: Agenda) => {
     setEditId(item.id);
     setTurmaId(item.turmaId);
     setDiaSemana(item.diaSemana);
@@ -258,14 +270,14 @@ export default function Agenda() {
     setShowModal(true);
   };
 
-  const handleExcluir = (item: AgendaItem) => {
+  const handleExcluir = (item: Agenda) => {
     setItemToDelete(item);
     setShowDeleteModal(true);
   };
 
   const confirmarExclusao = async () => {
     if (itemToDelete) {
-      await deleteDoc(doc(db, 'agenda', itemToDelete.id));
+      await agendaService.deletar(itemToDelete.id);
       fetchAgendaPorTurma();
       setShowDeleteModal(false);
       setItemToDelete(null);
@@ -298,73 +310,24 @@ export default function Agenda() {
     });
   };
 
-  const getDayColor = (dia: string) => {
-    switch (dia) {
-      case 'Segunda-feira':
-        return { bg: '#dbeafe', text: '#1e40af', border: '#bfdbfe' }; // azul
-      case 'Terça-feira':
-        return { bg: '#dcfce7', text: '#166534', border: '#bbf7d0' }; // verde
-      case 'Quarta-feira':
-        return { bg: '#fef3c7', text: '#92400e', border: '#fde68a' }; // amarelo
-      case 'Quinta-feira':
-        return { bg: '#fce7f3', text: '#be185d', border: '#fbcfe8' }; // rosa
-      case 'Sexta-feira':
-        return { bg: '#e0e7ff', text: '#3730a3', border: '#c7d2fe' }; // índigo
-      default:
-        return { bg: '#f3f4f6', text: '#374151', border: '#d1d5db' }; // cinza
-    }
+  const filtrarAulasPorProfessor = (aulas: Agenda[]) => {
+    return agendaService.filtrarAulasPorProfessor(aulas, filtroProfessorVisualizacao, vinculos);
   };
 
-  const getTurnoFromHorario = (horario: string) => {
-    const horarioInicio = horario.split(' - ')[0];
-    const hora = parseInt(horarioInicio.split(':')[0]);
-
-    if (hora >= 6 && hora < 12) {
-      return 'manha';
-    } else if (hora >= 12 && hora < 18) {
-      return 'tarde';
-    } else {
-      return 'noite';
-    }
-  };
-
-  const getTurnoNome = (turno: string) => {
-    switch (turno) {
-      case 'manha': return 'Manhã';
-      case 'tarde': return 'Tarde';
-      case 'noite': return 'Noite';
-      default: return 'Indefinido';
-    }
-  };
-
-  const filtrarAulasPorProfessor = (aulas: AgendaItem[]) => {
-    if (!filtroProfessorVisualizacao) return aulas;
-
-    return aulas.filter(aula => {
-      const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
-      return vinculo?.professorId === filtroProfessorVisualizacao;
-    });
-  };
-
-  const filtrarAulasPorTurno = (aulas: AgendaItem[]) => {
-    if (!filtroTurnoVisualizacao) return aulas;
-
-    return aulas.filter(aula => {
-      const turnoAula = getTurnoFromHorario(aula.horario);
-      return turnoAula === filtroTurnoVisualizacao;
-    });
+  const filtrarAulasPorTurno = (aulas: Agenda[]) => {
+    return agendaService.filtrarAulasPorTurno(aulas, filtroTurnoVisualizacao);
   };
 
   const obterDadosFiltradosParaGrade = () => {
     if (!filtroTurnoVisualizacao) return [];
 
     return dadosFiltrados.filter(item => {
-      const turnoAula = getTurnoFromHorario(item.horario);
+      const turnoAula = agendaService.getTurnoFromHorario(item.horario);
       if (turnoAula !== filtroTurnoVisualizacao) return false;
 
       if (filtroVisualizacaoTurma) {
         const turma = turmas.find(t => t.id === filtroVisualizacaoTurma);
-        if (turma?.isVirtualizada && turma.turmaOriginalId) {
+        if (turma?.turmaOriginalId && turma.turmaOriginalId) {
           if (item.turmaId !== turma.turmaOriginalId && item.turmaId !== filtroVisualizacaoTurma) {
             return false;
           }
@@ -384,29 +347,16 @@ export default function Agenda() {
     });
   };
 
-  const getShiftColor = (turno: string) => {
-    switch (turno.toLowerCase()) {
-      case 'manhã':
-        return { bg: '#fed7aa', color: '#ea580c', variant: 'custom-manha' }; // laranja suave
-      case 'tarde':
-        return { bg: '#fecaca', color: '#9a3412', variant: 'custom-tarde' }; // #9a3412 claro
-      case 'noite':
-        return { bg: '#dbeafe', color: '#1e40af', variant: 'custom-noite' }; // azul claro
-      default:
-        return { bg: '#f3f4f6', color: '#6b7280', variant: 'secondary' }; // cinza
-    }
-  };
-
   const dadosOrdenados = Object.values(agendaPorTurma).flat()
     .sort((a, b) => {
       const turmaA = turmas.find(t => {
-        if (t.isVirtualizada && t.turmaOriginalId) {
+        if (t.turmaOriginalId && t.turmaOriginalId) {
           return t.turmaOriginalId === a.turmaId || t.id === a.turmaId;
         }
         return t.id === a.turmaId;
       });
       const turmaB = turmas.find(t => {
-        if (t.isVirtualizada && t.turmaOriginalId) {
+        if (t.turmaOriginalId && t.turmaOriginalId) {
           return t.turmaOriginalId === b.turmaId || t.id === b.turmaId;
         }
         return t.id === b.turmaId;
@@ -422,7 +372,7 @@ export default function Agenda() {
 
   const dadosFiltrados = dadosOrdenados.filter(item => {
     const turma = turmas.find(t => {
-      if (t.isVirtualizada && t.turmaOriginalId) {
+      if (t.turmaOriginalId && t.turmaOriginalId) {
         return t.turmaOriginalId === item.turmaId || t.id === item.turmaId;
       }
       return t.id === item.turmaId;
@@ -445,7 +395,7 @@ export default function Agenda() {
 
     if (filtroTurma) {
       const turmaFiltro = turmas.find(t => t.id === filtroTurma);
-      if (turmaFiltro?.isVirtualizada && turmaFiltro.turmaOriginalId) {
+      if (turmaFiltro?.turmaOriginalId && turmaFiltro.turmaOriginalId) {
         if (item.turmaId !== turmaFiltro.turmaOriginalId && item.turmaId !== filtroTurma) {
           return false;
         }
@@ -482,18 +432,10 @@ export default function Agenda() {
     const professorA = vinculoA ? professores.find(p => p.id === vinculoA.professorId)?.nome || '' : '';
     const professorB = vinculoB ? professores.find(p => p.id === vinculoB.professorId)?.nome || '' : '';
 
-    const getTurnoFromHorario = (horario: string) => {
-      const horarioInicio = horario.split(' - ')[0];
-      const hora = parseInt(horarioInicio.split(':')[0]);
-      if (hora >= 6 && hora < 12) return 'Manhã';
-      if (hora >= 12 && hora < 18) return 'Tarde';
-      return 'Noite';
-    };
-
     switch (ordenacao) {
       case 'turno':
-        const turnoA = getTurnoFromHorario(a.horario);
-        const turnoB = getTurnoFromHorario(b.horario);
+        const turnoA = getTurnoNome(agendaService.getTurnoFromHorario(a.horario));
+        const turnoB = getTurnoNome(agendaService.getTurnoFromHorario(b.horario));
         return turnoA.localeCompare(turnoB);
 
       case 'dia':
@@ -518,6 +460,9 @@ export default function Agenda() {
 
   const totalPaginas = Math.ceil(dadosOrdenadosTabela.length / itensPorPagina);
   const dadosPaginados = dadosOrdenadosTabela.slice((currentPage - 1) * itensPorPagina, currentPage * itensPorPagina);
+
+  // Wrapper para passar ao componente
+  const getTurnoFromHorarioWrapper = (horario: string) => agendaService.getTurnoFromHorario(horario);
 
   return (
     <AppLayout>
@@ -624,7 +569,7 @@ export default function Agenda() {
             filtrarAulasPorProfessor={filtrarAulasPorProfessor}
             filtrarAulasPorTurno={filtrarAulasPorTurno}
             obterDadosFiltradosParaGrade={obterDadosFiltradosParaGrade}
-            getTurnoFromHorario={getTurnoFromHorario}
+            getTurnoFromHorario={getTurnoFromHorarioWrapper}
             getTurnoNome={getTurnoNome}
             getDayColor={getDayColor}
             formatarNomeProfessor={formatarNomeProfessor}

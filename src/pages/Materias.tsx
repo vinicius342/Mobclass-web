@@ -6,19 +6,14 @@ import {
   Col,
   Row
 } from 'react-bootstrap';
-import {
-  collection, getDocs, addDoc, updateDoc, deleteDoc, doc
-} from 'firebase/firestore';
-import { db } from '../services/firebase/firebase';
 import { PlusCircle, PencilFill, TrashFill } from 'react-bootstrap-icons';
 import { Notebook } from 'lucide-react';
+import { Materia } from '../models/Materia';
+import { MateriaService } from '../services/data/MateriaService';
+import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 
-interface Materia {
-  id: string;
-  nome: string;
-  codigo: string;
-  categoria?: string;
-}
+const materiaRepository = new FirebaseMateriaRepository();
+const materiaService = new MateriaService(materiaRepository);
 
 export default function Materias(): JSX.Element {
   const [materias, setMaterias] = useState<Materia[]>([]);
@@ -47,15 +42,16 @@ export default function Materias(): JSX.Element {
 
   const fetchMaterias = async () => {
     setLoading(true);
-    const snap = await getDocs(collection(db, 'materias'));
-    const lista = snap.docs.map(d => ({
-      id: d.id,
-      nome: d.data().nome,
-      codigo: d.data().codigo,
-      categoria: d.data().categoria
-    })).sort((a, b) => a.nome.localeCompare(b.nome));
-    setMaterias(lista);
-    setLoading(false);
+    try {
+      const lista = await materiaService.listar();
+      const listaOrdenada = lista.sort((a, b) => a.nome.localeCompare(b.nome));
+      setMaterias(listaOrdenada);
+    } catch (err) {
+      console.error(err);
+      setToast({ show: true, message: 'Erro ao carregar matérias.', variant: 'danger' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const openModal = (item?: Materia) => {
@@ -73,12 +69,6 @@ export default function Materias(): JSX.Element {
 
   const closeModal = () => setShowModal(false);
 
-  const gerarCodigoMateria = (nome: string): string => {
-    const prefixo = nome.substring(0, 3).toUpperCase();
-    const numero = Math.floor(100 + Math.random() * 900);
-    return `${prefixo}${numero}`;
-  };
-
   const handleSalvar = async () => {
     if (!nome.trim()) {
       setToast({ show: true, message: 'Nome da matéria é obrigatório.', variant: 'danger' });
@@ -90,21 +80,15 @@ export default function Materias(): JSX.Element {
       return;
     }
 
-    // Verificar duplicidade (mesmo nome e categoria)
-    const materiaDuplicada = materias.find(m =>
-      m.nome.toLowerCase().trim() === nome.toLowerCase().trim() &&
-      m.categoria === categoria &&
-      m.id !== editId
-    );
-
-    if (materiaDuplicada) {
+    // Verificar duplicidade usando service
+    if (materiaService.validarDuplicidade(materias, nome, categoria, editId || undefined)) {
       setToast({ show: true, message: 'Já existe uma matéria com este nome nesta categoria.', variant: 'danger' });
       return;
     }
 
     const codigoGerado = editId
-      ? materias.find(m => m.id === editId)?.codigo || gerarCodigoMateria(nome)
-      : gerarCodigoMateria(nome);
+      ? materias.find(m => m.id === editId)?.codigo || materiaService.gerarCodigoMateria(nome)
+      : materiaService.gerarCodigoMateria(nome);
 
     const payload = {
       nome: nome.trim(),
@@ -114,9 +98,9 @@ export default function Materias(): JSX.Element {
 
     try {
       if (editId) {
-        await updateDoc(doc(db, 'materias', editId), payload);
+        await materiaService.atualizar(editId, payload);
       } else {
-        await addDoc(collection(db, 'materias'), payload);
+        await materiaService.criar(payload);
       }
       setToast({ show: true, message: editId ? 'Matéria atualizada com sucesso!' : 'Matéria criada com sucesso!', variant: 'success' });
       closeModal();
@@ -130,7 +114,7 @@ export default function Materias(): JSX.Element {
   const handleExcluir = async (id: string) => {
     if (window.confirm('Deseja excluir esta matéria?')) {
       try {
-        await deleteDoc(doc(db, 'materias', id));
+        await materiaService.excluir(id);
         setToast({ show: true, message: 'Matéria excluída.', variant: 'success' });
         fetchMaterias();
       } catch (err) {
@@ -140,32 +124,17 @@ export default function Materias(): JSX.Element {
     }
   };
 
-  // Função para determinar categoria da matéria (usa a categoria salva ou fallback para cálculo automático)
-  const getCategoria = (nome: string, categoriaSalva?: string): string => {
-    if (categoriaSalva) return categoriaSalva;
+  // Usar service para filtrar e paginar
+  const { totalPaginas, materiasPaginadas } = materiaService.filtrarEPaginar(
+    materias,
+    termoBusca,
+    categoriaFiltro,
+    paginaAtual,
+    itensPorPagina
+  );
 
-    if (/matemática|física|química|biologia|ciências|geometria|álgebra|exatas/i.test(nome)) {
-      return 'Exatas';
-    } else if (/história|geografia|filosofia|sociologia|humanas/i.test(nome)) {
-      return 'Humanas';
-    } else if (/português|inglês|espanhol|literatura|linguagens|redação/i.test(nome)) {
-      return 'Linguagens';
-    }
-    return 'Outras';
-  };
-
-  // Filtrar matérias baseado na busca e categoria
-  const materiasFiltradas = materias.filter(materia => {
-    const matchBusca = termoBusca === '' || materia.nome.toLowerCase().includes(termoBusca.toLowerCase());
-    const categoriaFinal = getCategoria(materia.nome, materia.categoria);
-    const matchCategoria = categoriaFiltro === '' || categoriaFinal === categoriaFiltro;
-    return matchBusca && matchCategoria;
-  });
-
-  const totalPaginas = Math.ceil(materiasFiltradas.length / itensPorPagina);
-  const inicio = (paginaAtual - 1) * itensPorPagina;
-  const fim = inicio + itensPorPagina;
-  const materiasPaginadas = materiasFiltradas.slice(inicio, fim);
+  // Calcular estatísticas usando service
+  const estatisticas = materiaService.calcularEstatisticasPorCategoria(materias);
 
   // Resetar página quando filtros mudam
   useEffect(() => {
@@ -223,7 +192,7 @@ export default function Materias(): JSX.Element {
                 <div className="d-flex align-items-center justify-content-between">
                   <div>
                     <p className="text-sm mb-1" style={{ fontSize: '0.95rem', color: '#6b7280' }}>Total de Matérias</p>
-                    <p className="text-2xl fw-bold mb-0" style={{ fontSize: '1.5rem', fontWeight: 500 }}>{materias.length}</p>
+                    <p className="text-2xl fw-bold mb-0" style={{ fontSize: '1.5rem', fontWeight: 500 }}>{estatisticas.total}</p>
                   </div>
                   <div className="p-2 d-flex align-items-center justify-content-center" style={{ background: '#3b82f61a', borderRadius: 12 }}>
                     <div className="rounded" style={{ width: 24, height: 24, background: '#3b82f6' }}></div>
@@ -238,7 +207,7 @@ export default function Materias(): JSX.Element {
                 <div className="d-flex align-items-center justify-content-between">
                   <div>
                     <p className="text-sm mb-1" style={{ fontSize: '0.92rem', color: '#6b7280' }}>Exatas</p>
-                    <p className="text-2xl fw-bold mb-0" style={{ fontSize: '1.5rem', fontWeight: 500 }}>{materias.filter(m => getCategoria(m.nome, m.categoria) === 'Exatas').length}</p>
+                    <p className="text-2xl fw-bold mb-0" style={{ fontSize: '1.5rem', fontWeight: 500 }}>{estatisticas.exatas}</p>
                   </div>
                   <div className="p-2 d-flex align-items-center justify-content-center" style={{ background: '#22c55e1a', borderRadius: 12 }}>
                     <div className="rounded" style={{ width: 24, height: 24, background: '#22c55e' }}></div>
@@ -253,7 +222,7 @@ export default function Materias(): JSX.Element {
                 <div className="d-flex align-items-center justify-content-between">
                   <div>
                     <p className="text-sm mb-1" style={{ fontSize: '0.92rem', color: '#6b7280' }}>Humanas</p>
-                    <p className="text-2xl fw-bold mb-0" style={{ fontSize: '1.5rem', fontWeight: 500 }}>{materias.filter(m => getCategoria(m.nome, m.categoria) === 'Humanas').length}</p>
+                    <p className="text-2xl fw-bold mb-0" style={{ fontSize: '1.5rem', fontWeight: 500 }}>{estatisticas.humanas}</p>
                   </div>
                   <div className="p-2 d-flex align-items-center justify-content-center" style={{ background: '#a259e61a', borderRadius: 12 }}>
                     <div className="rounded" style={{ width: 24, height: 24, background: '#a259e6' }}></div>
@@ -268,7 +237,7 @@ export default function Materias(): JSX.Element {
                 <div className="d-flex align-items-center justify-content-between">
                   <div>
                     <p className="text-sm mb-1" style={{ fontSize: '0.92rem', color: '#6b7280' }}>Linguagens</p>
-                    <p className="text-2xl fw-bold mb-0" style={{ fontSize: '1.5rem', fontWeight: 500 }}>{materias.filter(m => getCategoria(m.nome, m.categoria) === 'Linguagens').length}</p>
+                    <p className="text-2xl fw-bold mb-0" style={{ fontSize: '1.5rem', fontWeight: 500 }}>{estatisticas.linguagens}</p>
                   </div>
                   <div className="p-2 d-flex align-items-center justify-content-center" style={{ background: '#ff98001a', borderRadius: 12 }}>
                     <div className="rounded" style={{ width: 24, height: 24, background: '#ff9800' }}></div>
@@ -347,8 +316,8 @@ export default function Materias(): JSX.Element {
                             <span className="aluno-nome-frequencia" style={{ fontSize: '1rem' }}>{item.nome}</span>
                           </div>
                           <div style={{ width: '25%', display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                            <Badge className={getCategoriaBadgeClass(getCategoria(item.nome, item.categoria))} style={{ margin: 0, padding: '2px 8px 2px 8px' }}>
-                              {getCategoria(item.nome, item.categoria)}
+                            <Badge className={getCategoriaBadgeClass(materiaService.determinarCategoria(item.nome, item.categoria))} style={{ margin: 0, padding: '2px 8px 2px 8px' }}>
+                              {materiaService.determinarCategoria(item.nome, item.categoria)}
                             </Badge>
                           </div>
                           <div style={{ width: '25%', textAlign: 'end', paddingRight: 18 }}>
@@ -400,8 +369,8 @@ export default function Materias(): JSX.Element {
                               <div className="materias-card-title">{item.nome}</div>
                               <div className="materias-card-codigo">Código: {item.codigo}</div>
                             </div>
-                            <Badge className={getCategoriaBadgeClass(getCategoria(item.nome, item.categoria))}>
-                              {getCategoria(item.nome, item.categoria)}
+                            <Badge className={getCategoriaBadgeClass(materiaService.determinarCategoria(item.nome, item.categoria))}>
+                              {materiaService.determinarCategoria(item.nome, item.categoria)}
                             </Badge>
                           </div>
 

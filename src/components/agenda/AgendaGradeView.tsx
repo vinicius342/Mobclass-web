@@ -4,47 +4,19 @@ import { Sun, Sunset, Moon, Download, ChevronDown, ChevronRight, Edit, Trash2, P
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircleExclamation } from '@fortawesome/free-solid-svg-icons';
 import { exportarGradeTurnoPDF, exportarGradeTurnoExcel } from '../../utils/agendaExport';
-
-// Tipos
-interface AgendaItem {
-  id: string;
-  diaSemana: string;
-  horario: string;
-  materiaId: string;
-  turmaId: string;
-}
-
-interface Turma {
-  id: string;
-  nome: string;
-  isVirtualizada?: boolean;
-  turmaOriginalId?: string;
-}
-
-interface Materia {
-  id: string;
-  nome: string;
-}
-
-interface Professor {
-  id: string;
-  nome: string;
-}
-
-interface Vinculo {
-  id: string;
-  professorId: string;
-  materiaId: string;
-  turmaId: string;
-}
+import type { Agenda } from '../../models/Agenda';
+import type { Turma } from '../../models/Turma';
+import type { Materia } from '../../models/Materia';
+import type { Professor } from '../../models/Professor';
+import type { ProfessorMateria } from '../../models/ProfessorMateria';
 
 interface AgendaGradeViewProps {
   // Dados
   turmas: Turma[];
   materias: Materia[];
   professores: Professor[];
-  vinculos: Vinculo[];
-  agendaPorTurma: Record<string, AgendaItem[]>;
+  vinculos: ProfessorMateria[];
+  agendaPorTurma: Record<string, Agenda[]>;
   diasSemana: string[];
   
   // Filtros
@@ -56,9 +28,9 @@ interface AgendaGradeViewProps {
   setFiltroTurnoVisualizacao: (value: string) => void;
   
   // Funções de filtro
-  filtrarAulasPorProfessor: (aulas: AgendaItem[]) => AgendaItem[];
-  filtrarAulasPorTurno: (aulas: AgendaItem[]) => AgendaItem[];
-  obterDadosFiltradosParaGrade: () => AgendaItem[];
+  filtrarAulasPorProfessor: (aulas: Agenda[]) => Agenda[];
+  filtrarAulasPorTurno: (aulas: Agenda[]) => Agenda[];
+  obterDadosFiltradosParaGrade: () => Agenda[];
   
   // Funções de formatação
   getTurnoFromHorario: (horario: string) => string;
@@ -71,8 +43,8 @@ interface AgendaGradeViewProps {
   isDayExpanded: (turmaId: string, day: string) => boolean;
   
   // Handlers
-  handleEditar: (item: AgendaItem) => void;
-  setItemToDelete: (item: AgendaItem | null) => void;
+  handleEditar: (item: Agenda) => void;
+  setItemToDelete: (item: Agenda | null) => void;
   setShowDeleteModal: (show: boolean) => void;
   setDiaSemana: (dia: string) => void;
   setTurmaId: (turmaId: string) => void;

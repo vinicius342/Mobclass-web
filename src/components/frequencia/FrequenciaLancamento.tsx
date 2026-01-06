@@ -6,13 +6,19 @@ import {
   Card,
   Modal,
 } from 'react-bootstrap';
-import {
-  collection, getDocs, query, where,
-  writeBatch, doc
-} from 'firebase/firestore';
 import { CalendarIcon, Check, Info, Save, Undo, User, UserCheck, UserX, X } from "lucide-react";
-import { db } from '../../services/firebase/firebase';
 import { FaUserCheck, FaUsers, FaUserTimes } from 'react-icons/fa';
+import { FrequenciaService } from '../../services/FrequenciaService';
+import { FirebaseFrequenciaRepository } from '../../repositories/frequencia/FirebaseFrequenciaRepository';
+import { FirebaseAlunoRepository } from '../../repositories/aluno/FirebaseAlunoRepository';
+import { ProfessorMateriaService } from '../../services/data/ProfessorMateriaService';
+import { FirebaseProfessorMateriaRepository } from '../../repositories/professor_materia/FirebaseProfessorMateriaRepository';
+import { Frequencia } from '../../models/Frequencia';
+import { Aluno } from '../../models/Aluno';
+import { Turma } from '../../models/Turma';
+import { Materia } from '../../models/Materia';
+import { ProfessorMateria } from '../../models/ProfessorMateria';
+import { formatarData, stringParaDataLocal, isDataAtual } from '../../utils/frequenciaUtils';
 
 //Data
 import DatePicker from "react-datepicker";
@@ -23,32 +29,10 @@ import { registerLocale } from "react-datepicker";
 // 👇 força o tipo como 'any' para evitar conflito
 registerLocale("pt-BR", ptBR as any);
 
-interface Aluno {
-  id: string;
-  nome: string;
-  turmaId: string;
-}
-
-interface Turma {
-  id: string;
-  nome: string;
-}
-
-interface Materia {
-  id: string;
-  nome: string;
-}
-
-interface Vinculo {
-  turmaId: string;
-  materiaId: string;
-  professorId: string;
-}
-
 interface FrequenciaLancamentoProps {
   turmas: Turma[];
   materias: Materia[];
-  vinculos: Vinculo[];
+  vinculos: ProfessorMateria[];
   isAdmin: boolean;
   userData: any;
 }
@@ -60,7 +44,22 @@ export default function FrequenciaLancamento({
   isAdmin,
   userData
 }: FrequenciaLancamentoProps): JSX.Element {
+  // Inicializar services
+  const frequenciaService = useMemo(
+    () => new FrequenciaService(new FirebaseFrequenciaRepository()),
+    []
+  );
+  const alunoRepository = useMemo(
+    () => new FirebaseAlunoRepository(),
+    []
+  );
+  const professorMateriaService = useMemo(
+    () => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()),
+    []
+  );
+
   const [alunos, setAlunos] = useState<Aluno[]>([]);
+  const [frequenciasCarregadas, setFrequenciasCarregadas] = useState<Frequencia[]>([]);
 
   const [turmaId, setTurmaId] = useState('');
   const [materiaId, setMateriaId] = useState('');
@@ -98,51 +97,41 @@ export default function FrequenciaLancamento({
       if (!turmaId || !materiaId || !dataAula) {
         setAlunos([]);
         setAttendance({});
+        setFrequenciasCarregadas([]);
         return;
       }
       setLoading(true);
       try {
-        const alunosSnap = await getDocs(query(collection(db, 'alunos'), where('turmaId', '==', turmaId)));
-        const listaAlunos: Aluno[] = alunosSnap.docs
-          .map(d => ({ id: d.id, ...(d.data() as any) }))
-          .filter(aluno => (aluno as any).status !== 'Inativo') // Excluir usuários inativos
-          .sort((a, b) => a.nome.localeCompare(b.nome));
-        setAlunos(listaAlunos);
+        // Buscar alunos pela turma (excluindo inativos)
+        const todosAlunos = await alunoRepository.findByTurmaId(turmaId);
+        const alunosAtivos = todosAlunos
+          .filter((aluno: any) => aluno.status !== 'Inativo')
+          .sort((a: any, b: any) => a.nome.localeCompare(b.nome));
+        setAlunos(alunosAtivos);
 
-        const freqSnap = await getDocs(
-          query(collection(db, 'frequencias'),
-            where('turmaId', '==', turmaId),
-            where('materiaId', '==', materiaId),
-            where('data', '==', dataAula))
+        // Buscar frequências já lançadas
+        const frequencias = await frequenciaService.listarPorTurmaMateria(turmaId, materiaId, dataAula);
+        setFrequenciasCarregadas(frequencias);
+
+        // Mapear presença usando service
+        const initial = frequenciaService.inicializarAttendance(
+          alunosAtivos.map((a: any) => ({ id: a.id, nome: a.nome })),
+          frequencias
         );
-        const presMap: Record<string, boolean | null> = {};
-        freqSnap.docs.forEach(d => {
-          const ddata = d.data() as any;
-          presMap[ddata.alunoId] = ddata.presenca;
-        });
-        const initial: Record<string, boolean | null> = {};
-        listaAlunos.forEach(a => {
-          // Se houver registro anterior, usa ele. Caso contrário, deixa sem seleção (null)
-          initial[a.id] = presMap[a.id] !== undefined ? presMap[a.id] : null;
-        });
         setAttendance(initial);
 
-        const justificativasMap: Record<string, string> = {};
-        freqSnap.docs.forEach(d => {
-          const ddata = d.data() as any;
-          if (ddata.observacao) {
-            justificativasMap[ddata.alunoId] = ddata.observacao;
-          }
-        });
+        // Mapear justificativas usando service
+        const justificativasMap = frequenciaService.mapearJustificativas(frequencias);
         setJustificativas(justificativasMap);
 
       } catch (err) {
         console.error('Erro ao buscar dados de frequência:', err);
+        setToast({ show: true, message: 'Erro ao carregar dados.', variant: 'danger' });
       }
       setLoading(false);
     }
     fetchAlunos();
-  }, [turmaId, materiaId, dataAula]);
+  }, [turmaId, materiaId, dataAula, alunoRepository, frequenciaService]);
 
   const atualizarAttendance = (novoAttendance: Record<string, boolean | null>) => {
     setHistory(prev => [...prev, attendance]); // salva estado atual no histórico
@@ -155,12 +144,38 @@ export default function FrequenciaLancamento({
   };
 
   const marcarTodosComoPresente = () => {
-    const novos = Object.fromEntries(alunos.map(a => [a.id, true]));
+    const frequenciasAtualizadas = frequenciaService.marcarTodosPresentes(
+      frequenciasCarregadas.length > 0 
+        ? frequenciasCarregadas 
+        : alunos.map(a => ({
+            id: `${turmaId}_${materiaId}_${dataAula}_${a.id}`,
+            alunoId: a.id,
+            turmaId,
+            materiaId,
+            data: dataAula,
+            presenca: null,
+            professorId: userData?.uid || ''
+          }))
+    );
+    const novos = Object.fromEntries(frequenciasAtualizadas.map(f => [f.alunoId, f.presenca]));
     atualizarAttendance(novos);
   };
 
   const marcarTodosComoAusente = () => {
-    const novos = Object.fromEntries(alunos.map(a => [a.id, false]));
+    const frequenciasAtualizadas = frequenciaService.marcarTodosAusentes(
+      frequenciasCarregadas.length > 0 
+        ? frequenciasCarregadas 
+        : alunos.map(a => ({
+            id: `${turmaId}_${materiaId}_${dataAula}_${a.id}`,
+            alunoId: a.id,
+            turmaId,
+            materiaId,
+            data: dataAula,
+            presenca: null,
+            professorId: userData?.uid || ''
+          }))
+    );
+    const novos = Object.fromEntries(frequenciasAtualizadas.map(f => [f.alunoId, f.presenca]));
     atualizarAttendance(novos);
   };
 
@@ -177,74 +192,85 @@ export default function FrequenciaLancamento({
 
   const handleSalvar = async () => {
     if (!turmaId || !materiaId || !dataAula || !alunos.length || Object.keys(attendance).length === 0) return;
+    
     setSaving(true);
-    const batch = writeBatch(db);
-    alunos.forEach(aluno => {
-      const docId = `${turmaId}_${materiaId}_${dataAula}_${aluno.id}`;
-      const ref = doc(db, 'frequencias', docId);
-      const justificativa = justificativas[aluno.id];
-      batch.set(ref, {
+    
+    try {
+      const frequenciasParaSalvar = frequenciaService.prepararFrequenciasComJustificativas(
+        alunos.map(a => ({ id: a.id, nome: a.nome })),
         turmaId,
         materiaId,
-        data: dataAula,
-        alunoId: aluno.id,
-        presenca: justificativa ? false : attendance[aluno.id], // Se tem justificativa, salva como ausente
-        professorId: userData?.uid || '',
-        observacao: justificativa || ''
-      });
-    });
-    try {
-      await batch.commit();
+        dataAula,
+        userData?.uid || '',
+        attendance,
+        justificativas
+      );
+
+      await frequenciaService.salvarFrequencias(frequenciasParaSalvar);
       setToast({ show: true, message: 'Frequência salva com sucesso!', variant: 'success' });
     } catch (err) {
       console.error('Erro ao salvar frequência:', err);
       setToast({ show: true, message: 'Falha ao salvar frequência.', variant: 'danger' });
     }
+    
     setSaving(false);
   };
 
   // Cards porcentagem
-  const totalAlunos = alunos.length;
-  const totalPresentes = Object.values(attendance).filter(v => v === true).length;
-  const totalAusentes = Object.values(attendance).filter(v => v === false).length;
+  const estatisticas = useMemo(() => {
+    const frequenciasAtuais = alunos.map(a => ({
+      id: a.id,
+      alunoId: a.id,
+      turmaId,
+      materiaId,
+      data: dataAula,
+      presenca: attendance[a.id] ?? null,
+      professorId: userData?.uid || ''
+    }));
+    return frequenciaService.calcularEstatisticas(frequenciasAtuais);
+  }, [alunos, attendance, turmaId, materiaId, dataAula, userData, frequenciaService]);
 
-  const porcentagemPresentes = totalAlunos ? ((totalPresentes / totalAlunos) * 100).toFixed(0) : 0;
-  const porcentagemAusentes = totalAlunos ? ((totalAusentes / totalAlunos) * 100).toFixed(0) : 0;
-
-  const filtrarAlunos = (tipo: 'todos' | 'presentes' | 'ausentes') => {
-    setFiltroAlunos(tipo);
-  };
+  const totalAlunos = estatisticas.totalAlunos;
+  const totalPresentes = estatisticas.totalPresentes;
+  const totalAusentes = estatisticas.totalAusentes;
+  const porcentagemPresentes = estatisticas.percentualPresenca;
+  const porcentagemAusentes = estatisticas.percentualAusencia;
 
   // Memoizar a lista filtrada para evitar recalcular em cada render
   const alunosFiltrados = useMemo(() => {
-    return alunos.filter(a => {
-      // filtro presença
-      if (filtroAlunos === 'presentes' && !attendance[a.id]) return false;
-      if (filtroAlunos === 'ausentes' && attendance[a.id]) return false;
+    const alunosComFrequencias = alunos.map(a => ({
+      id: a.id,
+      alunoId: a.id,
+      turmaId,
+      materiaId,
+      data: dataAula,
+      presenca: attendance[a.id] ?? null,
+      professorId: userData?.uid || ''
+    }));
 
-      // filtro busca nome (case insensitive)
-      if (buscaNome.trim() === '') return true;
-      return a.nome.toLowerCase().includes(buscaNome.toLowerCase());
-    });
-  }, [alunos, filtroAlunos, attendance, buscaNome]);
+    const filtroTipo = filtroAlunos === 'todos' ? 'todos' 
+      : filtroAlunos === 'presentes' ? 'presentes' 
+      : filtroAlunos === 'ausentes' ? 'ausentes'
+      : 'todos';
+
+    return frequenciaService.filtrarAlunosPorNome(
+      alunos.map(a => ({ id: a.id, nome: a.nome })),
+      alunosComFrequencias,
+      buscaNome,
+      filtroTipo as 'todos' | 'presentes' | 'ausentes' | 'nao-registrado'
+    );
+  }, [alunos, filtroAlunos, attendance, buscaNome, turmaId, materiaId, dataAula, userData, frequenciaService]);
 
   // Data
-  function formatDate(date: Date) {
-    // Garante que a data seja local, sem fuso horário
-    return date.toLocaleDateString('en-CA'); // yyyy-MM-dd
-  }
-
   function handleDateChange(date: Date | null) {
     if (!date) {
       setDataAula("");
       return;
     }
 
-    const selectedDateISO = formatDate(date);
-    const hoje = new Date();
-    const hojeISO = formatDate(hoje);
+    const selectedDateISO = formatarData(date);
 
-    if (selectedDateISO !== hojeISO) {
+    if (!isDataAtual(selectedDateISO)) {
       alert("A data selecionada não é a data atual.");
     }
 
@@ -290,10 +316,9 @@ export default function FrequenciaLancamento({
     }
   );
 
-  function stringToLocalDate(dateString: string): Date {
-    const [year, month, day] = dateString.split('-').map(Number);
-    return new Date(year, month - 1, day); // mês começa em 0
-  }
+  const filtrarAlunos = (tipo: 'todos' | 'presentes' | 'ausentes') => {
+    setFiltroAlunos(tipo);
+  };
 
   return (
     <>
@@ -331,22 +356,22 @@ export default function FrequenciaLancamento({
                       {m.nome}
                     </option>
                   ))
-                : vinculos
-                  .filter(v => v.turmaId === turmaId)
-                  .map(v => {
-                    const materia = materias.find(m => m.id === v.materiaId);
-                    return materia ? (
-                      <option key={materia.id} value={materia.id}>
-                        {materia.nome}
-                      </option>
-                    ) : null;
-                  })}
+                : (() => {
+                    const materiaIds = professorMateriaService.obterMateriaIdsDaTurma(vinculos, turmaId);
+                    return materias
+                      .filter(m => materiaIds.includes(m.id))
+                      .map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.nome}
+                        </option>
+                      ));
+                  })()}
             </Form.Select>
           </Col>
 
           <Col md={4}>
             <DatePicker
-              selected={dataAula ? stringToLocalDate(dataAula) : null}
+              selected={dataAula ? stringParaDataLocal(dataAula) : null}
               onChange={handleDateChange}
               dateFormat="dd/MM/yyyy"
               locale="pt-BR"

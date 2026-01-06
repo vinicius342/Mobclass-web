@@ -1,4 +1,4 @@
-import { Nota } from '../models/Nota';
+import { Nota } from '../../models/Nota';
 
 export interface INotaRepository {
   findAll(): Promise<Nota[]>;

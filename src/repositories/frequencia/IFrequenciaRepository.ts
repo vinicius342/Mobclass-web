@@ -1,4 +1,4 @@
-import { Frequencia } from '../models/Frequencia';
+import { Frequencia } from '../../models/Frequencia';
 
 export interface IFrequenciaRepository {
   findAll(): Promise<Frequencia[]>;
@@ -10,6 +10,10 @@ export interface IFrequenciaRepository {
   findByAlunoId(alunoId: string): Promise<Frequencia[]>;
   findByAlunoIdETurma(alunoId: string, turmaId: string): Promise<Frequencia[]>;
   findByTurmaId(turmaId: string): Promise<Frequencia[]>;
+  findByTurmaMateria(turmaId: string, materiaId: string, data: string): Promise<Frequencia[]>;
+  findByAlunoIdEPeriodo(alunoId: string, dataInicio: string, dataFim: string): Promise<Frequencia[]>;
+  findByPeriodo(dataInicio: string, dataFim: string): Promise<Frequencia[]>;
   
+  salvarEmLote(frequencias: Omit<Frequencia, 'id'>[]): Promise<void>;
   copiarFrequencias(alunoId: string, turmaOrigemId: string, turmaDestinoId: string): Promise<void>;
 }

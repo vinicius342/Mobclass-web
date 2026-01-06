@@ -1,7 +1,9 @@
 import type { Turma } from '../../models/Turma';
 import type { ITurmaRepository } from '../../repositories/ITurmaRepository';
 
-import { FirebaseTurmaRepository } from '../../repositories/FirebaseTurmaRepository';
+import { FirebaseTurmaRepository } from '../../repositories/turma/FirebaseTurmaRepository';
+import { db } from '../firebase/firebase';
+import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 
 // Util interno para extrair o número da série a partir do nome da turma (ex.: "7º A" -> 7)
 const extrairNumeroSerie = (nomeTurma: string): number => {
@@ -191,5 +193,93 @@ export const turmaService = {
     await turmaRepository.update(turmaOriginalId, { isVirtual: false });
 
     return novaTurmaId;
+  },
+
+  /**
+   * Materializa turma virtual se necessário, copiando vínculos e agenda
+   * Aceita tanto ID quanto objeto Turma
+   * Retorna o ID da turma materializada ou o ID original se não for virtual
+   */
+  materializarTurmaVirtualComDados: async (
+    turmaIdOuObjeto: string | Turma,
+    turmasCache?: Turma[]
+  ): Promise<string> => {
+    // Resolver turma a partir do parâmetro
+    let turmaVirtual: Turma | undefined;
+
+    if (typeof turmaIdOuObjeto === 'string') {
+      const turmaId = turmaIdOuObjeto;
+      
+      // Buscar no cache se fornecido
+      if (turmasCache) {
+        turmaVirtual = turmasCache.find(t => t.id === turmaId);
+      }
+      
+      // Fallback: buscar no repositório
+      if (!turmaVirtual) {
+        turmaVirtual = (await turmaRepository.findById(turmaId)) || undefined;
+      }
+    } else {
+      turmaVirtual = turmaIdOuObjeto;
+    }
+
+    const turmaId = typeof turmaIdOuObjeto === 'string' ? turmaIdOuObjeto : turmaIdOuObjeto.id;
+
+    // Se não encontrou ou não é virtual, retornar o ID original
+    if (!turmaVirtual || !turmaVirtual.turmaOriginalId) {
+      return turmaId;
+    }
+
+    // Verificar se já existe uma turma real com o mesmo nome no ano atual
+    const turmasReaisQuery = query(
+      collection(db, 'turmas'),
+      where('nome', '==', turmaVirtual.nome),
+      where('anoLetivo', '==', turmaVirtual.anoLetivo)
+    );
+
+    const turmasReaisSnap = await getDocs(turmasReaisQuery);
+
+    if (turmasReaisSnap.empty) {
+      // Materializar a turma virtual
+      const turmaRealId = await turmaService.materializarTurma(turmaVirtual);
+
+      // Copiar vínculos professor-matéria da turma original
+      const vinculosOriginaisQuery = query(
+        collection(db, 'professores_materias'),
+        where('turmaId', '==', turmaVirtual.turmaOriginalId)
+      );
+
+      const vinculosOriginaisSnap = await getDocs(vinculosOriginaisQuery);
+
+      for (const vinculoDoc of vinculosOriginaisSnap.docs) {
+        const vinculoData = vinculoDoc.data();
+        await addDoc(collection(db, 'professores_materias'), {
+          professorId: vinculoData.professorId,
+          materiaId: vinculoData.materiaId,
+          turmaId: turmaRealId
+        });
+      }
+
+      // Copiar documentos da agenda para o novo turmaId
+      const agendasOriginaisQuery = query(
+        collection(db, 'agenda'),
+        where('turmaId', '==', turmaVirtual.turmaOriginalId)
+      );
+
+      const agendasOriginaisSnap = await getDocs(agendasOriginaisQuery);
+
+      for (const agendaDoc of agendasOriginaisSnap.docs) {
+        const agendaData = agendaDoc.data();
+        await addDoc(collection(db, 'agenda'), {
+          ...agendaData,
+          turmaId: turmaRealId
+        });
+      }
+
+      return turmaRealId;
+    } else {
+      // Turma real já existe, usar ela
+      return turmasReaisSnap.docs[0].id;
+    }
   }
 }

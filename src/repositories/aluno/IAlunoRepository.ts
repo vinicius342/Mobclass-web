@@ -1,4 +1,4 @@
-import { Aluno } from "../models/Aluno";
+import { Aluno } from "../../models/Aluno";
 
 export interface IAlunoRepository {
   findAll(): Promise<Aluno[]>;

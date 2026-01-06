@@ -3,6 +3,8 @@ export interface Frequencia {
   alunoId: string;
   turmaId: string;
   materiaId: string;
-  data: Date;
-  presenca: boolean;
+  data: string; // formato: yyyy-MM-dd (para facilitar queries)
+  presenca: boolean | null;
+  professorId: string;
+  observacao?: string; // justificativa de ausência
 }

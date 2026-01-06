@@ -2,16 +2,36 @@
 import { useEffect, useState } from 'react';
 import AppLayout from '../components/layout/AppLayout';
 import { Container, Row, Col, Card, Spinner, Button } from 'react-bootstrap';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../services/firebase/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip,
   Bar, Legend, PieChart, Pie, Cell
 } from 'recharts';
-import { format } from 'date-fns';
 import { FaTasks, FaCalendarAlt, FaBullhorn } from 'react-icons/fa';
+
+// Services
+import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
+import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
+import { TarefaService } from '../services/data/TarefaService';
+import { FirebaseTarefaRepository } from '../repositories/tarefa/FirebaseTarefaRepository';
+import { FirebaseEntregaRepository } from '../repositories/entrega/FirebaseEntregaRepository';
+import { AgendaService } from '../services/data/AgendaService';
+import { FirebaseAgendaRepository } from '../repositories/agenda/FirebaseAgendaRepository';
+import { ComunicadoService } from '../services/data/ComunicadoService';
+import { FirebaseComunicadoRepository } from '../repositories/comunicado/FirebaseComunicadoRepository';
+import { FrequenciaService } from '../services/data/FrequenciaService';
+import { FirebaseFrequenciaRepository } from '../repositories/frequencia/FirebaseFrequenciaRepository';
+import { NotaService } from '../services/data/NotaService';
+import { FirebaseNotaRepository } from '../repositories/nota/FirebaseNotaRepository';
+
+// Instanciar services
+const professorMateriaService = new ProfessorMateriaService(new FirebaseProfessorMateriaRepository());
+const tarefaService = new TarefaService(new FirebaseTarefaRepository(), new FirebaseEntregaRepository());
+const agendaService = new AgendaService(new FirebaseAgendaRepository());
+const comunicadoService = new ComunicadoService(new FirebaseComunicadoRepository());
+const frequenciaService = new FrequenciaService(new FirebaseFrequenciaRepository());
+const notaService = new NotaService(new FirebaseNotaRepository());
 
 const PIE_COLORS = ['#004085', '#007bff', '#66b0ff'];
 
@@ -44,63 +64,47 @@ export default function DashboardProfessor() {
 
     const fetchData = async () => {
       const uid = userData.uid;
-      const vinculosSnap = await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', uid)));
-      const vinculos = vinculosSnap.docs.map(d => d.data() as any);
-
+      
+      // Buscar vínculos do professor
+      const vinculos = await professorMateriaService.listarPorProfessor(uid);
       const turmaIds = [...new Set(vinculos.map(v => v.turmaId))];
 
-      const [tarefasSnap, aulasSnap, comunicadosSnap, freqSnap, notasSnap] = await Promise.all([
-        getDocs(query(collection(db, 'tarefas'), where('turmaId', 'in', turmaIds))),
-        getDocs(query(collection(db, 'agenda'), where('turmaId', 'in', turmaIds))),
-        getDocs(query(collection(db, 'comunicados'), where('turmaId', 'in', turmaIds))),
-        getDocs(query(collection(db, 'frequencias'), where('turmaId', 'in', turmaIds), where('professorId', '==', uid))),
-        getDocs(query(collection(db, 'notas'))),
+      if (turmaIds.length === 0) {
+        setLoading(false);
+        return;
+      }
+
+      // Buscar dados em paralelo
+      const [tarefas, aulas, comunicados, frequencias, todasNotas] = await Promise.all([
+        tarefaService.listarTarefasPorTurmas(turmaIds),
+        agendaService.listarPorTurmas(turmaIds),
+        comunicadoService.listarPorTurmas(turmaIds),
+        frequenciaService.listar(),
+        notaService.listarTodas(),
       ]);
 
-      setTarefasCount(tarefasSnap.size);
-      setAulasCount(aulasSnap.size);
-      setComunicadosCount(comunicadosSnap.size);
+      // Contar itens
+      setTarefasCount(tarefas.length);
+      setAulasCount(aulas.length);
+      setComunicadosCount(comunicados.length);
 
-      const freqData = freqSnap.docs.map(d => d.data());
-      const freqPorDia: Record<string, { presencas: number; faltas: number }> = {};
+      // Filtrar frequências do professor nas turmas vinculadas
+      const freqFiltradas = frequencias.filter(
+        f => turmaIds.includes(f.turmaId) && f.professorId === uid
+      );
 
-      freqData.forEach((f: any) => {
-        try {
-          const [ano, mes, dia] = f.data.split('-').map(Number);
-          const data = new Date(ano, mes - 1, dia);
-          const diaSemana = diasPt[format(data, 'EEEE')] || 'Outro';
-
-          if (!freqPorDia[diaSemana]) freqPorDia[diaSemana] = { presencas: 0, faltas: 0 };
-          f.presenca ? freqPorDia[diaSemana].presencas++ : freqPorDia[diaSemana].faltas++;
-        } catch { }
-      });
-
-      const diasOrdem = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira'];
-      const freqChart = Object.entries(freqPorDia).map(([dia, dados]) => ({
-        dia,
-        ...dados,
-        taxa: (dados.presencas + dados.faltas) > 0 ? (dados.presencas / (dados.presencas + dados.faltas)) * 100 : 0
-      })).sort((a, b) => diasOrdem.indexOf(a.dia) - diasOrdem.indexOf(b.dia));
-
+      // Agrupar frequências por dia da semana usando service
+      const freqChart = frequenciaService.agruparPorDiaSemana(freqFiltradas, diasPt);
       setFreqChartData(freqChart);
 
-      const notas = notasSnap.docs.map(d => d.data() as any);
-      const notasFiltradas = notas.filter(n =>
+      // Filtrar notas pelas matérias e turmas do professor
+      const notasFiltradas = todasNotas.filter(n =>
         vinculos.some(v => v.materiaId === n.materiaId && v.turmaId === n.turmaId)
       );
 
-      const mediasFinais = notasFiltradas.map(n => {
-        const parcial = n.notaParcial || 0;
-        const global = n.notaGlobal || 0;
-        const participacao = n.notaParticipacao || 0;
-        return Math.min(((parcial + global) / 2) + participacao, 10);
-      });
-
-      const desempenho = [
-        { faixa: 'Baixa (< 6)', value: mediasFinais.filter(m => m < 6).length },
-        { faixa: 'Regular (6–9)', value: mediasFinais.filter(m => m >= 6 && m < 9).length },
-        { faixa: 'Excelente (≥ 9)', value: mediasFinais.filter(m => m >= 9).length },
-      ];
+      // Calcular médias finais e distribuir por desempenho usando service
+      const mediasFinais = notaService.calcularMediasFinais(notasFiltradas);
+      const desempenho = notaService.distribuirPorDesempenho(mediasFinais);
 
       setDesempenhoChart(desempenho);
       setLoading(false);

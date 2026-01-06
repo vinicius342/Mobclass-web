@@ -7,20 +7,26 @@ import {
 } from 'react-bootstrap';
 import { PlusCircle, CheckCircle, Clock, FileEarmark, Calendar } from 'react-bootstrap-icons';
 import { X } from 'lucide-react';
-import {
-  collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy, Timestamp
-} from 'firebase/firestore';
-import { db } from '../services/firebase/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import Paginacao from '../components/common/Paginacao';
 import { Megaphone, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
-import {
-  loadTurmasByAnoLetivo,
-  loadVinculos,
-  type Turma as TurmaLoader,
-  type Vinculo as VinculoLoader
-} from '../services/data/dataLoaders';
+import { turmaService } from '../services/data/TurmaService';
+import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
+import { ComunicadoService } from '../services/data/ComunicadoService';
+import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
+import { FirebaseComunicadoRepository } from '../repositories/comunicado/FirebaseComunicadoRepository';
+import type { Turma } from '../models/Turma';
+import type { ProfessorMateria } from '../models/ProfessorMateria';
+import type { Comunicado } from '../models/Comunicado';
+import { truncateText } from '../utils/textUtils';
+
+// Instanciar services
+const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
+const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
+
+const comunicadoRepository = new FirebaseComunicadoRepository();
+const comunicadoService = new ComunicadoService(comunicadoRepository);
 
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -28,19 +34,6 @@ import { ptBR } from "date-fns/locale";
 import { registerLocale } from "react-datepicker";
 
 registerLocale("pt-BR", ptBR as any);
-
-interface Comunicado {
-  id: string;
-  assunto: string;
-  mensagem: string;
-  turmaId: string;
-  turmaNome: string;
-  data: Timestamp;
-  status: 'enviado' | 'agendado' | 'rascunho';
-  dataAgendamento?: Timestamp;
-}
-type Turma = TurmaLoader;
-type Vinculo = VinculoLoader;
 
 export default function Comunicados() {
   const { userData } = useAuth()!;
@@ -89,7 +82,6 @@ export default function Comunicados() {
 
   const [comunicados, setComunicados] = useState<Comunicado[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
-  const [, setVinculos] = useState<Vinculo[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [assunto, setAssunto] = useState('');
   const [mensagem, setMensagem] = useState('');
@@ -122,96 +114,76 @@ export default function Comunicados() {
     let listaTurmas: Turma[] = [];
 
     if (isAdmin) {
-      listaTurmas = await loadTurmasByAnoLetivo(anoLetivo);
+      listaTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
     } else {
-      const vincList = await loadVinculos(userData?.uid);
-      setVinculos(vincList);
+      const vincList = await professorMateriaService.listarPorProfessor(userData?.uid || '');
 
-      const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-      const todasTurmas = await loadTurmasByAnoLetivo(anoLetivo);
-      listaTurmas = todasTurmas.filter(t => turmaIds.includes(t.id));
+      const turmaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.turmaId))];
+      const todasTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+      listaTurmas = todasTurmas.filter((t: Turma) => turmaIds.includes(t.id));
     }
 
     setTurmas(listaTurmas);
 
-    const comunicadosQuery = isAdmin
-      ? query(collection(db, 'comunicados'), orderBy('data', 'desc'))
-      : query(collection(db, 'comunicados'), where('turmaId', 'in', listaTurmas.map(t => t.id)), orderBy('data', 'desc'));
-
-    const snap = await getDocs(comunicadosQuery);
-    const lista = snap.docs.map(d => ({
-      id: d.id,
-      ...(d.data() as any),
-      status: d.data().status || 'enviado'
-    })) as Comunicado[];
-    setComunicados(lista);
+    let comunicadosList: Comunicado[];
+    if (isAdmin) {
+      comunicadosList = await comunicadoService.listar();
+    } else {
+      const turmaIds = listaTurmas.map(t => t.id);
+      comunicadosList = turmaIds.length > 0 
+        ? await comunicadoService.listarPorTurmas(turmaIds)
+        : [];
+    }
+    setComunicados(comunicadosList);
   };
 
   const handleSalvar = async () => {
-    if (!assunto || !mensagem) return;
+    // Validar dados
+    const validacao = comunicadoService.validarComunicado({
+      assunto,
+      mensagem,
+      turmasSelecionadas,
+      status,
+      dataAgendamento,
+    });
 
-    // Validar data de agendamento se status for agendado
-    if (status === 'agendado' && !dataAgendamento) {
-      setToast({ show: true, message: 'Data de agendamento é obrigatória para comunicados agendados.', variant: 'danger' });
-      return;
-    }
-
-    // Validar se pelo menos uma turma foi selecionada
-    if (turmasSelecionadas.length === 0) {
-      setToast({ show: true, message: 'Selecione pelo menos uma turma.', variant: 'danger' });
+    if (!validacao.valido) {
+      setToast({ show: true, message: validacao.erro || 'Erro de validação', variant: 'danger' });
       return;
     }
 
     try {
       if (editandoId) {
-        // No modo edição, mantém o comportamento antigo (uma turma)
+        // Modo edição
         const turmaSelecionada = turmas.find(t => t.id === turmaId);
-        const payload: any = {
+        const payload = comunicadoService.prepararPayloadAtualizacao({
           assunto,
           mensagem,
           turmaId,
           turmaNome: turmaSelecionada?.nome || '',
-          data: Timestamp.now(),
           status,
-        };
+          dataAgendamento: dataAgendamento || undefined,
+        });
 
-        // Adicionar data de agendamento se status for agendado
-        if (status === 'agendado' && dataAgendamento) {
-          payload.dataAgendamento = Timestamp.fromDate(dataAgendamento);
-        }
-
-        await updateDoc(doc(db, 'comunicados', editandoId), payload);
+        await comunicadoService.atualizar(editandoId, payload);
         setToast({ show: true, message: 'Comunicado atualizado com sucesso!', variant: 'success' });
       } else {
-        // No modo criação, cria um comunicado para cada turma selecionada
-        let turmasParaCriar: string[] = [];
+        // Modo criação - determinar turmas
+        let turmasParaCriar = turmasSelecionadas.includes('todas')
+          ? turmasDisponiveis
+          : turmas.filter(t => turmasSelecionadas.includes(t.id));
 
-        // Se "todas" foi selecionado, usar todas as turmas disponíveis
-        if (turmasSelecionadas.includes('todas')) {
-          turmasParaCriar = turmasDisponiveis.map(t => t.id);
-        } else {
-          turmasParaCriar = turmasSelecionadas;
-        }
-
-        for (const turmaIdSelecionada of turmasParaCriar) {
-          const turmaSelecionada = turmas.find(t => t.id === turmaIdSelecionada);
-          const payload: any = {
+        const totalCriados = await comunicadoService.criarParaMultiplasTurmas(
+          {
             assunto,
             mensagem,
-            turmaId: turmaIdSelecionada,
-            turmaNome: turmaSelecionada?.nome || '',
-            data: Timestamp.now(),
             status,
-          };
+            dataAgendamento: dataAgendamento || undefined,
+          },
+          turmasParaCriar
+        );
 
-          // Adicionar data de agendamento se status for agendado
-          if (status === 'agendado' && dataAgendamento) {
-            payload.dataAgendamento = Timestamp.fromDate(dataAgendamento);
-          }
-
-          await addDoc(collection(db, 'comunicados'), payload);
-        }
-        setToast({ show: true, message: `Comunicado criado para ${turmasParaCriar.length} turma(s)!`, variant: 'success' });
+        setToast({ show: true, message: `Comunicado criado para ${totalCriados} turma(s)!`, variant: 'success' });
       }
       setShowModal(false);
       limparFormulario();
@@ -242,7 +214,7 @@ export default function Comunicados() {
   const handleExcluir = async (id: string) => {
     if (!window.confirm('Excluir este comunicado?')) return;
     try {
-      await deleteDoc(doc(db, 'comunicados', id));
+      await comunicadoService.deletar(id);
       setToast({ show: true, message: 'Comunicado excluído.', variant: 'success' });
       fetchData();
     } catch (err) {
@@ -273,24 +245,14 @@ export default function Comunicados() {
     setExpandedMessages(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const truncateText = (text: string, maxLength: number) => {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
-  };
-
   const turmasDisponiveis = turmas;
-  const assuntosDisponiveis = [...new Set(comunicados.map(c => c.assunto))].sort();
+  const assuntosDisponiveis = comunicadoService.extrairAssuntos(comunicados);
 
-  const comunicadosFiltrados = comunicados.filter(c => {
-    const matchBusca = c.assunto.toLowerCase().includes(busca.toLowerCase()) ||
-      c.mensagem.toLowerCase().includes(busca.toLowerCase()) ||
-      (c.turmaNome || '').toLowerCase().includes(busca.toLowerCase());
-
-    const matchTurma = filtroTurma === '' || c.turmaId === filtroTurma;
-    const matchAssunto = filtroAssunto === '' || c.assunto === filtroAssunto;
-    const matchStatus = filtroStatus === '' || c.status === filtroStatus;
-
-    return matchBusca && matchTurma && matchAssunto && matchStatus;
+  const comunicadosFiltrados = comunicadoService.aplicarFiltros(comunicados, {
+    busca,
+    turmaId: filtroTurma,
+    assunto: filtroAssunto,
+    status: filtroStatus,
   });
 
   const totalPaginas = Math.ceil(comunicadosFiltrados.length / itensPorPagina);

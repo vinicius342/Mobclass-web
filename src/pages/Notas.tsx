@@ -1,16 +1,23 @@
 // src/pages/Notas.tsx - Atualizado com turmas via professores_materias
-import { JSX, useEffect, useState } from 'react';
+import { JSX, useEffect, useState, useMemo } from 'react';
 import AppLayout from '../components/layout/AppLayout';
 import {
   Container, Row, Col, Button, Form, Table, Spinner, Toast, ToastContainer,
   InputGroup, FormControl,
   Card
 } from 'react-bootstrap';
-import {
-  collection, getDocs, addDoc, updateDoc, doc, Timestamp,
-  query, where, getDoc
-} from 'firebase/firestore';
-import { db } from '../services/firebase/firebase';
+import { Aluno } from '../models/Aluno';
+import { Turma } from '../models/Turma';
+import { Nota } from '../models/Nota';
+import { NotaService } from '../services/data/NotaService';
+import { FirebaseNotaRepository } from '../repositories/nota/FirebaseNotaRepository';
+import { turmaService } from '../services/data/TurmaService';
+import { AlunoService } from '../services/usuario/AlunoService';
+import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
+import { MateriaService, MateriaComTurma } from '../services/data/MateriaService';
+import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
+import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
+import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivo } from '../contexts/AnoLetivoContext';
 import { Save, Check, Undo, BookOpen } from 'lucide-react';
@@ -18,30 +25,33 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircleExclamation } from '@fortawesome/free-solid-svg-icons';
 import NotasVisualizacao from '../components/notas/NotasVisualizacao';
 
-interface Turma { id: string; nome: string; }
-interface Aluno {
-  uid: string;
-  nome: string;
-  turmaId: string;
-  historicoTurmas?: { [anoLetivo: string]: string }; // Histórico de turmas por ano letivo
-}
-interface Materia { id: string; nome: string; turmaId?: string; }
-interface Nota {
-  id: string; turmaId: string; materiaId: string; bimestre: string;
-  notaParcial: number; notaGlobal: number; notaParticipacao: number;
-  notaRecuperacao?: number;
-  alunoUid: string; nomeAluno: string; dataLancamento: string;
-}
-
 export default function Notas(): JSX.Element {
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
   const userId = userData?.uid;
   const { anoLetivo } = useAnoLetivo();
 
+  // Inicializar services
+  const notaService = useMemo(
+    () => new NotaService(new FirebaseNotaRepository(), new FirebaseMateriaRepository()),
+    []
+  );
+  const alunoService = useMemo(
+    () => new AlunoService(new FirebaseAlunoRepository()),
+    []
+  );
+  const materiaService = useMemo(
+    () => new MateriaService(new FirebaseMateriaRepository()),
+    []
+  );
+  const professorMateriaService = useMemo(
+    () => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()),
+    []
+  );
+
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
-  const [materias, setMaterias] = useState<Materia[]>([]);
+  const [materias, setMaterias] = useState<MateriaComTurma[]>([]);
   const [notas, setNotas] = useState<Nota[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtroTurma, setFiltroTurma] = useState('');
@@ -56,132 +66,85 @@ export default function Notas(): JSX.Element {
   const [alunosSalvos, setAlunosSalvos] = useState<string[]>([]);
 
 
-  // Função auxiliar para obter a turma do aluno no ano letivo específico
-  const getTurmaAlunoNoAno = (aluno: Aluno, ano: number): string => {
-    const anoStr = ano.toString();
-
-    // Verificar se existe histórico de turmas
-    if (aluno.historicoTurmas && aluno.historicoTurmas[anoStr]) {
-      return aluno.historicoTurmas[anoStr];
-    }
-
-    // Fallback para turmaId atual (compatibilidade com dados antigos)
-    return aluno.turmaId;
-  };
-
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
 
-      let turmaDocs = [];
-      let materiaIds: string[] = [];
-      let materiasList: Materia[] = [];
+      try {
+        let turmasList: Turma[] = [];
+        let materiasList: MateriaComTurma[] = [];
+        let materiaIds: string[] = [];
 
-      if (isAdmin) {
-        const turmasSnap = await getDocs(collection(db, 'turmas'));
-        // Filtra turmas pelo ano letivo selecionado (convertendo para número)
-        turmaDocs = turmasSnap.docs.filter(doc => Number(doc.data()?.anoLetivo) === anoLetivo);
+        if (isAdmin) {
+          // Buscar todas as turmas do ano letivo
+          const todasTurmas = await turmaService.listarTodas();
+          turmasList = todasTurmas.filter((t: Turma) => Number(t.anoLetivo) === anoLetivo);
 
-        // Busca os vínculos de professores_materias para as turmas do ano letivo
-        const turmaIdsAnoLetivo = turmaDocs.map(d => d.id);
-        const vinculosSnap = await getDocs(collection(db, 'professores_materias'));
-        const vinculosFiltrados = vinculosSnap.docs
-          .map(d => ({ id: d.id, ...d.data() as any }))
-          .filter(v => turmaIdsAnoLetivo.includes(v.turmaId));
+          // Buscar vínculos e matérias
+          const turmaIdsAnoLetivo = turmasList.map(t => t.id);
+          const todosVinculos = await professorMateriaService.listar();
+          const todasMaterias = await materiaService.listar();
 
-        // Busca as matérias e adiciona o turmaId vindo do vínculo
-        const materiasSnap = await getDocs(collection(db, 'materias'));
-        const materiasMap = new Map(materiasSnap.docs.map(d => [d.id, { id: d.id, ...d.data() as any }]));
+          // Construir matérias com turmas usando o service
+          materiasList = materiaService.construirMateriasComTurmas(
+            todasMaterias,
+            todosVinculos,
+            turmaIdsAnoLetivo
+          );
+          materiaIds = Array.from(new Set(materiasList.map(m => m.id)));
+        } else {
+          // Professor: buscar vínculos do professor
+          const vinculosProfessor = await professorMateriaService.listarPorProfessor(userId!);
 
-        // Cria lista de matérias com turmaId baseado nos vínculos
-        const materiasComTurma = new Map<string, Materia>();
-        vinculosFiltrados.forEach(vinculo => {
-          const materia = materiasMap.get(vinculo.materiaId);
-          if (materia) {
-            const key = `${materia.id}_${vinculo.turmaId}`;
-            materiasComTurma.set(key, {
-              id: materia.id,
-              nome: materia.nome,
-              turmaId: vinculo.turmaId
-            });
-          }
-        });
+          // Buscar turmas do ano letivo
+          const turmaIdsVinculados = [...new Set(vinculosProfessor.map(v => v.turmaId))];
+          const turmasVinculadas = await Promise.all(
+            turmaIdsVinculados.map(id => turmaService.buscarPorId(id))
+          );
+          turmasList = turmasVinculadas
+            .filter((t): t is Turma => t !== null && Number(t.anoLetivo) === anoLetivo);
 
-        materiasList = Array.from(materiasComTurma.values());
-        materiaIds = Array.from(new Set(materiasList.map(m => m.id)));
-      } else {
-        const vincSnap = await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userId)));
-        const vincList = vincSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+          // Filtrar vínculos para apenas turmas do ano letivo
+          const turmaIdsAnoLetivo = turmasList.map(t => t.id);
 
-        const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-        // Busca as turmas e filtra pelo ano letivo (convertendo para número)
-        turmaDocs = (await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))))).filter(doc => doc.exists() && Number(doc.data()?.anoLetivo) === anoLetivo);
+          // Buscar matérias e construir lista com turmaId usando o service
+          const todasMaterias = await materiaService.listar();
+          materiasList = materiaService.construirMateriasComTurmas(
+            todasMaterias,
+            vinculosProfessor,
+            turmaIdsAnoLetivo
+          );
+          materiaIds = Array.from(new Set(materiasList.map(m => m.id)));
+        }
 
-        // Filtra vínculos para apenas turmas do ano letivo selecionado
-        const turmaIdsAnoLetivo = turmaDocs.map(d => d.id);
-        const vinculosFiltrados = vincList.filter(v => turmaIdsAnoLetivo.includes(v.turmaId));
+        // Buscar todos os alunos ativos
+        const todosAlunos = await alunoService['alunoRepository'].findAll();
+        const alunosAtivos = todosAlunos
+          .filter((a: Aluno) => a.status !== 'Inativo')
+          .sort((a: Aluno, b: Aluno) => a.nome.localeCompare(b.nome));
 
-        // Busca as matérias e adiciona o turmaId vindo do vínculo
-        materiaIds = [...new Set(vinculosFiltrados.map(v => v.materiaId))];
-        const materiasSnap = await Promise.all(
-          materiaIds.map(async id => {
-            const m = await getDoc(doc(db, 'materias', id));
-            return { id: m.id, ...(m.data() as any) };
-          })
-        );
+        // Buscar notas
+        const todasNotas = await notaService.listarTodas();
+        const notasFiltradas = isAdmin
+          ? todasNotas
+          : todasNotas.filter((n: Nota) => materiaIds.includes(n.materiaId));
 
-        // Cria lista de matérias com turmaId baseado nos vínculos
-        const materiasComTurma = new Map<string, Materia>();
-        vinculosFiltrados.forEach(vinculo => {
-          const materia = materiasSnap.find(m => m.id === vinculo.materiaId);
-          if (materia) {
-            const key = `${materia.id}_${vinculo.turmaId}`;
-            materiasComTurma.set(key, {
-              id: materia.id,
-              nome: materia.nome,
-              turmaId: vinculo.turmaId
-            });
-          }
-        });
+        // Mapear notas com nome do aluno
+        const notasComNome = notasFiltradas.map((nota: Nota) => ({
+          ...nota,
+          nomeAluno: alunosAtivos.find((a: Aluno) => a.id === nota.alunoUid)?.nome || 'Desconhecido',
+        }));
 
-        materiasList = Array.from(materiasComTurma.values());
+        setTurmas(turmasList.sort((a, b) => a.nome.localeCompare(b.nome)));
+        setAlunos(alunosAtivos);
+        setMaterias(materiasList as any); // Type assertion necessária para compatibilidade com estrutura legada
+        setNotas(notasComNome);
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+        setToast({ show: true, message: 'Erro ao carregar dados', variant: 'danger' });
+      } finally {
+        setLoading(false);
       }
-
-      const alunosSnap = await getDocs(collection(db, 'alunos'));
-      const alunosList = alunosSnap.docs
-        .map(d => ({ uid: d.id, ...(d.data() as any) }))
-        .filter(aluno => (aluno as any).status !== 'Inativo') as Aluno[]; // Excluir usuários inativos
-
-      const notasSnap = await getDocs(collection(db, 'notas'));
-      const notasDocs = isAdmin ? notasSnap.docs : notasSnap.docs.filter(doc => materiaIds.includes(doc.data().materiaId));
-
-      const notasList = notasDocs.map(docSnap => {
-        const data = docSnap.data() as any;
-        const alunoData = alunosList.find(a => a.uid === data.alunoUid);
-        return {
-          id: docSnap.id,
-          turmaId: data.turmaId,
-          materiaId: data.materiaId,
-          bimestre: data.bimestre,
-          notaParcial: data.notaParcial,
-          notaGlobal: data.notaGlobal,
-          notaParticipacao: data.notaParticipacao,
-          notaRecuperacao: data.notaRecuperacao,
-          alunoUid: data.alunoUid,
-          nomeAluno: alunoData?.nome || 'Desconhecido',
-          dataLancamento: data.dataLancamento?.toDate().toLocaleDateString('pt-BR') || '',
-        };
-      });
-
-      setTurmas(
-        turmaDocs
-          .map(d => ({ id: d.id, nome: d.data()?.nome || '-' }))
-          .sort((a, b) => a.nome.localeCompare(b.nome))
-      );
-      setAlunos(alunosList);
-      setMaterias(materiasList);
-      setNotas(notasList);
-      setLoading(false);
     }
     fetchData();
   }, [userData, anoLetivo]);
@@ -199,17 +162,18 @@ export default function Notas(): JSX.Element {
       return;
     }
     const alunosFiltrados = alunos
-      .filter(a => getTurmaAlunoNoAno(a, anoLetivo) === filtroTurma && (a as any).status !== 'Inativo') // Filtrar por histórico de turmas e excluir inativos
+      .filter(a => alunoService.obterTurmaDoAno(a, anoLetivo) === filtroTurma && (a as any).status !== 'Inativo') // Filtrar por histórico de turmas e excluir inativos
       .sort((a, b) => a.nome.localeCompare(b.nome));
     const newEdit: Record<string, any> = {};
     alunosFiltrados.forEach(a => {
-      const existing = notas.find(n =>
-        n.turmaId === filtroTurma &&
-        n.materiaId === filtroMateria &&
-        n.bimestre === filtroBimestre &&
-        n.alunoUid === a.uid
+      const existing = notaService.buscarNotaPorFiltros(
+        notas,
+        filtroTurma,
+        filtroMateria,
+        filtroBimestre,
+        a.id
       );
-      newEdit[a.uid] = existing
+      newEdit[a.id] = existing
         ? {
           id: existing.id,
           notaParcial: existing.notaParcial?.toString() ?? '',
@@ -227,33 +191,22 @@ export default function Notas(): JSX.Element {
   };
 
   const saveRecord = async (uid: string, data: any) => {
-    const parseOrNull = (val: string) => val.trim() !== '' && !isNaN(Number(val)) ? parseFloat(val) : null;
-
-    const payload = {
+    const notaPreparada = notaService.prepararDadosNota({
+      ...data,
       turmaId: filtroTurma,
       alunoUid: uid,
       materiaId: filtroMateria,
       bimestre: filtroBimestre,
-      notaParcial: parseOrNull(data.notaParcial),
-      notaGlobal: parseOrNull(data.notaGlobal),
-      notaParticipacao: parseOrNull(data.notaParticipacao),
-      notaRecuperacao: parseOrNull(data.notaRecuperacao),
-      dataLancamento: Timestamp.now(),
-    };
+    });
 
-    if (data.id) {
-      await updateDoc(doc(db, 'notas', data.id), payload);
-    } else {
-      await addDoc(collection(db, 'notas'), payload);
-    }
+    await notaService.salvar(notaPreparada);
   };
 
   const handleSave = async (uid: string) => {
     if (!filtroTurma || !filtroMateria || !filtroBimestre) return;
     const data = notasEdit[uid];
-    const hasAnyNota = [data.notaParcial, data.notaGlobal, data.notaParticipacao].some(val => val.trim() !== '');
 
-    if (!hasAnyNota) {
+    if (!notaService.validarNotaPreenchida(data)) {
       setToast({ show: true, message: 'Preencha ao menos um campo de nota', variant: 'danger' });
       return;
     }
@@ -278,10 +231,7 @@ export default function Notas(): JSX.Element {
     setSaving(true);
     try {
       for (const [uid, data] of Object.entries(notasEdit)) {
-        const hasAnyNota = [data.notaParcial, data.notaGlobal, data.notaParticipacao]
-          .some(val => typeof val === 'string' && val.trim() !== '');
-
-        if (hasAnyNota) {
+        if (notaService.validarNotaPreenchida(data)) {
           await saveRecord(uid, data);
         }
       }
@@ -301,15 +251,15 @@ export default function Notas(): JSX.Element {
   const [activeTab, setActiveTab] = useState<'lancamento-notas' | 'visualizacao-resultados'>('lancamento-notas');
 
   function campoAlterado(uid: string, campo: string): boolean {
-    const notaOriginal = notas.find(n =>
-      n.turmaId === filtroTurma &&
-      n.materiaId === filtroMateria &&
-      n.bimestre === filtroBimestre &&
-      n.alunoUid === uid
+    const notaOriginal = notaService.buscarNotaPorFiltros(
+      notas,
+      filtroTurma,
+      filtroMateria,
+      filtroBimestre,
+      uid
     );
-    const valorOriginal = notaOriginal ? ((notaOriginal as Record<string, any>)[campo] ?? '').toString() : '';
-    const valorEditado = notasEdit[uid]?.[campo] ?? '';
-    return valorEditado !== valorOriginal && valorEditado !== '';
+    const editado = notasEdit[uid];
+    return notaService.campoAlterado(editado, notaOriginal, campo);
   }
 
 
@@ -403,18 +353,11 @@ export default function Notas(): JSX.Element {
                 <Col md={3}>
                   <Form.Select value={filtroMateria} onChange={e => setFiltroMateria(e.target.value)}>
                     <option value="">Selecione a Matéria</option>
-                    {materias
-                      .filter(m => !filtroTurma || m.turmaId === filtroTurma)
-                      .reduce((unique, m) => {
-                        // Remove duplicatas: apenas uma matéria por ID
-                        if (!unique.find(item => item.id === m.id)) {
-                          unique.push(m);
-                        }
-                        return unique;
-                      }, [] as Materia[])
-                      .map(m => (
-                        <option key={m.id} value={m.id}>{m.nome}</option>
-                      ))}
+                    {materiaService.removerDuplicatas(
+                      materias.filter(m => !filtroTurma || m.turmaId === filtroTurma)
+                    ).map(m => (
+                      <option key={m.id} value={m.id}>{m.nome}</option>
+                    ))}
                   </Form.Select>
                 </Col>
                 <Col md={3}>
@@ -465,9 +408,9 @@ export default function Notas(): JSX.Element {
                       </thead>
                       <tbody>
                         {Object.entries(notasEdit)
-                          .filter(([uid]) => alunos.find(a => a.uid === uid)?.nome.toLowerCase().includes(busca.toLowerCase()))
+                          .filter(([uid]) => alunos.find(a => a.id === uid)?.nome.toLowerCase().includes(busca.toLowerCase()))
                           .map(([uid, nota]) => {
-                            const aluno = alunos.find(a => a.uid === uid)!;
+                            const aluno = alunos.find(a => a.id === uid)!;
                             return (
                               <tr key={uid} className='align-middle'>
                                 <td className='aluno-nome-frequencia ms-2' style={{ fontSize: '1rem', alignItems: 'center' }}>
@@ -528,9 +471,9 @@ export default function Notas(): JSX.Element {
                 {/* Versão Mobile */}
                 <div className="notas-mobile-cards d-block d-md-none">
                   {Object.entries(notasEdit)
-                    .filter(([uid]) => alunos.find(a => a.uid === uid)?.nome.toLowerCase().includes(busca.toLowerCase()))
+                    .filter(([uid]) => alunos.find(a => a.id === uid)?.nome.toLowerCase().includes(busca.toLowerCase()))
                     .map(([uid, nota]) => {
-                      const aluno = alunos.find(a => a.uid === uid)!;
+                      const aluno = alunos.find(a => a.id === uid)!;
                       return (
                         <div key={uid} className="notas-aluno-card">
                           <div className="notas-aluno-header">
@@ -633,18 +576,11 @@ export default function Notas(): JSX.Element {
                 <Col md={3}>
                   <Form.Select value={filtroMateria} onChange={e => setFiltroMateria(e.target.value)}>
                     <option value="">Selecione a Matéria</option>
-                    {materias
-                      .filter(m => !filtroTurma || m.turmaId === filtroTurma)
-                      .reduce((unique, m) => {
-                        // Remove duplicatas: apenas uma matéria por ID
-                        if (!unique.find(item => item.id === m.id)) {
-                          unique.push(m);
-                        }
-                        return unique;
-                      }, [] as Materia[])
-                      .map(m => (
-                        <option key={m.id} value={m.id}>{m.nome}</option>
-                      ))}
+                    {materiaService.removerDuplicatas(
+                      materias.filter(m => !filtroTurma || m.turmaId === filtroTurma)
+                    ).map(m => (
+                      <option key={m.id} value={m.id}>{m.nome}</option>
+                    ))}
                   </Form.Select>
                 </Col>
                 <Col md={3}>
@@ -705,8 +641,8 @@ export default function Notas(): JSX.Element {
               setBusca={setBusca}
               turmas={turmas}
               materias={materias}
-              alunos={alunos}
-              notas={notas}
+              alunos={alunos as any} // Type assertion para compatibilidade temporária
+              notas={notas as any} // Type assertion para compatibilidade temporária
               isAdmin={isAdmin}
               paginaAtualPorBimestre={paginaAtualPorBimestre}
               itensPorPagina={itensPorPagina}

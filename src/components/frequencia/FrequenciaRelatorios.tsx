@@ -1,30 +1,20 @@
 // src/components/frequencia/FrequenciaRelatorios.tsx
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, Row, Col, Form, Button, Spinner, Modal, Dropdown } from 'react-bootstrap';
-import { collection, getDocs, query, where, doc, getDoc, Query, DocumentData } from 'firebase/firestore';
-import { db } from '../../services/firebase/firebase';
+import { Aluno } from '../../models/Aluno';
+import { Turma } from '../../models/Turma';
+import { Materia } from '../../models/Materia';
+import { Frequencia } from '../../models/Frequencia';
+import { FrequenciaService } from '../../services/FrequenciaService';
+import { FirebaseFrequenciaRepository } from '../../repositories/frequencia/FirebaseFrequenciaRepository';
+import { FirebaseAlunoRepository } from '../../repositories/aluno/FirebaseAlunoRepository';
+import { calcularStatusFrequencia } from '../../utils/frequenciaUtils';
 import DatePicker from "react-datepicker";
 import { CheckCircle, XCircle } from 'react-bootstrap-icons';
 import { AlertTriangle, User } from "lucide-react";
 import { FaClockRotateLeft } from 'react-icons/fa6';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend, BarChart, Bar, XAxis, YAxis } from 'recharts';
 import Paginacao from '../common/Paginacao';
-
-interface Aluno {
-  id: string;
-  nome: string;
-  turmaId: string;
-}
-
-interface Turma {
-  id: string;
-  nome: string;
-}
-
-interface Materia {
-  id: string;
-  nome: string;
-}
 
 interface FrequenciaRelatoriosProps {
   turmas: Turma[];
@@ -33,6 +23,15 @@ interface FrequenciaRelatoriosProps {
 }
 
 export default function FrequenciaRelatorios({ turmas, materias, onToast }: FrequenciaRelatoriosProps) {
+  // Inicializar services
+  const frequenciaService = useMemo(
+    () => new FrequenciaService(new FirebaseFrequenciaRepository()),
+    []
+  );
+  const alunoRepository = useMemo(
+    () => new FirebaseAlunoRepository(),
+    []
+  );
   // Estados de filtros
   const [turmaId, setTurmaId] = useState('');
   const [materiaId, setMateriaId] = useState('');
@@ -42,7 +41,7 @@ export default function FrequenciaRelatorios({ turmas, materias, onToast }: Freq
 
   // Estados de dados
   const [alunosRelatorio, setAlunosRelatorio] = useState<Aluno[]>([]);
-  const [registrosRelatorio, setRegistrosRelatorio] = useState<any[]>([]);
+  const [registrosRelatorio, setRegistrosRelatorio] = useState<Frequencia[]>([]);
   const [loadingRelatorio, setLoadingRelatorio] = useState(false);
 
   // Estados de gráficos
@@ -84,118 +83,79 @@ export default function FrequenciaRelatorios({ turmas, materias, onToast }: Freq
     }
 
     try {
-      // Buscar alunos
-      let alunosSnap;
+      // Buscar alunos usando repository
+      let listaAlunos: Aluno[];
       if (turmaId) {
-        alunosSnap = await getDocs(query(collection(db, 'alunos'), where('turmaId', '==', turmaId)));
+        listaAlunos = await alunoRepository.findByTurmaId(turmaId);
       } else {
-        alunosSnap = await getDocs(collection(db, 'alunos'));
+        listaAlunos = await alunoRepository.findAll();
       }
 
-      const listaAlunos: Aluno[] = alunosSnap.docs
-        .map(d => ({ id: d.id, ...(d.data() as any) }))
-        .filter(aluno => (aluno as any).status !== 'Inativo')
+      // Filtrar ativos e ordenar
+      listaAlunos = listaAlunos
+        .filter((aluno: any) => aluno.status !== 'Inativo')
         .sort((a, b) => a.nome.localeCompare(b.nome));
 
       setAlunosRelatorio(listaAlunos);
 
-      // Construir query de frequências
-      let q: Query<DocumentData> = collection(db, 'frequencias');
+      // Buscar frequências por período
+      let frequencias: Frequencia[];
+      const ano = new Date().getFullYear();
 
       if (tipoPeriodo === 'hoje') {
         const hoje = new Date().toISOString().split('T')[0];
-        q = query(q, where('data', '==', hoje));
-      }
-
-      if (tipoPeriodo === 'mes' && periodoMes) {
+        frequencias = await frequenciaService.listarPorTurmaMateria(
+          turmaId || '',
+          materiaId === 'all' ? '' : materiaId,
+          hoje
+        );
+        if (!turmaId || materiaId === 'all') {
+          const dataInicio = hoje;
+          const dataFim = hoje;
+          frequencias = await frequenciaService.buscarPorPeriodo(dataInicio, dataFim);
+        }
+      } else if (tipoPeriodo === 'mes' && periodoMes) {
         const indexMes = [
           'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
           'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
         ].indexOf(periodoMes);
-        const now = new Date();
-        const start = new Date(now.getFullYear(), indexMes, 1);
-        const end = new Date(now.getFullYear(), indexMes + 1, 0);
-        q = query(
-          q,
-          where('data', '>=', start.toISOString().split('T')[0]),
-          where('data', '<=', end.toISOString().split('T')[0])
-        );
-      }
-
-      if (tipoPeriodo === 'personalizado' && dataPeriodo[0] && dataPeriodo[1]) {
+        const inicio = new Date(ano, indexMes, 1);
+        const fim = new Date(ano, indexMes + 1, 0);
+        const inicioStr = inicio.toISOString().split('T')[0];
+        const fimStr = fim.toISOString().split('T')[0];
+        frequencias = await frequenciaService.buscarPorPeriodo(inicioStr, fimStr);
+      } else if (tipoPeriodo === 'personalizado' && dataPeriodo[0] && dataPeriodo[1]) {
         const inicioStr = dataPeriodo[0].toISOString().split('T')[0];
         const fimStr = dataPeriodo[1].toISOString().split('T')[0];
-        q = query(
-          q,
-          where('data', '>=', inicioStr),
-          where('data', '<=', fimStr)
-        );
+        frequencias = await frequenciaService.buscarPorPeriodo(inicioStr, fimStr);
+      } else {
+        frequencias = [];
       }
 
-      const snapshot = await getDocs(q);
-      let registros = snapshot.docs.map(doc => doc.data());
-
-      // Filtrar por turma e matéria
-      registros = registros.filter(
-        reg => (!turmaId || reg.turmaId === turmaId) &&
-          (materiaId === 'all' || reg.materiaId === materiaId) &&
-          listaAlunos.some(aluno => aluno.id === reg.alunoId)
+      // Filtrar por turma, matéria e alunos
+      let registrosFiltrados = frequencias.filter(
+        freq => (!turmaId || freq.turmaId === turmaId) &&
+          (materiaId === 'all' || freq.materiaId === materiaId) &&
+          listaAlunos.some(aluno => aluno.id === freq.alunoId)
       );
 
-      setRegistrosRelatorio(registros);
+      setRegistrosRelatorio(registrosFiltrados);
 
-      // Calcular gráfico da turma
-      const total = registros.length;
-      const presencas = registros.filter(r => r.presenca).length;
-      const presencaPercentual = total > 0 ? Number(((presencas / total) * 100).toFixed(1)) : 0;
-      const ausentesPercentual = 100 - presencaPercentual;
-
+      // Calcular estatísticas gerais usando service
+      const estatisticas = frequenciaService.calcularEstatisticasGerais(registrosFiltrados);
       setFrequenciaGrafico({
-        presenca: presencaPercentual,
-        ausencia: ausentesPercentual
+        presenca: estatisticas.presencaPercentual,
+        ausencia: estatisticas.ausenciaPercentual
       });
 
-      // Calcular top 5 alunos
-      const alunosResumo: Record<string, { nome: string, presencas: number, total: number }> = {};
+      // Calcular top 5 alunos usando service
+      const topAlunos = frequenciaService.calcularTopAlunosPresenca(
+        registrosFiltrados,
+        listaAlunos.map(a => ({ id: a.id, nome: a.nome })),
+        5
+      );
+      setMelhoresAlunosGrafico(topAlunos);
 
-      for (const reg of registros) {
-        const alunoId = reg.alunoId;
-        let nome = listaAlunos.find(a => a.id === alunoId)?.nome;
-
-        if (!nome) {
-          try {
-            const docSnap = await getDoc(doc(db, 'alunos', alunoId));
-            if (docSnap.exists()) {
-              const data = docSnap.data();
-              if (data.status !== 'Inativo') {
-                nome = data.nome || 'Desconhecido';
-              }
-            }
-          } catch {
-            nome = 'Desconhecido';
-          }
-        }
-
-        const primeiroNome = nome?.split(' ')[0] || 'Desconhecido';
-
-        if (!alunosResumo[alunoId]) {
-          alunosResumo[alunoId] = { nome: primeiroNome, presencas: 0, total: 0 };
-        }
-
-        if (reg.presenca) alunosResumo[alunoId].presencas += 1;
-        alunosResumo[alunoId].total += 1;
-      }
-
-      const melhoresAlunos = Object.entries(alunosResumo)
-        .map(([alunoId, { nome, presencas, total }]) => ({
-          id: alunoId,
-          nome,
-          percentual: total > 0 ? Number(((presencas / total) * 100).toFixed(1)) : 0
-        }))
-        .sort((a, b) => b.percentual - a.percentual)
-        .slice(0, 5);
-
-      setMelhoresAlunosGrafico(melhoresAlunos);
     } catch (error) {
       console.error('Erro ao aplicar filtros:', error);
       onToast('Erro ao buscar dados de frequência.', 'danger');
@@ -205,33 +165,34 @@ export default function FrequenciaRelatorios({ turmas, materias, onToast }: Freq
   };
 
   const processarDadosAlunos = () => {
+    // Filtrar por nome
     let alunosFiltrados = alunosRelatorio.filter(a =>
       buscaNome.trim() === '' || a.nome.toLowerCase().includes(buscaNome.toLowerCase())
     );
 
-    const alunosComDados = alunosFiltrados.map(aluno => {
-      const registrosAluno = registrosRelatorio.filter(r => r.alunoId === aluno.id);
-      const presencas = registrosAluno.filter(r => r.presenca).length;
-      const faltas = registrosAluno.filter(r => !r.presenca).length;
-      const total = registrosAluno.length;
-      const percentual = total > 0 ? Number(((presencas / total) * 100).toFixed(1)) : 0;
+    // Calcular resumos usando service
+    const resumos = frequenciaService.calcularResumosPorAluno(
+      alunosFiltrados.map(a => ({ id: a.id, nome: a.nome })),
+      registrosRelatorio
+    );
 
-      return { aluno, presencas, faltas, percentual };
-    });
-
-    // Ordenar
-    alunosComDados.sort((a, b) => {
-      if (ordenacaoRelatorio === 'nome') return a.aluno.nome.localeCompare(b.aluno.nome);
-      if (ordenacaoRelatorio === 'presencas') return b.presencas - a.presencas;
-      if (ordenacaoRelatorio === 'faltas') return b.faltas - a.faltas;
-      if (ordenacaoRelatorio === 'percentual') return b.percentual - a.percentual;
-      return 0;
-    });
+    // Ordenar usando service
+    const resumosOrdenados = frequenciaService.ordenarResumos(
+      resumos,
+      ordenacaoRelatorio as 'nome' | 'presencas' | 'faltas' | 'percentual'
+    );
 
     // Paginar
     const inicio = (paginaAtualRelatorio - 1) * itensPorPaginaRelatorio;
     const fim = inicio + itensPorPaginaRelatorio;
-    return alunosComDados.slice(inicio, fim);
+    
+    // Mapear de volta para formato esperado pela UI
+    return resumosOrdenados.slice(inicio, fim).map(r => ({
+      aluno: alunosFiltrados.find(a => a.id === r.aluno.id)!,
+      presencas: r.presencas,
+      faltas: r.faltas,
+      percentual: r.percentual
+    }));
   };
 
   const buscarHistoricoAluno = async (aluno: { nome: string; id: string }) => {
@@ -240,52 +201,27 @@ export default function FrequenciaRelatorios({ turmas, materias, onToast }: Freq
     setLoadingHistorico(true);
 
     try {
-      const hoje = new Date();
-      const anoAtual = hoje.getFullYear();
+      const anoAtual = new Date().getFullYear();
+      const dataInicio = `${anoAtual}-01-01`;
+      const dataFim = `${anoAtual}-12-31`;
 
-      // Buscar todos os registros do aluno no ano atual
-      const q = query(
-        collection(db, 'frequencias'),
-        where('alunoId', '==', aluno.id),
-        where('data', '>=', `${anoAtual}-01-01`),
-        where('data', '<=', `${anoAtual}-12-31`)
+      // Buscar frequências do aluno no ano usando repository
+      let frequenciasAno = await frequenciaService.buscarPorAlunoIdEPeriodo(
+        aluno.id,
+        dataInicio,
+        dataFim
       );
-
-      const snapshot = await getDocs(q);
-      let registros = snapshot.docs.map(doc => doc.data());
 
       // Filtrar pela matéria se necessário
       if (materiaId !== 'all') {
-        registros = registros.filter(r => r.materiaId === materiaId);
+        frequenciasAno = frequenciasAno.filter((f: Frequencia) => f.materiaId === materiaId);
       }
 
-      // Agrupar por bimestre
-      const bimestres = [
-        { nome: '1º Bimestre', inicio: new Date(anoAtual, 0, 1), fim: new Date(anoAtual, 2, 31) },
-        { nome: '2º Bimestre', inicio: new Date(anoAtual, 3, 1), fim: new Date(anoAtual, 5, 30) },
-        { nome: '3º Bimestre', inicio: new Date(anoAtual, 6, 1), fim: new Date(anoAtual, 8, 30) },
-        { nome: '4º Bimestre', inicio: new Date(anoAtual, 9, 1), fim: new Date(anoAtual, 11, 31) }
-      ];
-
-      const historico = bimestres.map(bim => {
-        const registrosBimestre = registros.filter(r => {
-          const data = new Date(r.data);
-          return data >= bim.inicio && data <= bim.fim;
-        });
-
-        const presencas = registrosBimestre.filter(r => r.presenca).length;
-        const faltas = registrosBimestre.filter(r => !r.presenca).length;
-        const total = registrosBimestre.length;
-        const percentual = total > 0 ? ((presencas / total) * 100).toFixed(1) : '0.0';
-
-        return {
-          bimestre: bim.nome,
-          presencas,
-          faltas,
-          total,
-          percentual
-        };
-      });
+      // Calcular histórico por bimestre usando service
+      const historico = frequenciaService.calcularHistoricoPorBimestre(
+        frequenciasAno,
+        anoAtual
+      );
 
       setHistoricoFrequencia(historico);
     } catch (error) {
@@ -541,27 +477,17 @@ export default function FrequenciaRelatorios({ turmas, materias, onToast }: Freq
                     </div>
                   ) : (
                     processarDadosAlunos().map(({ aluno: a, presencas, faltas, percentual }) => {
-                      let status = null;
-
-                      if (percentual >= 80) {
-                        status = (
-                          <span className="badge bg-success d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
-                            <CheckCircle size={16} /> OK
-                          </span>
-                        );
-                      } else if (percentual >= 60) {
-                        status = (
-                          <span className="badge bg-warning text-dark d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
-                            <AlertTriangle size={16} /> Regular
-                          </span>
-                        );
-                      } else {
-                        status = (
-                          <span className="badge bg-danger d-flex align-items-center gap-1 justify-content-center" style={{ width: 'fit-content' }}>
-                            <XCircle size={16} /> Crítico
-                          </span>
-                        );
-                      }
+                      const statusInfo = calcularStatusFrequencia(percentual);
+                      const IconeStatus = statusInfo.variant === 'success' ? CheckCircle : statusInfo.variant === 'warning' ? AlertTriangle : XCircle;
+                      
+                      const status = (
+                        <span 
+                          className={`badge bg-${statusInfo.variant} ${statusInfo.variant === 'warning' ? 'text-dark' : ''} d-flex align-items-center gap-1 justify-content-center`} 
+                          style={{ width: 'fit-content' }}
+                        >
+                          <IconeStatus size={16} /> {statusInfo.texto}
+                        </span>
+                      );
 
                       return (
                         <Card key={a.id} className="w-100 custom-card-frequencia mb-0">
@@ -646,25 +572,13 @@ export default function FrequenciaRelatorios({ turmas, materias, onToast }: Freq
                   </div>
                 ) : (
                   processarDadosAlunos().map(({ aluno: a, presencas, faltas, percentual }) => {
-                    let status = null;
-                    let statusText = '';
-
-                    if (percentual >= 80) {
-                      status = 'success';
-                      statusText = 'OK';
-                    } else if (percentual >= 60) {
-                      status = 'warning';
-                      statusText = 'Regular';
-                    } else {
-                      status = 'danger';
-                      statusText = 'Crítico';
-                    }
+                    const statusInfo = calcularStatusFrequencia(percentual);
 
                     return (
                       <div key={a.id} className="notas-resultado-card mb-2">
                         <div className="notas-resultado-header">
                           <div className="notas-resultado-nome">{a.nome}</div>
-                          <div className={`notas-resultado-media text-${status}`} style={{ fontSize: '1.1rem' }}>
+                          <div className={`notas-resultado-media text-${statusInfo.variant}`} style={{ fontSize: '1.1rem' }}>
                             {percentual.toFixed(1)}%
                           </div>
                         </div>
@@ -686,7 +600,7 @@ export default function FrequenciaRelatorios({ turmas, materias, onToast }: Freq
 
                           <div className="notas-resultado-row">
                             <span className="notas-resultado-label">Status:</span>
-                            <span className={`badge bg-${status}`}>{statusText}</span>
+                            <span className={`badge bg-${statusInfo.variant}`}>{statusInfo.texto}</span>
                           </div>
 
                           <div className="notas-resultado-row">
@@ -795,22 +709,13 @@ export default function FrequenciaRelatorios({ turmas, materias, onToast }: Freq
               <div className="d-block d-md-none">
                 {historicoFrequencia.map(bimestre => {
                   const percentual = parseFloat(bimestre.percentual);
-                  let statusVariant = 'danger';
-                  let statusText = 'Crítico';
-
-                  if (percentual >= 80) {
-                    statusVariant = 'success';
-                    statusText = 'OK';
-                  } else if (percentual >= 60) {
-                    statusVariant = 'warning';
-                    statusText = 'Regular';
-                  }
+                  const statusInfo = calcularStatusFrequencia(percentual);
 
                   return (
                     <div key={bimestre.bimestre} className="mb-3 p-3 border rounded">
                       <div className="d-flex justify-content-between align-items-center mb-2">
                         <h6 className="mb-0 fw-bold">{bimestre.bimestre}</h6>
-                        <span className={`badge bg-${statusVariant}`}>{statusText}</span>
+                        <span className={`badge bg-${statusInfo.variant}`}>{statusInfo.texto}</span>
                       </div>
                       <div className="d-flex justify-content-between mb-1">
                         <span>Presenças:</span>

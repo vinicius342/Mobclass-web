@@ -9,24 +9,23 @@ import { CheckSquare } from "lucide-react";
 import AppLayout from '../components/layout/AppLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
-import {
-  loadTurmasByAnoLetivo,
-  loadMaterias,
-  loadVinculos,
-  loadMateriasByIds,
-  type Turma as TurmaLoader,
-  type Vinculo as VinculoLoader
-} from '../services/data/dataLoaders';
+import { turmaService } from '../services/data/TurmaService';
+import { MateriaService } from '../services/data/MateriaService';
+import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
+import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
+import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
+import type { Turma } from '../models/Turma';
+import type { ProfessorMateria } from '../models/ProfessorMateria';
+import type { Materia } from '../models/Materia';
 import FrequenciaLancamento from '../components/frequencia/FrequenciaLancamento';
+
+// Instanciar services
+const materiaRepository = new FirebaseMateriaRepository();
+const materiaService = new MateriaService(materiaRepository);
+
+const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
+const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
 import FrequenciaRelatorios from '../components/frequencia/FrequenciaRelatorios';
-
-type Turma = TurmaLoader;
-type Vinculo = VinculoLoader;
-
-interface Materia {
-  id: string;
-  nome: string;
-}
 
 export default function Frequencia(): JSX.Element {
   const { userData } = useAuth()!;
@@ -35,7 +34,7 @@ export default function Frequencia(): JSX.Element {
 
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [materias, setMaterias] = useState<Materia[]>([]);
-  const [vinculos, setVinculos] = useState<Vinculo[]>([]);
+  const [vinculos, setVinculos] = useState<ProfessorMateria[]>([]);
 
   const [toast, setToast] = useState<{ show: boolean; message: string; variant: 'success' | 'danger' | 'warning' }>({ show: false, message: '', variant: 'success' });
 
@@ -43,24 +42,25 @@ export default function Frequencia(): JSX.Element {
     async function fetchData() {
       if (isAdmin) {
         const [turmas, materias] = await Promise.all([
-          loadTurmasByAnoLetivo(anoLetivo),
-          loadMaterias()
+          turmaService.listarPorAnoLetivo(anoLetivo.toString()),
+          materiaService.listar()
         ]);
         setTurmas(turmas);
         setMaterias(materias);
       } else {
         if (!userData) return;
-        const vincList = await loadVinculos(userData.uid);
+        const vincList = await professorMateriaService.listarPorProfessor(userData.uid);
         setVinculos(vincList);
 
-        const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-        const todasTurmas = await loadTurmasByAnoLetivo(anoLetivo);
-        const turmasFiltradas = todasTurmas.filter(t => turmaIds.includes(t.id));
+        const turmaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.turmaId))];
+        const todasTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+        const turmasFiltradas = todasTurmas.filter((t: Turma) => turmaIds.includes(t.id));
         setTurmas(turmasFiltradas);
 
-        const materiaIds = [...new Set(vincList.map(v => v.materiaId))];
-        const materias = await loadMateriasByIds(materiaIds);
-        setMaterias(materias);
+        const materiaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.materiaId))];
+        const todasMaterias = await materiaService.listar();
+        const materiasFiltradas = todasMaterias.filter((m: Materia) => materiaIds.includes(m.id));
+        setMaterias(materiasFiltradas);
       }
     }
     fetchData();

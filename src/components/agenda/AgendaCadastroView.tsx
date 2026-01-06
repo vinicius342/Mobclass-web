@@ -2,48 +2,20 @@
 import { Card, Row, Col, Form, Button, Dropdown, Table } from 'react-bootstrap';
 import { Plus, X, Download, ArrowDownUp, Edit, Trash2 } from 'lucide-react';
 import Paginacao from '../common/Paginacao';
-
-// Tipos
-interface AgendaItem {
-  id: string;
-  diaSemana: string;
-  horario: string;
-  materiaId: string;
-  turmaId: string;
-}
-
-interface Turma {
-  id: string;
-  nome: string;
-  isVirtualizada?: boolean;
-  turmaOriginalId?: string;
-}
-
-interface Materia {
-  id: string;
-  nome: string;
-}
-
-interface Professor {
-  id: string;
-  nome: string;
-}
-
-interface Vinculo {
-  id: string;
-  professorId: string;
-  materiaId: string;
-  turmaId: string;
-}
+import type { Agenda } from '../../models/Agenda';
+import type { Turma } from '../../models/Turma';
+import type { Materia } from '../../models/Materia';
+import type { Professor } from '../../models/Professor';
+import type { ProfessorMateria } from '../../models/ProfessorMateria';
 
 interface AgendaCadastroViewProps {
   // Dados
   turmas: Turma[];
   materias: Materia[];
   professores: Professor[];
-  vinculos: Vinculo[];
+  vinculos: ProfessorMateria[];
   diasSemana: string[];
-  dadosPaginados: AgendaItem[];
+  dadosPaginados: Agenda[];
   
   // Filtros
   filtroBusca: string;
@@ -71,8 +43,8 @@ interface AgendaCadastroViewProps {
   downloadPDF: () => void;
   downloadExcel: () => void;
   handleShow: () => void;
-  handleEditar: (item: AgendaItem) => void;
-  handleExcluir: (item: AgendaItem) => void;
+  handleEditar: (item: Agenda) => void;
+  handleExcluir: (item: Agenda) => void;
   formatarNomeProfessor: (nome: string | undefined) => string;
   getShiftColor: (turno: string) => { bg: string; color: string; variant: string };
   
@@ -292,7 +264,7 @@ export default function AgendaCadastroView({
                 let nomeTurma = turma?.nome;
                 if (!turma) {
                   // Procurar turma virtualizada que tenha turmaOriginalId igual ao turmaId da aula
-                  turma = turmas.find(t => t.isVirtualizada && t.turmaOriginalId === item.turmaId);
+                  turma = turmas.find(t => t.turmaOriginalId && t.turmaOriginalId === item.turmaId);
                   nomeTurma = turma?.nome;
                 }
                 if (!nomeTurma) nomeTurma = '-';
