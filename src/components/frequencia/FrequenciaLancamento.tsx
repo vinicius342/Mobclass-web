@@ -8,8 +8,11 @@ import {
 } from 'react-bootstrap';
 import { CalendarIcon, Check, Info, Save, Undo, User, UserCheck, UserX, X } from "lucide-react";
 import { FaUserCheck, FaUsers, FaUserTimes } from 'react-icons/fa';
-import { FrequenciaService } from '../../services/FrequenciaService';
+import { FrequenciaService } from '../../services/data/FrequenciaService';
 import { FirebaseFrequenciaRepository } from '../../repositories/frequencia/FirebaseFrequenciaRepository';
+
+const frequenciaRepository = new FirebaseFrequenciaRepository();
+const frequenciaService = new FrequenciaService(frequenciaRepository);
 import { FirebaseAlunoRepository } from '../../repositories/aluno/FirebaseAlunoRepository';
 import { ProfessorMateriaService } from '../../services/data/ProfessorMateriaService';
 import { FirebaseProfessorMateriaRepository } from '../../repositories/professor_materia/FirebaseProfessorMateriaRepository';

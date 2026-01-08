@@ -27,6 +27,8 @@ export default function AppNavbar() {
 
   const handleLogout = async () => {
     try {
+      // Limpar o ano letivo do localStorage ao fazer logout
+      localStorage.removeItem('anoLetivo');
       await signOut(auth);
       navigate('/login');
     } catch (error) {

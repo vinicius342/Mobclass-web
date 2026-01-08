@@ -7,7 +7,7 @@ import {
   Row
 } from 'react-bootstrap';
 import { PlusCircle } from 'react-bootstrap-icons';
-import { getTurmaAlunoNoAnoUtil, calcularMediaFinalUtil, getNotaColorUtil, isTurmaVirtualizada } from '../utils/turmasHelpers';
+import { getTurmaAlunoNoAnoUtil, getNotaColorUtil, isTurmaVirtualizada } from '../utils/turmasHelpers';
 import { turmaService } from '../services/data/TurmaService';
 import type { Turma } from '../models/Turma';
 import type { Aluno } from '../models/Aluno';
@@ -426,8 +426,13 @@ export default function Turmas() {
     if (turmaId.startsWith('virtual_')) {
       return [];
     }
+    
+    // Buscar turma para pegar o ano letivo correto
+    const turma = turmas.find(t => t.id === turmaId);
+    const anoLetivoTurma = turma ? parseInt(turma.anoLetivo) : anoLetivo;
+    
     return alunos
-      .filter(a => getTurmaAlunoNoAnoUtil(a, anoLetivo) === turmaId)
+      .filter(a => getTurmaAlunoNoAnoUtil(a, anoLetivoTurma) === turmaId)
       .sort((a, b) => a.nome.localeCompare(b.nome));
   };
 
@@ -629,18 +634,11 @@ export default function Turmas() {
       // Reprovados
       if (statusPromocao[alunoId] === 'reprovado') {
         const turmaAtualAluno = turmasRematricula.find(t => t.id === getTurmaAlunoNoAnoUtil(aluno, anoLetivoRematricula));
-        const nomeAtualAluno = turmaAtualAluno?.nome || '';
 
         // Resolver destino usando o TurmaService para evitar inconsistências
         const destino = turmaAtualAluno
           ? await turmaService.resolverDestinoReprovacao(turmaAtualAluno, anoLetivoRematricula.toString())
           : undefined;
-
-        console.log('🔍 DEBUG Reprovação (service):', {
-          aluno: aluno.nome,
-          turmaAtual: nomeAtualAluno,
-          destino: destino?.nome
-        });
 
         reprovados.push({
           alunoId: aluno.id,
@@ -1178,7 +1176,6 @@ export default function Turmas() {
             historicoAluno={historicoAluno}
             setShowHistorico={setShowHistorico}
             getNotaColorUtil={getNotaColorUtil}
-            calcularMediaFinalUtil={calcularMediaFinalUtil}
           />
         </div>
 

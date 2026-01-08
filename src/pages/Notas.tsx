@@ -4,7 +4,7 @@ import AppLayout from '../components/layout/AppLayout';
 import {
   Container, Row, Col, Button, Form, Table, Spinner, Toast, ToastContainer,
   InputGroup, FormControl,
-  Card
+  Card, Modal
 } from 'react-bootstrap';
 import { Aluno } from '../models/Aluno';
 import { Turma } from '../models/Turma';
@@ -24,6 +24,7 @@ import { Save, Check, Undo, BookOpen } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircleExclamation } from '@fortawesome/free-solid-svg-icons';
 import NotasVisualizacao from '../components/notas/NotasVisualizacao';
+import HistoricoNotasModal from '../components/turmas/HistoricoNotasModal';
 
 export default function Notas(): JSX.Element {
   const { userData } = useAuth()!;
@@ -64,6 +65,20 @@ export default function Notas(): JSX.Element {
   const [paginaAtualPorBimestre, setPaginaAtualPorBimestre] = useState<Record<string, number>>({ '1º': 1, '2º': 1, '3º': 1, '4º': 1 });
   const itensPorPagina = 10;
   const [alunosSalvos, setAlunosSalvos] = useState<string[]>([]);
+  const [showHistorico, setShowHistorico] = useState(false);
+  const [historicoAluno, setHistoricoAluno] = useState<{ nome: string, notas: any[], dadosBoletim?: any } | null>(null);
+  const [showModalAlunos, setShowModalAlunos] = useState(false);
+  const [alunosEncontradosBusca, setAlunosEncontradosBusca] = useState<Aluno[]>([]);
+
+  // Função para buscar alunos e abrir modal
+  const handleBuscarAlunos = () => {
+    const encontrados = alunos.filter(a => 
+      a.nome.toLowerCase().includes(busca.toLowerCase()) && 
+      (a as any).status !== 'Inativo'
+    );
+    setAlunosEncontradosBusca(encontrados);
+    setShowModalAlunos(true);
+  };
 
 
   useEffect(() => {
@@ -139,6 +154,7 @@ export default function Notas(): JSX.Element {
         setAlunos(alunosAtivos);
         setMaterias(materiasList as any); // Type assertion necessária para compatibilidade com estrutura legada
         setNotas(notasComNome);
+        console.log('📚 Matérias carregadas:', materiasList.length, materiasList);
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
         setToast({ show: true, message: 'Erro ao carregar dados', variant: 'danger' });
@@ -247,6 +263,36 @@ export default function Notas(): JSX.Element {
     setPaginaAtualPorBimestre(prev => ({ ...prev, [bimestre]: novaPagina }));
   };
 
+  // Função para abrir modal de histórico de notas (boletim)
+  const handleAbrirBoletim = async (aluno: Aluno) => {
+    try {
+      const boletim = await notaService.gerarBoletimAluno(aluno, anoLetivo);
+
+      if (!boletim) {
+        setHistoricoAluno({ nome: aluno.nome, notas: [] });
+      } else {
+        setHistoricoAluno({
+          nome: aluno.nome,
+          notas: [],
+          dadosBoletim: boletim
+        });
+      }
+
+      setShowHistorico(true);
+    } catch (error) {
+      console.error('Erro ao buscar histórico de notas:', error);
+      setToast({ show: true, message: 'Erro ao carregar boletim', variant: 'danger' });
+    }
+  };
+
+  // Função auxiliar para cores das notas
+  const getNotaColorUtil = (nota?: number): string => {
+    if (nota === undefined || nota === null) return 'text-muted';
+    if (nota >= 7) return 'text-success';
+    if (nota >= 5) return 'text-warning';
+    return 'text-danger';
+  };
+
   //Tabs
   const [activeTab, setActiveTab] = useState<'lancamento-notas' | 'visualizacao-resultados'>('lancamento-notas');
 
@@ -342,7 +388,7 @@ export default function Notas(): JSX.Element {
           <>
             <Card className='shadow-sm p-3'>
               <Row>
-                <Col md={3}>
+                <Col md={4}>
                   <Form.Select value={filtroTurma} onChange={e => setFiltroTurma(e.target.value)}>
                     <option value="">Selecione a Turma</option>
                     {turmas.map(t => (
@@ -350,7 +396,7 @@ export default function Notas(): JSX.Element {
                     ))}
                   </Form.Select>
                 </Col>
-                <Col md={3}>
+                <Col md={4}>
                   <Form.Select value={filtroMateria} onChange={e => setFiltroMateria(e.target.value)}>
                     <option value="">Selecione a Matéria</option>
                     {materiaService.removerDuplicatas(
@@ -360,7 +406,7 @@ export default function Notas(): JSX.Element {
                     ))}
                   </Form.Select>
                 </Col>
-                <Col md={3}>
+                <Col md={4}>
                   <Form.Select value={filtroBimestre} onChange={e => setFiltroBimestre(e.target.value)}>
                     <option value="">Selecione o Bimestre</option>
                     <option value="1º">1º</option>
@@ -368,11 +414,6 @@ export default function Notas(): JSX.Element {
                     <option value="3º">3º</option>
                     <option value="4º">4º</option>
                   </Form.Select>
-                </Col>
-                <Col md={3}>
-                  <InputGroup>
-                    <FormControl placeholder="Buscar aluno" value={busca} onChange={e => setBusca(e.target.value)} />
-                  </InputGroup>
                 </Col>
               </Row>
             </Card>
@@ -567,13 +608,13 @@ export default function Notas(): JSX.Element {
           <>
             <Card className='shadow-sm px-3 pt-3 gap-2 mb-3'>
               <Row className="mb-3">
-                <Col md={3}>
+                <Col md={4}>
                   <Form.Select value={filtroTurma} onChange={e => setFiltroTurma(e.target.value)}>
                     <option value="">Selecione a Turma</option>
                     {turmas.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
                   </Form.Select>
                 </Col>
-                <Col md={3}>
+                <Col md={4}>
                   <Form.Select value={filtroMateria} onChange={e => setFiltroMateria(e.target.value)}>
                     <option value="">Selecione a Matéria</option>
                     {materiaService.removerDuplicatas(
@@ -583,7 +624,7 @@ export default function Notas(): JSX.Element {
                     ))}
                   </Form.Select>
                 </Col>
-                <Col md={3}>
+                <Col md={4}>
                   <Form.Select value={filtroBimestre} onChange={e => setFiltroBimestre(e.target.value)}>
                     <option value="">Selecione o Bimestre</option>
                     <option value="1º">1º</option>
@@ -592,21 +633,50 @@ export default function Notas(): JSX.Element {
                     <option value="4º">4º</option>
                   </Form.Select>
                 </Col>
-                {/* Botão Desktop */}
-                <Col md={3} className="d-none d-md-block">
-                  <Button
-                    onClick={() => {
-                      setFiltroTurma('');
-                      setFiltroMateria('');
-                      setFiltroBimestre('');
-                      setBusca('');
-                    }}
-                    className="d-flex align-items-center gap-2 text-secondary bg-transparent border-0 px-3 py-2"
-                    style={{ minWidth: '180px' }}
-                  >
-                    <Undo size={20} />
-                    Limpar Filtros
-                  </Button>
+              </Row>
+            </Card>
+
+            {/* Card separado para busca de boletim */}
+            <Card className='shadow-sm px-3 py-2 mb-3'>
+              <Row>
+                <Col md={12}>
+                  <InputGroup>
+                    <FormControl 
+                      placeholder="Buscar aluno para ver boletim completo" 
+                      value={busca} 
+                      onChange={e => setBusca(e.target.value)}
+                      onKeyPress={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (!busca.trim()) {
+                            setToast({ 
+                              show: true, 
+                              message: 'Digite o nome do aluno para buscar', 
+                              variant: 'danger' 
+                            });
+                          } else {
+                            handleBuscarAlunos();
+                          }
+                        }
+                      }}
+                    />
+                    <Button 
+                      variant="outline-secondary"
+                      onClick={() => {
+                        if (!busca.trim()) {
+                          setToast({ 
+                            show: true, 
+                            message: 'Digite o nome do aluno para buscar', 
+                            variant: 'danger' 
+                          });
+                        } else {
+                          handleBuscarAlunos();
+                        }
+                      }}
+                    >
+                      Ver Boletim
+                    </Button>
+                  </InputGroup>
                 </Col>
               </Row>
             </Card>
@@ -637,8 +707,6 @@ export default function Notas(): JSX.Element {
               filtroTurma={filtroTurma}
               filtroMateria={filtroMateria}
               filtroBimestre={filtroBimestre}
-              busca={busca}
-              setBusca={setBusca}
               turmas={turmas}
               materias={materias}
               alunos={alunos as any} // Type assertion para compatibilidade temporária
@@ -656,6 +724,59 @@ export default function Notas(): JSX.Element {
             <Toast.Body className="text-white">{toast.message}</Toast.Body>
           </Toast>
         </ToastContainer>
+
+        {/* Modal de Lista de Alunos Encontrados */}
+        <Modal show={showModalAlunos} onHide={() => setShowModalAlunos(false)} centered size="lg">
+          <Modal.Header closeButton>
+            <Modal.Title>Alunos Encontrados</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            {alunosEncontradosBusca.length === 0 ? (
+              <div className="text-center text-muted py-4">
+                <FontAwesomeIcon icon={faCircleExclamation} size="2x" className="mb-3" />
+                <div>Nenhum aluno encontrado com o nome "{busca}".</div>
+              </div>
+            ) : (
+              <Table hover responsive className="mb-0">
+                <thead>
+                  <tr>
+                    <th>Nome do Aluno</th>
+                    <th className="text-center">Ação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {alunosEncontradosBusca.map(aluno => (
+                    <tr key={aluno.id}>
+                      <td className="align-middle">{aluno.nome}</td>
+                      <td className="text-center">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => {
+                            setShowModalAlunos(false);
+                            handleAbrirBoletim(aluno);
+                          }}
+                          className="d-flex align-items-center gap-2 mx-auto"
+                        >
+                          <BookOpen size={16} />
+                          Ver Boletim
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </Modal.Body>
+        </Modal>
+
+        <HistoricoNotasModal
+          show={showHistorico}
+          onHide={() => setShowHistorico(false)}
+          historicoAluno={historicoAluno}
+          setShowHistorico={setShowHistorico}
+          getNotaColorUtil={getNotaColorUtil}
+        />
       </Container>
     </AppLayout>
   );

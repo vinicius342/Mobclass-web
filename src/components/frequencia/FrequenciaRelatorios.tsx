@@ -5,8 +5,11 @@ import { Aluno } from '../../models/Aluno';
 import { Turma } from '../../models/Turma';
 import { Materia } from '../../models/Materia';
 import { Frequencia } from '../../models/Frequencia';
-import { FrequenciaService } from '../../services/FrequenciaService';
+import { FrequenciaService } from '../../services/data/FrequenciaService';
 import { FirebaseFrequenciaRepository } from '../../repositories/frequencia/FirebaseFrequenciaRepository';
+
+const frequenciaRepository = new FirebaseFrequenciaRepository();
+const frequenciaService = new FrequenciaService(frequenciaRepository);
 import { FirebaseAlunoRepository } from '../../repositories/aluno/FirebaseAlunoRepository';
 import { calcularStatusFrequencia } from '../../utils/frequenciaUtils';
 import DatePicker from "react-datepicker";

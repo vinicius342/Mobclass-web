@@ -3,7 +3,7 @@ import { JSX, useState, useMemo } from 'react';
 import { Row, Col, Card, FormControl, Dropdown, Button, Modal, Table } from 'react-bootstrap';
 import { BarChart, Award, Activity, TrendingDown, ArrowDownUp, Download } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCircleExclamation, faFaceFrown, faSearch } from '@fortawesome/free-solid-svg-icons';
+import { faCircleExclamation, faFaceFrown } from '@fortawesome/free-solid-svg-icons';
 import { FaClockRotateLeft } from 'react-icons/fa6';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { BarChart as ReBarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip } from 'recharts';
@@ -23,8 +23,6 @@ interface NotasVisualizacaoProps {
   filtroTurma: string;
   filtroMateria: string;
   filtroBimestre: string;
-  busca: string;
-  setBusca: (value: string) => void;
   turmas: Turma[];
   materias: Materia[];
   alunos: Aluno[];
@@ -39,8 +37,6 @@ export default function NotasVisualizacao({
   filtroTurma,
   filtroMateria,
   filtroBimestre,
-  busca,
-  setBusca,
   turmas,
   materias,
   alunos,
@@ -53,25 +49,13 @@ export default function NotasVisualizacao({
   const [showHistorico, setShowHistorico] = useState(false);
   const [historicoAluno, setHistoricoAluno] = useState<{ nome: string, notas: Nota[] } | null>(null);
   const [ordenacao, setOrdenacao] = useState<'nome' | 'parcial' | 'global' | 'participacao' | 'recuperacao' | 'media' | 'data'>('nome');
+  const [buscaLocal, setBuscaLocal] = useState('');
 
   // Inicializar NotaService
   const notaService = useMemo(
     () => new NotaService(new FirebaseNotaRepository(), new FirebaseMateriaRepository()),
     []
   );
-
-  if (!filtroTurma || !filtroMateria || !filtroBimestre) {
-    return (
-      <Card className="shadow-sm">
-        <Card.Body>
-          <div className="text-center text-muted py-5">
-            <FontAwesomeIcon icon={faCircleExclamation} size="2x" className="mb-3" />
-            <div>Selecione turma, matéria e bimestre para visualização.</div>
-          </div>
-        </Card.Body>
-      </Card>
-    );
-  }
 
   // Filtrar notas por alunos ativos e deduplicar
   const notasFiltradas = notas.filter(n => {
@@ -83,20 +67,21 @@ export default function NotasVisualizacao({
   const materiaIds = isAdmin ? undefined : materias.map(m => m.id);
   const resultadosFiltrados = notaService.deduplicarNotasPorAluno(
     notasFiltradas,
-    filtroTurma,
-    filtroMateria,
-    filtroBimestre,
-    busca,
+    filtroTurma || undefined,
+    filtroMateria || undefined,
+    filtroBimestre || undefined,
+    buscaLocal || undefined,
     materiaIds
   );
 
-  if (resultadosFiltrados.length === 0) {
+  // Verificar se todos os filtros obrigatórios estão selecionados
+  if (!filtroTurma || !filtroMateria || !filtroBimestre) {
     return (
       <Card className="shadow-sm">
         <Card.Body>
           <div className="text-center text-muted py-5">
-            <FontAwesomeIcon icon={faSearch} size="2x" className="mb-3" />
-            <div>Nenhuma nota encontrada para os filtros selecionados.</div>
+            <FontAwesomeIcon icon={faCircleExclamation} size="2x" className="mb-3" />
+            <div>Selecione turma, matéria e bimestre para visualizar as notas.</div>
           </div>
         </Card.Body>
       </Card>
@@ -375,14 +360,13 @@ export default function NotasVisualizacao({
         </Col>
       </Row>
 
-      <Card className='shadow-sm mb-3 mt-2'>
-        <Card.Body>
+      {/* Campo de busca para filtrar a lista */}
+      <Card className='shadow-sm mb-3'>
+        <Card.Body className="py-2">
           <FormControl
-            placeholder="Buscar aluno..."
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-            type="search"
-            autoComplete="off"
+            placeholder="Filtrar alunos na lista..."
+            value={buscaLocal}
+            onChange={e => setBuscaLocal(e.target.value)}
           />
         </Card.Body>
       </Card>
@@ -426,7 +410,13 @@ export default function NotasVisualizacao({
           </div>
 
           <div className="d-flex flex-column">
-            {ordenarDados(resultadosFiltrados).map(nota => {
+            {resultadosFiltrados.length === 0 ? (
+              <div className="text-center text-muted py-5">
+                <FontAwesomeIcon icon={faFaceFrown} size="2x" className="mb-3" />
+                <div>Nenhum aluno encontrado com os filtros aplicados.</div>
+              </div>
+            ) : (
+              ordenarDados(resultadosFiltrados).map(nota => {
               const mediaFinal = notaService.calcularMediaFinal(nota);
               return (
                 <div
@@ -462,8 +452,8 @@ export default function NotasVisualizacao({
                           .filter(n => {
                             const aluno = alunos.find(a => a.id === n.alunoUid);
                             const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
-                            return alunoAtivo && n.alunoUid === nota.alunoUid && 
-                                   n.materiaId === filtroMateria && n.turmaId === filtroTurma;
+                            return alunoAtivo && n.alunoUid === nota.alunoUid &&
+                              n.materiaId === filtroMateria && n.turmaId === filtroTurma;
                           })
                           .sort((a, b) => {
                             const ordem = ['1º', '2º', '3º', '4º'];
@@ -478,13 +468,20 @@ export default function NotasVisualizacao({
                   </div>
                 </div>
               );
-            })}
+            })
+            )}
           </div>
         </div>
 
         {/* Versão Mobile */}
         <div className="notas-mobile-cards d-block d-md-none">
-          {ordenarDados(resultadosFiltrados).map(nota => {
+          {resultadosFiltrados.length === 0 ? (
+            <div className="text-center text-muted py-5">
+              <FontAwesomeIcon icon={faFaceFrown} size="2x" className="mb-3" />
+              <div>Nenhum aluno encontrado com os filtros aplicados.</div>
+            </div>
+          ) : (
+            ordenarDados(resultadosFiltrados).map(nota => {
             const mediaFinal = notaService.calcularMediaFinal(nota);
             return (
               <div key={nota.id} className="notas-resultado-card">
@@ -536,8 +533,8 @@ export default function NotasVisualizacao({
                         .filter(n => {
                           const aluno = alunos.find(a => a.id === n.alunoUid);
                           const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
-                          return alunoAtivo && n.alunoUid === nota.alunoUid && 
-                                 n.materiaId === filtroMateria && n.turmaId === filtroTurma;
+                          return alunoAtivo && n.alunoUid === nota.alunoUid &&
+                            n.materiaId === filtroMateria && n.turmaId === filtroTurma;
                         })
                         .sort((a, b) => {
                           const ordem = ['1º', '2º', '3º', '4º'];
@@ -553,10 +550,12 @@ export default function NotasVisualizacao({
                 </div>
               </div>
             );
-          })}
+          })
+          )}
         </div>
       </Card>
 
+      {resultadosFiltrados.length > 0 && (
       <div className="mt-3">
         <Paginacao
           paginaAtual={paginaAtual}
@@ -564,6 +563,7 @@ export default function NotasVisualizacao({
           aoMudarPagina={(pagina) => onPaginaChange(filtroBimestre, pagina)}
         />
       </div>
+      )}
 
       {/* Modal de Histórico */}
       <Modal

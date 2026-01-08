@@ -24,12 +24,9 @@ interface AnoLetivoProviderProps {
 }
 
 export const AnoLetivoProvider: React.FC<AnoLetivoProviderProps> = ({ children }) => {
-  const [anoLetivo, setAnoLetivoState] = useState<number>(() => {
-    // Tenta recuperar do localStorage ou usa o ano atual
-    const savedAno = localStorage.getItem('anoLetivo');
-    return savedAno ? parseInt(savedAno, 10) : new Date().getFullYear();
-  });
+  const anoAtual = new Date().getFullYear();
 
+  const [anoLetivo, setAnoLetivoState] = useState<number>(anoAtual);
   const [anosDisponiveis, setAnosDisponiveis] = useState<number[]>([]);
   const [carregandoAnos, setCarregandoAnos] = useState<boolean>(true);
 
@@ -38,14 +35,14 @@ export const AnoLetivoProvider: React.FC<AnoLetivoProviderProps> = ({ children }
     const buscarAnosDisponiveis = async () => {
       try {
         setCarregandoAnos(true);
-        
+
         // Busca todas as turmas
         const turmasQuery = query(collection(db, 'turmas'));
         const snapshot = await getDocs(turmasQuery);
-        
+
         // Extrai os anos letivos únicos das turmas
         const anosEncontrados = new Set<number>();
-        
+
         snapshot.docs.forEach(doc => {
           const data = doc.data() as any;
           const raw = data.anoLetivo;
@@ -58,42 +55,52 @@ export const AnoLetivoProvider: React.FC<AnoLetivoProviderProps> = ({ children }
           }
         });
 
-        // Se não encontrou nenhum ano nas turmas, adiciona o ano atual
-        if (anosEncontrados.size === 0) {
-          anosEncontrados.add(new Date().getFullYear());
-        }
+        // Sempre adiciona o ano atual
+        anosEncontrados.add(anoAtual);
 
-        // Adiciona o próximo ano com base no maior ano encontrado (ou ano atual)
-        const anoBase = anosEncontrados.size > 0
-          ? Math.max(...Array.from(anosEncontrados))
-          : new Date().getFullYear();
-        anosEncontrados.add(anoBase + 1);
+        // Adiciona o próximo ano
+        anosEncontrados.add(anoAtual + 1);
 
         // Converte para array e ordena
         const anosOrdenados = Array.from(anosEncontrados).sort((a, b) => b - a);
-        
+
         setAnosDisponiveis(anosOrdenados);
+
+        // Verifica localStorage - se não existir ou for inválido, usa o ano atual
+        const savedAno = localStorage.getItem('anoLetivo');
+        if (!savedAno) {
+          // Não tem nada salvo = usa o ano atual
+          setAnoLetivoState(anoAtual);
+          localStorage.setItem('anoLetivo', anoAtual.toString());
+        } else {
+          const anoSalvo = parseInt(savedAno, 10);
+          // Se o ano salvo está disponível E é válido, usa ele
+          if (!isNaN(anoSalvo) && anosOrdenados.includes(anoSalvo)) {
+            setAnoLetivoState(anoSalvo);
+          } else {
+            // Ano inválido ou não disponível = usa o ano atual
+            setAnoLetivoState(anoAtual);
+            localStorage.setItem('anoLetivo', anoAtual.toString());
+          }
+        }
       } catch (error) {
         console.error('Erro ao buscar anos letivos:', error);
         // Em caso de erro, usa o ano atual
-        setAnosDisponiveis([new Date().getFullYear(), new Date().getFullYear() + 1]);
+        setAnosDisponiveis([anoAtual, anoAtual + 1]);
+        setAnoLetivoState(anoAtual);
+        localStorage.setItem('anoLetivo', anoAtual.toString());
       } finally {
         setCarregandoAnos(false);
       }
     };
 
     buscarAnosDisponiveis();
-  }, []);
+  }, [anoAtual]);
 
   const setAnoLetivo = (ano: number) => {
     setAnoLetivoState(ano);
     localStorage.setItem('anoLetivo', ano.toString());
   };
-
-  useEffect(() => {
-    // Salva no localStorage sempre que o ano mudar
-    localStorage.setItem('anoLetivo', anoLetivo.toString());
-  }, [anoLetivo]);
 
   const value = {
     anoLetivo,

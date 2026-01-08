@@ -45,7 +45,7 @@ export default function Frequencia(): JSX.Element {
           turmaService.listarPorAnoLetivo(anoLetivo.toString()),
           materiaService.listar()
         ]);
-        setTurmas(turmas);
+        setTurmas(turmas.sort((a, b) => a.nome.localeCompare(b.nome)));
         setMaterias(materias);
       } else {
         if (!userData) return;
@@ -55,7 +55,7 @@ export default function Frequencia(): JSX.Element {
         const turmaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.turmaId))];
         const todasTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
         const turmasFiltradas = todasTurmas.filter((t: Turma) => turmaIds.includes(t.id));
-        setTurmas(turmasFiltradas);
+        setTurmas(turmasFiltradas.sort((a, b) => a.nome.localeCompare(b.nome)));
 
         const materiaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.materiaId))];
         const todasMaterias = await materiaService.listar();

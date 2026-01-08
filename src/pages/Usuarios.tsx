@@ -1,5 +1,5 @@
 // src/pages/Usuarios.tsx - Atualizado com suporte ao modoAcesso "responsavel"
-import { useEffect, useState, ChangeEvent, JSX } from 'react';
+import { useEffect, useState, ChangeEvent, JSX, useMemo } from 'react';
 import AppLayout from '../components/layout/AppLayout';
 import {
   Container, Row, Button, Table, Badge, Spinner,
@@ -8,13 +8,28 @@ import {
 } from 'react-bootstrap';
 import { PlusCircle, Person } from 'react-bootstrap-icons';
 import Paginacao from '../components/common/Paginacao';
+import { updateDoc, deleteDoc, doc, writeBatch, getDocs, collection } from 'firebase/firestore';
 import { db } from '../services/firebase/firebase';
-import {
-  collection, getDocs, updateDoc, deleteDoc, doc, writeBatch, query, where
-} from 'firebase/firestore';
 import UsuarioForm, { FormValues, AlunoOption } from '../components/usuarios/UsuarioForm';
 import { GraduationCap, Download, Users } from 'lucide-react';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
+
+// Models
+import { Responsavel } from '../models/Responsavel';
+import { Administrador } from '../models/Administrador';
+import { Turma as TurmaModel } from '../models/Turma';
+
+// Services
+import { ProfessorService } from '../services/data/ProfessorService';
+import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
+import { AlunoService } from '../services/usuario/AlunoService';
+import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
+import { ResponsavelService } from '../services/usuario/ResponsavelService';
+import { FirebaseResponsavelRepository } from '../repositories/responsavel/FirebaseResponsavelRepository';
+import { AdministradorService } from '../services/usuario/AdministradorService';
+import { FirebaseAdministradorRepository } from '../repositories/administrador/FirebaseAdministradorRepository';
+import { turmaService } from '../services/data/TurmaService';
+import { isTurmaVirtualizada } from '../utils/turmasHelpers';
 
 // PDF
 import jsPDF from 'jspdf';
@@ -23,23 +38,26 @@ import autoTable from 'jspdf-autotable';
 // XLSX
 import * as XLSX from 'xlsx';
 
-interface UsuarioBase { id: string; nome: string; email: string; status: 'Ativo' | 'Inativo'; dataCriacao?: any; }
+interface UsuarioBase { id: string; nome: string; email: string; status: string; dataCriacao?: any; }
 interface Professor extends UsuarioBase { turmas: string[]; }
-interface Turma { id: string; nome: string; }
 interface Aluno extends UsuarioBase { turmaId?: string; responsavelId?: string; modoAcesso?: string; }
-interface Responsavel extends UsuarioBase { filhos?: string[]; }
-interface Administrador extends UsuarioBase { }
 
 export default function Usuarios(): JSX.Element {
   const { anoLetivo } = useAnoLetivoAtual();
+  
+  // Instanciar services
+  const professorService = useMemo(() => new ProfessorService(new FirebaseProfessorRepository()), []);
+  const alunoService = useMemo(() => new AlunoService(new FirebaseAlunoRepository()), []);
+  const responsavelService = useMemo(() => new ResponsavelService(new FirebaseResponsavelRepository()), []);
+  const administradorService = useMemo(() => new AdministradorService(new FirebaseAdministradorRepository()), []);
+  
   const [activeTab, setActiveTab] = useState<'todos' | 'professores' | 'alunos' | 'responsaveis' | 'administradores'>('todos');
   const [search, setSearch] = useState('');
   const [professores, setProfessores] = useState<Professor[]>([]);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
   const [administradores, setAdministradores] = useState<Administrador[]>([]);
-  const [turmas, setTurmas] = useState<Turma[]>([]);
-  const [todasTurmas, setTodasTurmas] = useState<Turma[]>([]); // Todas as turmas (sem filtro de ano)
+  const [turmas, setTurmas] = useState<TurmaModel[]>([]);
   const [alunosOptions, setAlunosOptions] = useState<AlunoOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -54,7 +72,18 @@ export default function Usuarios(): JSX.Element {
   });
   const [expandedTurmas, setExpandedTurmas] = useState<Set<string>>(new Set());
   const [showExportModal, setShowExportModal] = useState(false);
+  const [turmasProximasCache, setTurmasProximasCache] = useState<TurmaModel[]>([]);
 
+  // Função para obter turmas (já incluem virtualizadas vindas do service)
+  const getTurmasProximas = (): TurmaModel[] => {
+    return turmas.filter(t => t.turmaOriginalId);
+  };
+
+  // Função para materializar turma virtual
+  const materializarTurmaVirtual = async (turmaIdOuObjeto: string | TurmaModel): Promise<string> => {
+    const turmasCache = [...turmas, ...turmasProximasCache];
+    return await turmaService.materializarTurmaVirtualComDados(turmaIdOuObjeto, turmasCache);
+  };
 
   // Funções de exportação
   // Retorna a lista filtrada completa, sem paginação
@@ -418,39 +447,42 @@ export default function Usuarios(): JSX.Element {
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
-      const [pSnap, aSnap, rSnap, tSnap, admSnap] = await Promise.all([
-        getDocs(collection(db, 'professores')),
-        getDocs(collection(db, 'alunos')),
-        getDocs(collection(db, 'responsaveis')),
-        getDocs(collection(db, 'turmas')),
-        getDocs(collection(db, 'administradores')),
+      
+      // Buscar dados usando services
+      const [professoresList, alunosList, responsaveisList, administradoresList, todasTurmasList] = await Promise.all([
+        professorService.listar(),
+        alunoService.listar(),
+        responsavelService.listar(),
+        administradorService.listar(),
+        turmaService.listarTodas(),
       ]);
-      const alunosList = aSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      const professoresList = pSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      const responsaveisList = rSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      const administradoresList = admSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
 
       setProfessores(professoresList);
       setAlunos(alunosList);
       setResponsaveis(responsaveisList);
       setAdministradores(administradoresList);
 
-      // Guardar todas as turmas
-      const todasTurmasList = tSnap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome, anoLetivo: (d.data() as any).anoLetivo }));
-      setTodasTurmas(todasTurmasList);
+      // Usar o método listarComVirtualizacao que já cria as turmas virtualizadas
+      const turmasComVirtualizadas = await turmaService.listarComVirtualizacao(anoLetivo.toString());
+      
+      // Deduplicate turmas by ID (keep first occurrence)
+      const turmasUnicas = turmasComVirtualizadas.filter((turma, index, self) => 
+        self.findIndex(t => t.id === turma.id) === index
+      );
+      
+      setTurmas(turmasUnicas);
 
-      // Filtrar turmas apenas do ano letivo selecionado
-      const turmasAnoAtual = todasTurmasList.filter(t => (t as any).anoLetivo?.toString() === anoLetivo.toString());
-      setTurmas(turmasAnoAtual);
+      // Não precisa mais do código de virtualização manual
+      setTurmasProximasCache([]);
 
       setLoading(false);
       setAlunosOptions(
         alunosList
           .map(a => {
-            const turma = tSnap.docs.find(t => t.id === a.turmaId);
+            const turma = todasTurmasList.find(t => t.id === a.turmaId);
             return {
               id: a.id,
-              nome: `${a.nome}${turma ? ` - ${(turma.data() as any).nome}` : ''}`,
+              nome: `${a.nome}${turma ? ` - ${turma.nome}` : ''}`,
             };
           })
           .sort((a, b) => a.nome.localeCompare(b.nome))
@@ -466,7 +498,7 @@ export default function Usuarios(): JSX.Element {
       }
     }
     fetchData();
-  }, [anoLetivo]);
+  }, [anoLetivo, professorService, alunoService, responsavelService, administradorService]);
 
   const handleSearch = (e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value);
 
@@ -558,7 +590,7 @@ export default function Usuarios(): JSX.Element {
       let infoMatch = false;
       if (u.id && responsaveis.find(r => r.id === u.id)) {
         // Para responsáveis, buscar pelo nome dos filhos (alunos)
-        const responsavel = u as Responsavel;
+        const responsavel = u as unknown as Responsavel;
         if (responsavel.filhos && responsavel.filhos.length > 0) {
           infoMatch = responsavel.filhos.some(filhoId => {
             const aluno = alunos.find(a => a.id === filhoId);
@@ -648,11 +680,20 @@ export default function Usuarios(): JSX.Element {
 
   const handleSubmit = async (data: FormValues) => {
     try {
+      // Materializar turma virtual se necessário (para alunos)
+      let turmaIdFinal = data.turmaId;
+      if (data.tipoUsuario === 'alunos' && data.turmaId) {
+        const turmaObj = [...turmas, ...getTurmasProximas()].find(t => t.id === data.turmaId);
+        if (turmaObj && isTurmaVirtualizada(turmaObj)) {
+          turmaIdFinal = await materializarTurmaVirtual(turmaObj);
+        }
+      }
+
       const userData = {
         nome: data.nome,
         email: data.email,
         status: (data as any).status || 'Ativo',
-        ...(data.tipoUsuario === 'alunos' && { turmaId: data.turmaId }),
+        ...(data.tipoUsuario === 'alunos' && { turmaId: turmaIdFinal }),
         ...(data.tipoUsuario === 'professores' && { turmas: data.turmas }),
         ...(data.tipoUsuario === 'responsaveis' && { filhos: data.filhos }),
         // Adicionar dataCriacao apenas para novos usuários
@@ -671,7 +712,7 @@ export default function Usuarios(): JSX.Element {
             email: data.email,
             tipoUsuario: data.tipoUsuario,
             status: (data as any).status || 'Ativo',
-            turmaId: data.turmaId,
+            turmaId: turmaIdFinal,
             filhos: data.filhos,
             turmas: data.turmas,
             dataCriacao: new Date().toISOString(),
@@ -1444,13 +1485,13 @@ export default function Usuarios(): JSX.Element {
                   : activeTab === 'alunos' && turmaFiltro
                     ? filterList(alunos).filter(a => a.turmaId === turmaFiltro)
                     : filterList(
-                      activeTab === 'professores'
+                      (activeTab === 'professores'
                         ? professores
                         : activeTab === 'alunos'
                           ? alunos
                           : activeTab === 'responsaveis'
                             ? responsaveis
-                            : administradores
+                            : administradores) as UsuarioBase[]
                     )
                 ).length / itemsPerPage
               )}

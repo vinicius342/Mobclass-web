@@ -42,6 +42,7 @@ export class FrequenciaService {
         tipo: 'hoje' | 'mes' | 'personalizado';
         data?: string;
         mes?: string;
+        ano?: number; // Adicionar ano letivo
       };
     }
   ): { turma: string; taxa: number }[] {
@@ -55,17 +56,17 @@ export class FrequenciaService {
 
       // Filtrar por período
       if (filtros?.periodo) {
-        const { tipo, data, mes } = filtros.periodo;
+        const { tipo, data, mes, ano } = filtros.periodo;
         
         if (tipo === 'hoje') {
           const hoje = new Date().toISOString().split('T')[0];
           turmaFreq = turmaFreq.filter(f => f.data === hoje);
         } else if (tipo === 'mes' && mes) {
-          const anoAtual = new Date().getFullYear();
+          const anoFiltro = ano || new Date().getFullYear();
           turmaFreq = turmaFreq.filter(f => {
             if (!f.data) return false;
             const dataFreq = new Date(f.data);
-            return dataFreq.getFullYear() === anoAtual &&
+            return dataFreq.getFullYear() === anoFiltro &&
               (dataFreq.getMonth() + 1).toString().padStart(2, '0') === mes;
           });
         } else if (tipo === 'personalizado' && data) {

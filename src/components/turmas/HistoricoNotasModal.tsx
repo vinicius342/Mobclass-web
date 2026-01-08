@@ -65,12 +65,12 @@ const HistoricoNotasModal: React.FC<Props> = ({ show, onHide, historicoAluno, ge
                         const mediaFinal = nota?.mediaFinal;
                         return (
                           <td key={bimestre} className={`fw-bold ${getNotaColorUtil(mediaFinal)}`} style={{ fontSize: '1rem', padding: '6px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
-                            {mediaFinal !== null && mediaFinal !== undefined ? mediaFinal : '-'}
+                            {mediaFinal !== null && mediaFinal !== undefined ? Number(mediaFinal).toFixed(1) : '-'}
                           </td>
                         );
                       })}
                       <td className={`fw-bold ${getNotaColorUtil(mediaFinalMateria ? parseFloat(mediaFinalMateria) : undefined)}`} style={{ fontSize: '1.1rem', padding: '6px 4px', background: '#e9ecef', textAlign: 'center', verticalAlign: 'middle' }}>
-                        {mediaFinalMateria !== null ? mediaFinalMateria : '-'}
+                        {mediaFinalMateria !== null && mediaFinalMateria !== undefined ? Number(mediaFinalMateria).toFixed(1) : '-'}
                       </td>
                     </tr>
                   );
@@ -101,7 +101,7 @@ const HistoricoNotasModal: React.FC<Props> = ({ show, onHide, historicoAluno, ge
                           <div key={bimestre} className="col-6">
                             <div className="border rounded p-2 text-center">
                               <small className="text-muted d-block">{bimestre} Bim</small>
-                              <span className={`fw-bold fs-5 ${getNotaColorUtil(mediaFinal)}`}>{mediaFinal !== null && mediaFinal !== undefined ? mediaFinal : '-'}</span>
+                              <span className={`fw-bold fs-5 ${getNotaColorUtil(mediaFinal)}`}>{mediaFinal !== null && mediaFinal !== undefined ? Number(mediaFinal).toFixed(1) : '-'}</span>
                             </div>
                           </div>
                         );

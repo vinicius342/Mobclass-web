@@ -210,14 +210,25 @@ export const turmaService = {
     if (typeof turmaIdOuObjeto === 'string') {
       const turmaId = turmaIdOuObjeto;
       
-      // Buscar no cache se fornecido
-      if (turmasCache) {
-        turmaVirtual = turmasCache.find(t => t.id === turmaId);
-      }
-      
-      // Fallback: buscar no repositório
-      if (!turmaVirtual) {
-        turmaVirtual = (await turmaRepository.findById(turmaId)) || undefined;
+      // Se é um ID virtual, buscar APENAS no cache (não existe no Firebase)
+      if (turmaId.startsWith('virtual_')) {
+        if (turmasCache) {
+          turmaVirtual = turmasCache.find(t => t.id === turmaId);
+        }
+        
+        if (!turmaVirtual) {
+          console.warn(`⚠️ Turma virtual ${turmaId} não encontrada no cache`);
+          return turmaId; // Retornar o ID original se não encontrar
+        }
+      } else {
+        // Turma real: buscar no cache ou no repositório
+        if (turmasCache) {
+          turmaVirtual = turmasCache.find(t => t.id === turmaId);
+        }
+        
+        if (!turmaVirtual) {
+          turmaVirtual = (await turmaRepository.findById(turmaId)) || undefined;
+        }
       }
     } else {
       turmaVirtual = turmaIdOuObjeto;

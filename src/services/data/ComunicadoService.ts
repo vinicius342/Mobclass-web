@@ -1,5 +1,6 @@
 import { IComunicadoRepository } from '../../repositories/comunicado/IComunicadoRepository';
 import { Comunicado } from '../../models/Comunicado';
+import { Timestamp } from 'firebase/firestore';
 
 export class ComunicadoService {
   constructor(private repository: IComunicadoRepository) {}
@@ -149,7 +150,7 @@ export class ComunicadoService {
     let contador = 0;
 
     for (const turma of turmas) {
-      const payload: Omit<Comunicado, 'id'> = {
+      const payload: any = {
         assunto: dados.assunto,
         mensagem: dados.mensagem,
         turmaId: turma.id,
@@ -158,6 +159,7 @@ export class ComunicadoService {
         status: dados.status,
       };
 
+      // Só adiciona dataAgendamento se for agendado E tiver data
       if (dados.status === 'agendado' && dados.dataAgendamento) {
         payload.dataAgendamento = this.converterParaTimestamp(dados.dataAgendamento);
       }
@@ -182,7 +184,7 @@ export class ComunicadoService {
       dataAgendamento?: Date;
     }
   ): Partial<Omit<Comunicado, 'id'>> {
-    const payload: Partial<Omit<Comunicado, 'id'>> = {
+    const payload: any = {
       assunto: dados.assunto,
       mensagem: dados.mensagem,
       turmaId: dados.turmaId,
@@ -191,6 +193,7 @@ export class ComunicadoService {
       status: dados.status,
     };
 
+    // Só adiciona dataAgendamento se for agendado E tiver data
     if (dados.status === 'agendado' && dados.dataAgendamento) {
       payload.dataAgendamento = this.converterParaTimestamp(dados.dataAgendamento);
     }
@@ -202,8 +205,6 @@ export class ComunicadoService {
    * Obtém Timestamp atual do Firestore
    */
   private obterTimestampAtual() {
-    // Importar Timestamp dinamicamente para evitar problemas de importação circular
-    const { Timestamp } = require('firebase/firestore');
     return Timestamp.now();
   }
 
@@ -211,7 +212,6 @@ export class ComunicadoService {
    * Converte Date para Timestamp do Firestore
    */
   private converterParaTimestamp(date: Date) {
-    const { Timestamp } = require('firebase/firestore');
     return Timestamp.fromDate(date);
   }
 }

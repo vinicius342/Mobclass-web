@@ -145,10 +145,19 @@ export default function Agenda() {
       }
     };
     fetchInitial();
+  }, [userData, anoLetivo, isAdmin]);
 
-    if (!loading && turmas.length > 0) fetchAgendaPorTurma();
+  // useEffect separado para buscar agenda quando turmas estiverem carregadas
+  useEffect(() => {
+    if (!loading && turmas.length > 0) {
+      fetchAgendaPorTurma();
+    }
+  }, [turmas.length, loading]);
+
+  // useEffect separado para resetar página quando filtros mudarem
+  useEffect(() => {
     setCurrentPage(1);
-  }, [userData, anoLetivo, isAdmin, turmas, loading, filtroBusca, filtroTurma, filtroProfessor, filtroTurno, filtroDia]);
+  }, [filtroBusca, filtroTurma, filtroProfessor, filtroTurno, filtroDia]);
 
   const fetchAgendaPorTurma = async () => {
     const data = await agendaService.listar();

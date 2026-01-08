@@ -72,12 +72,24 @@ export default function Dashboard(): JSX.Element {
   const [loadingGraficos, setLoadingGraficos] = useState(false);
   const [grupoTurmasAutoSelecionado, setGrupoTurmasAutoSelecionado] = useState<boolean>(false);
 
-  // Divide as turmas em grupos de 5 - agora memoizado para evitar loop
+  // Divide as turmas em grupos de 5 - separa turmas que iniciam com letra das que iniciam com número
   const gruposTurmas = useMemo(() => {
+    // Separar turmas que iniciam com letra e com número
+    const turmasComLetra = turmasLista.filter(t => /^[a-zA-Z]/.test(t.nome));
+    const turmasComNumero = turmasLista.filter(t => /^[0-9]/.test(t.nome));
+    
     const grupos: { id: string; nome: string }[][] = [];
-    for (let i = 0; i < turmasLista.length; i += 5) {
-      grupos.push(turmasLista.slice(i, i + 5));
+    
+    // Adicionar grupos de turmas com letra (5 por grupo)
+    for (let i = 0; i < turmasComLetra.length; i += 5) {
+      grupos.push(turmasComLetra.slice(i, i + 5));
     }
+    
+    // Adicionar grupos de turmas com número (5 por grupo)
+    for (let i = 0; i < turmasComNumero.length; i += 5) {
+      grupos.push(turmasComNumero.slice(i, i + 5));
+    }
+    
     return grupos;
   }, [turmasLista]);
 
@@ -99,7 +111,7 @@ export default function Dashboard(): JSX.Element {
 
         // Processa em setTimeout para não bloquear
         setTimeout(() => {
-          setTurmasLista(turmas);
+          setTurmasLista(turmas.sort((a, b) => a.nome.localeCompare(b.nome)));
 
           setCounts({
             alunos: alunos.length,
@@ -209,8 +221,10 @@ export default function Dashboard(): JSX.Element {
       filtros.periodo = {
         tipo: tipoPeriodo as 'hoje' | 'mes' | 'personalizado',
         data: dataPersonalizada,
-        mes: mesSelecionado
+        mes: mesSelecionado,
+        ano: anoLetivo // Adicionar ano letivo do context
       };
+      console.log('Filtros aplicados:', filtros);
     }
 
     const freqResults = frequenciaService.calcularTaxasPorTurma(
@@ -218,8 +232,9 @@ export default function Dashboard(): JSX.Element {
       turmasLista,
       Object.keys(filtros).length > 0 ? filtros : undefined
     );
+    console.log('Resultados de frequência:', freqResults);
     setFreqData(freqResults);
-  }, [disciplinaSelecionada, tipoPeriodo, mesSelecionado, dataPersonalizada, freqDataOriginal, turmasLista, isAdmin]);
+  }, [disciplinaSelecionada, tipoPeriodo, mesSelecionado, dataPersonalizada, freqDataOriginal, turmasLista, isAdmin, anoLetivo]);
 
   // Recalcular notas quando filtros de turma ou disciplina mudarem
   useEffect(() => {

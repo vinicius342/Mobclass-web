@@ -67,13 +67,12 @@ export default function Register(): JSX.Element {
         status: 'Ativo'
       });
 
-      // Criar documento na coleção específica do tipo
+      // Criar documento na coleção específica do tipo (mesmos campos da Cloud Function)
       await addDoc(collection(db, tipo), {
         nome: nome.trim(),
         email: email.trim(),
-        uid: user.uid,
         status: 'Ativo',
-        criadoEm: new Date(),
+        dataCriacao: new Date(),
         // Campos específicos por tipo
         ...(tipo === 'alunos' && { turmaId: '' }),
         ...(tipo === 'professores' && { turmas: [] }),

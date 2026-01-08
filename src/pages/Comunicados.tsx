@@ -85,9 +85,9 @@ export default function Comunicados() {
   const [showModal, setShowModal] = useState(false);
   const [assunto, setAssunto] = useState('');
   const [mensagem, setMensagem] = useState('');
-  const [turmaId, setTurmaId] = useState('');
   const [turmasSelecionadas, setTurmasSelecionadas] = useState<string[]>([]);
   const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [editandoIds, setEditandoIds] = useState<string[]>([]); // IDs de todos os comunicados do grupo
   const [status, setStatus] = useState<'enviado' | 'agendado' | 'rascunho'>('enviado');
   const [dataAgendamento, setDataAgendamento] = useState<Date | null>(null);
   const [toast, setToast] = useState({ show: false, message: '', variant: 'success' as 'success' | 'danger' });
@@ -98,6 +98,7 @@ export default function Comunicados() {
   const [filtroStatus, setFiltroStatus] = useState('');
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [expandedMessages, setExpandedMessages] = useState<Record<string, boolean>>({});
+  const [expandedTurmas, setExpandedTurmas] = useState<Set<string>>(new Set());
   const itensPorPagina = 6;
   const maxCaracteres = 150;
 
@@ -123,7 +124,7 @@ export default function Comunicados() {
       listaTurmas = todasTurmas.filter((t: Turma) => turmaIds.includes(t.id));
     }
 
-    setTurmas(listaTurmas);
+    setTurmas(listaTurmas.sort((a, b) => a.nome.localeCompare(b.nome)));
 
     let comunicadosList: Comunicado[];
     if (isAdmin) {
@@ -153,20 +154,27 @@ export default function Comunicados() {
     }
 
     try {
-      if (editandoId) {
-        // Modo edição
-        const turmaSelecionada = turmas.find(t => t.id === turmaId);
-        const payload = comunicadoService.prepararPayloadAtualizacao({
-          assunto,
-          mensagem,
-          turmaId,
-          turmaNome: turmaSelecionada?.nome || '',
-          status,
-          dataAgendamento: dataAgendamento || undefined,
+      if (editandoId && editandoIds.length > 0) {
+        // Modo edição - atualizar todos os comunicados do grupo
+        const promises = editandoIds.map(async (id) => {
+          const comunicadoOriginal = comunicados.find(c => c.id === id);
+          if (comunicadoOriginal) {
+            const turmaSelecionada = turmas.find(t => t.id === comunicadoOriginal.turmaId);
+            const payload = comunicadoService.prepararPayloadAtualizacao({
+              assunto,
+              mensagem,
+              turmaId: comunicadoOriginal.turmaId,
+              turmaNome: turmaSelecionada?.nome || '',
+              status,
+              dataAgendamento: dataAgendamento || undefined,
+            });
+
+            await comunicadoService.atualizar(id, payload);
+          }
         });
 
-        await comunicadoService.atualizar(editandoId, payload);
-        setToast({ show: true, message: 'Comunicado atualizado com sucesso!', variant: 'success' });
+        await Promise.all(promises);
+        setToast({ show: true, message: `${editandoIds.length} comunicado(s) atualizado(s) com sucesso!`, variant: 'success' });
       } else {
         // Modo criação - determinar turmas
         let turmasParaCriar = turmasSelecionadas.includes('todas')
@@ -195,12 +203,31 @@ export default function Comunicados() {
     }
   };
 
-  const handleEditar = (comunicado: Comunicado) => {
+  const handleEditar = (comunicado: any) => {
     setEditandoId(comunicado.id);
     setAssunto(comunicado.assunto);
     setMensagem(comunicado.mensagem);
-    setTurmaId(comunicado.turmaId);
-    setTurmasSelecionadas([comunicado.turmaId]);
+    
+    // Se o comunicado está agrupado (tem turmasIds), buscar todos os IDs originais
+    if (comunicado.turmasIds && Array.isArray(comunicado.turmasIds) && comunicado.turmasIds.length > 0) {
+      setTurmasSelecionadas(comunicado.turmasIds);
+      
+      // Buscar os IDs originais de todos os comunicados do grupo
+      const idsOriginais = comunicados
+        .filter(c => 
+          c.assunto === comunicado.assunto && 
+          c.mensagem === comunicado.mensagem && 
+          c.status === comunicado.status &&
+          comunicado.turmasIds.includes(c.turmaId)
+        )
+        .map(c => c.id);
+      
+      setEditandoIds(idsOriginais);
+    } else {
+      setTurmasSelecionadas([comunicado.turmaId]);
+      setEditandoIds([comunicado.id]);
+    }
+    
     setStatus(comunicado.status);
 
     // Definir data de agendamento se existir
@@ -211,11 +238,40 @@ export default function Comunicados() {
     setShowModal(true);
   };
 
-  const handleExcluir = async (id: string) => {
-    if (!window.confirm('Excluir este comunicado?')) return;
+  const handleExcluir = async (comunicado: any) => {
+    // Determinar quantos comunicados serão excluídos
+    let idsParaExcluir: string[] = [];
+    
+    if (comunicado.turmasIds && Array.isArray(comunicado.turmasIds) && comunicado.turmasIds.length > 0) {
+      // Comunicado agrupado - buscar todos os IDs originais
+      idsParaExcluir = comunicados
+        .filter(c => 
+          c.assunto === comunicado.assunto && 
+          c.mensagem === comunicado.mensagem && 
+          c.status === comunicado.status &&
+          comunicado.turmasIds.includes(c.turmaId)
+        )
+        .map(c => c.id);
+    } else {
+      // Comunicado único
+      idsParaExcluir = [comunicado.id];
+    }
+
+    const mensagemConfirmacao = idsParaExcluir.length > 1 
+      ? `Excluir este comunicado de ${idsParaExcluir.length} turmas?`
+      : 'Excluir este comunicado?';
+
+    if (!window.confirm(mensagemConfirmacao)) return;
+    
     try {
-      await comunicadoService.deletar(id);
-      setToast({ show: true, message: 'Comunicado excluído.', variant: 'success' });
+      // Excluir todos os comunicados do grupo
+      await Promise.all(idsParaExcluir.map(id => comunicadoService.deletar(id)));
+      
+      setToast({ 
+        show: true, 
+        message: `${idsParaExcluir.length} comunicado(s) excluído(s).`, 
+        variant: 'success' 
+      });
       fetchData();
     } catch (err) {
       console.error(err);
@@ -226,11 +282,11 @@ export default function Comunicados() {
   const limparFormulario = () => {
     setAssunto('');
     setMensagem('');
-    setTurmaId('');
     setTurmasSelecionadas([]);
     setStatus('enviado');
     setDataAgendamento(null);
     setEditandoId(null);
+    setEditandoIds([]);
   };
 
   const limparFiltros = () => {
@@ -245,6 +301,101 @@ export default function Comunicados() {
     setExpandedMessages(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const toggleExpandTurmas = (comunicadoId: string) => {
+    setExpandedTurmas(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(comunicadoId)) {
+        newSet.delete(comunicadoId);
+      } else {
+        newSet.add(comunicadoId);
+      }
+      return newSet;
+    });
+  };
+
+  const renderTurmasBadges = (turmasNomes: string[], comunicadoId: string, maxVisible: number = 2) => {
+    if (!turmasNomes || !Array.isArray(turmasNomes) || turmasNomes.length === 0) {
+      return <span style={{ color: '#6c757d', fontSize: '0.8rem' }}>Sem turma</span>;
+    }
+
+    if (turmasNomes.length === 1) {
+      return (
+        <span
+          style={{
+            background: '#e0edff',
+            color: '#2563eb',
+            fontWeight: 700,
+            border: 'none',
+            borderRadius: '12px',
+            padding: '0.25rem 0.6rem',
+            fontSize: '0.75rem',
+            letterSpacing: '0.1px',
+            lineHeight: 1.1,
+            display: 'inline-block'
+          }}
+        >
+          {turmasNomes[0]}
+        </span>
+      );
+    }
+
+    const isExpanded = expandedTurmas.has(comunicadoId);
+    const turmasSorted = [...turmasNomes].sort();
+    const turmasToShow = isExpanded ? turmasSorted : turmasSorted.slice(0, maxVisible);
+    const remainingCount = turmasSorted.length - maxVisible;
+
+    return (
+      <>
+        {turmasToShow.map((nome, idx) => (
+          <span
+            key={idx}
+            style={{
+              background: '#e0edff',
+              color: '#2563eb',
+              fontWeight: 700,
+              border: 'none',
+              borderRadius: '12px',
+              padding: '0.25rem 0.6rem',
+              fontSize: '0.75rem',
+              letterSpacing: '0.1px',
+              lineHeight: 1.1,
+              marginRight: 4,
+              marginBottom: 4,
+              display: 'inline-block'
+            }}
+          >
+            {nome}
+          </span>
+        ))}
+        {remainingCount > 0 && (
+          <span
+            onClick={() => toggleExpandTurmas(comunicadoId)}
+            style={{
+              background: '#f1f5f9',
+              color: '#64748b',
+              fontWeight: 600,
+              border: 'none',
+              borderRadius: '12px',
+              padding: '0.25rem 0.6rem',
+              fontSize: '0.75rem',
+              letterSpacing: '0.1px',
+              lineHeight: 1.1,
+              marginRight: 4,
+              marginBottom: 4,
+              display: 'inline-block',
+              cursor: 'pointer',
+              transition: 'background-color 0.2s'
+            }}
+            onMouseEnter={(e) => (e.target as HTMLElement).style.backgroundColor = '#e2e8f0'}
+            onMouseLeave={(e) => (e.target as HTMLElement).style.backgroundColor = '#f1f5f9'}
+          >
+            {isExpanded ? 'menos' : `+${remainingCount} mais`}
+          </span>
+        )}
+      </>
+    );
+  };
+
   const turmasDisponiveis = turmas;
   const assuntosDisponiveis = comunicadoService.extrairAssuntos(comunicados);
 
@@ -255,8 +406,34 @@ export default function Comunicados() {
     status: filtroStatus,
   });
 
-  const totalPaginas = Math.ceil(comunicadosFiltrados.length / itensPorPagina);
-  const comunicadosPaginados = comunicadosFiltrados.slice((paginaAtual - 1) * itensPorPagina, paginaAtual * itensPorPagina);
+  // Agrupar comunicados por assunto + mensagem + status + dataAgendamento (SEM o campo data que varia)
+  const comunicadosAgrupados = comunicadosFiltrados.reduce((acc, comunicado) => {
+    // Criar chave única baseada APENAS no conteúdo (sem timestamp de criação)
+    const dataAgendamentoKey = comunicado.dataAgendamento ? comunicado.dataAgendamento.toMillis() : 'sem-agendamento';
+    const chave = `${comunicado.assunto}|${comunicado.mensagem}|${comunicado.status}|${dataAgendamentoKey}`;
+    
+    if (!acc[chave]) {
+      acc[chave] = {
+        ...comunicado,
+        turmasIds: [comunicado.turmaId],
+        turmasNomes: [comunicado.turmaNome || turmas.find(t => t.id === comunicado.turmaId)?.nome || '-']
+      };
+    } else {
+      // Adicionar turma ao grupo existente se não estiver já incluída
+      if (!acc[chave].turmasIds.includes(comunicado.turmaId)) {
+        acc[chave].turmasIds.push(comunicado.turmaId);
+        acc[chave].turmasNomes.push(comunicado.turmaNome || turmas.find(t => t.id === comunicado.turmaId)?.nome || '-');
+      }
+    }
+    
+    return acc;
+  }, {} as Record<string, any>);
+
+  // Converter objeto agrupado em array
+  const comunicadosUnicos = Object.values(comunicadosAgrupados);
+
+  const totalPaginas = Math.ceil(comunicadosUnicos.length / itensPorPagina);
+  const comunicadosPaginados = comunicadosUnicos.slice((paginaAtual - 1) * itensPorPagina, paginaAtual * itensPorPagina);
 
   return (
     <AppLayout>
@@ -319,7 +496,7 @@ export default function Comunicados() {
                   >
                     <option value="" disabled hidden>Filtrar por turma</option>
                     <option value="">Todas</option>
-                    {turmasDisponiveis.map(t => (
+                    {[...turmasDisponiveis].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
                       <option key={t.id} value={t.id}>{t.nome}</option>
                     ))}
                   </Form.Select>
@@ -448,7 +625,7 @@ export default function Comunicados() {
                         variant="link"
                         className="p-0 text-danger d-flex align-items-center px-2"
                         style={{ fontSize: '1rem' }}
-                        onClick={() => handleExcluir(c.id)}
+                        onClick={() => handleExcluir(c)}
                         title="Excluir"
                       >
                         <Trash2 size={18} />
@@ -457,10 +634,19 @@ export default function Comunicados() {
                   </div>
                 </div>
                 {/* Turma e Data abaixo do título, lado a lado */}
-                <div className="d-flex align-items-center gap-3 mb-2" style={{ marginLeft: '2px' }}>
-                  <p style={{ color: '#6c757d', fontWeight: 'bold', fontSize: '0.8rem', marginBottom: 0 }}>
-                    Turma: {(c.turmaNome === '-' || c.turmaId === '') ? 'Todas as turmas' : (c.turmaNome || turmas.find(t => t.id === c.turmaId)?.nome || '-')}
-                  </p>
+                <div className="d-flex align-items-center gap-3 mb-2" style={{ marginLeft: '2px', flexWrap: 'wrap' }}>
+                  <div className="d-flex align-items-center gap-1" style={{ flexWrap: 'wrap' }}>
+                    <span style={{ color: '#6c757d', fontWeight: 'bold', fontSize: '0.8rem', marginRight: '0.25rem' }}>
+                      {c.turmasNomes && c.turmasNomes.length > 1 ? 'Turmas:' : 'Turma:'}
+                    </span>
+                    {c.turmasNomes && c.turmasNomes.length > 0 ? (
+                      renderTurmasBadges(c.turmasNomes, c.id)
+                    ) : (
+                      <span style={{ color: '#6c757d', fontSize: '0.8rem' }}>
+                        {(c.turmaNome === '-' || c.turmaId === '') ? 'Todas as turmas' : (c.turmaNome || turmas.find(t => t.id === c.turmaId)?.nome || '-')}
+                      </span>
+                    )}
+                  </div>
                   <small style={{ color: '#6c757d', fontSize: '0.8rem' }}>
                     {c.status === 'agendado' && c.dataAgendamento
                       ? `Agendado para: ${c.dataAgendamento.toDate().toLocaleDateString('pt-BR', {

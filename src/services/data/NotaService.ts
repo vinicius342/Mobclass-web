@@ -249,23 +249,12 @@ export class NotaService {
           notasPorMateriaBimestre[nota.bimestre] = {};
         }
 
-        // Calcular média final
-        let mediaFinal: number | null = null;
-
-        const temTresNotas =
-          typeof nota.notaParcial === 'number' &&
-          typeof nota.notaGlobal === 'number' &&
-          typeof nota.notaParticipacao === 'number';
-
-        const temRecuperacao = typeof nota.notaRecuperacao === 'number';
-
-        if (temTresNotas || temRecuperacao) {
-          if (temRecuperacao) {
-            mediaFinal = nota.notaRecuperacao!;
-          } else {
-            mediaFinal = (nota.notaParcial! + nota.notaGlobal! + nota.notaParticipacao!) / 3;
-          }
-        }
+        // Calcular média final usando a mesma lógica do calcularMediaFinal
+        const parcial = typeof nota.notaParcial === 'number' ? nota.notaParcial : 0;
+        const global = typeof nota.notaGlobal === 'number' ? nota.notaGlobal : 0;
+        const participacao = typeof nota.notaParticipacao === 'number' ? nota.notaParticipacao : 0;
+        const media = ((parcial + global) / 2) + participacao;
+        const mediaFinal = Math.min(parseFloat(media.toFixed(1)), 10);
 
         notasPorMateriaBimestre[nota.bimestre][nomeMateria] = {
           mediaFinal: mediaFinal
