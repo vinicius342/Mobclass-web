@@ -20,7 +20,7 @@
 
 /* Badge de status dos usuários */
 .usuario-status-badge.ativo {
-  background: #d1fae5 !important; 
+  background: #d1fae5 !important;
   color: #166534 !important;
 }
 
@@ -31,7 +31,7 @@
 /* Efeito suave para expandir/recolher mensagem do comunicado */
 .comunicado-mensagem-transicao {
   max-height: 70px;
-  transition: max-height 0.4s cubic-bezier(0.4,0,0.2,1);
+  transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .comunicado-mensagem-transicao.expanded {
   max-height: 800px;
@@ -67,11 +67,31 @@
   border: 1px solid #6b7280 !important;
 }
 /* Badge de categoria das matérias */
-.status-badge.exatas { background: #22c55e !important; color: #fff !important; border: 1px solid #22c55e !important; }
-.status-badge.humanas { background: #a259e6 !important; color: #fff !important; border: 1px solid #a259e6 !important; }
-.status-badge.linguagens { background: #ff9800 !important; color: #fff !important; border: 1px solid #ff9800 !important; }
-.status-badge.outras { background: #6b7280 !important; color: #fff !important; border: 1px solid #6b7280 !important; }
-.status-badge.total { background: #3b82f6 !important; color: #fff !important; border: 1px solid #3b82f6 !important; }
+.status-badge.exatas {
+  background: #22c55e !important;
+  color: #fff !important;
+  border: 1px solid #22c55e !important;
+}
+.status-badge.humanas {
+  background: #a259e6 !important;
+  color: #fff !important;
+  border: 1px solid #a259e6 !important;
+}
+.status-badge.linguagens {
+  background: #ff9800 !important;
+  color: #fff !important;
+  border: 1px solid #ff9800 !important;
+}
+.status-badge.outras {
+  background: #6b7280 !important;
+  color: #fff !important;
+  border: 1px solid #6b7280 !important;
+}
+.status-badge.total {
+  background: #3b82f6 !important;
+  color: #fff !important;
+  border: 1px solid #3b82f6 !important;
+}
 /* Reset global */
 * {
   box-sizing: border-box;
@@ -121,11 +141,11 @@ body {
   background: #fff;
   color: #212529;
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .custom-tab:not(.active):hover {
-  background: rgba(255,255,255,0.7);
+  background: rgba(255, 255, 255, 0.7);
   color: #343a40;
 }
 
@@ -488,7 +508,7 @@ button {
   position: sticky;
   top: 0;
   z-index: 10;
-  box-shadow: 0 2px 2px -1px rgba(0,0,0,0.04);
+  box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.04);
 }
 
 .campo-alterado {
@@ -504,7 +524,7 @@ button {
   .row {
     gap: 0.5rem;
   }
-  
+
   .d-flex.gap-3.justify-content-end.col-md-7 {
     display: flex;
     flex-direction: column;
@@ -643,7 +663,7 @@ button {
 
   /* Indicador visual para dias com aulas - APENAS MOBILE quando recolhido */
   .turno-dia-card:not(.expanded) .turno-dia-titulo::after {
-    content: '';
+    content: "";
     display: inline-block;
     width: 6px;
     height: 6px;
@@ -1136,7 +1156,7 @@ button {
   background: transparent;
   color: #111;
   border: 1.2px solid #111;
-  padding: 0.10rem 0.38rem;
+  padding: 0.1rem 0.38rem;
   border-radius: 11px;
   font-size: 0.62rem;
   font-weight: 500;
@@ -1162,7 +1182,7 @@ button {
 
 .dropdown-toggle-no-caret:hover {
   color: #343a40 !important;
-  background: rgba(0,0,0,0.05) !important;
+  background: rgba(0, 0, 0, 0.05) !important;
   border-radius: 4px !important;
 }
 
@@ -1498,25 +1518,25 @@ button {
     max-width: 95%;
     margin: 0.5rem auto;
   }
-  
+
   .historico-modal .modal-body {
     padding: 1rem 0.75rem;
   }
-  
+
   .historico-bimestre-card {
     padding: 0.75rem;
   }
-  
+
   .historico-bimestre-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.5rem;
   }
-  
+
   .historico-bimestre-media {
     align-self: flex-end;
   }
-  
+
   .historico-nota-row {
     padding: 0.3rem 0;
   }
@@ -1811,26 +1831,26 @@ button {
   .materias-stats-mobile {
     padding: 0 15px;
   }
-  
+
   .materias-stats-mobile .row {
     margin: 0 -8px;
   }
-  
+
   .materias-stats-mobile .col-6 {
     padding: 0 8px;
     margin-bottom: 16px;
   }
-  
+
   .materias-stats-card {
     min-height: 100px;
     padding: 16px 12px;
   }
-  
+
   .materias-stats-card h6 {
     font-size: 0.75rem;
     margin-bottom: 8px;
   }
-  
+
   .materias-stats-card h4 {
     font-size: 1.5rem;
   }
@@ -1842,17 +1862,17 @@ button {
     padding: 0 15px;
     margin-bottom: 20px;
   }
-  
+
   .materias-filters-mobile .row {
     margin: 0 -8px;
   }
-  
+
   .materias-filters-mobile .col-12,
   .materias-filters-mobile .col-6 {
     padding: 0 8px;
     margin-bottom: 12px;
   }
-  
+
   .materias-filters-mobile .form-control,
   .materias-filters-mobile .form-select {
     font-size: 0.875rem;
@@ -1860,7 +1880,7 @@ button {
     border-radius: 8px;
     border: 1px solid #d1d5db;
   }
-  
+
   .materias-filters-mobile .btn {
     padding: 12px 20px;
     font-size: 0.875rem;
@@ -1874,7 +1894,7 @@ button {
   .materias-list-desktop {
     display: none !important;
   }
-  
+
   .materias-mobile-cards {
     display: block !important;
   }
@@ -2036,26 +2056,26 @@ button {
   .turmas-stats-mobile {
     padding: 0 15px;
   }
-  
+
   .turmas-stats-mobile .row {
     margin: 0 -8px;
   }
-  
+
   .turmas-stats-mobile .col-md-4 {
     padding: 0 8px;
     margin-bottom: 16px;
   }
-  
+
   .turmas-stats-card {
     min-height: 100px;
     padding: 16px 12px;
   }
-  
+
   .turmas-stats-card h6 {
     font-size: 0.75rem;
     margin-bottom: 8px;
   }
-  
+
   .turmas-stats-card h3 {
     font-size: 1.5rem;
   }
@@ -2067,16 +2087,16 @@ button {
     padding: 0 15px;
     margin-bottom: 20px;
   }
-  
+
   .turmas-filters-mobile .row {
     margin: 0 -8px;
   }
-  
+
   .turmas-filters-mobile .col-md-3 {
     padding: 0 8px;
     margin-bottom: 12px;
   }
-  
+
   .turmas-filters-mobile .form-control,
   .turmas-filters-mobile .form-select {
     font-size: 0.875rem;
@@ -2091,16 +2111,16 @@ button {
   .turmas-list-desktop {
     display: none !important;
   }
-  
+
   .turmas-mobile-cards {
     display: block !important;
   }
-  
+
   /* Esconder tabelas desktop e mostrar cards mobile */
   .table-responsive {
     display: none !important;
   }
-  
+
   .agenda-cards-mobile,
   .materias-cards-mobile,
   .notas-cards-mobile {
@@ -2295,7 +2315,7 @@ button {
   .vinculos-list-desktop {
     display: none !important;
   }
-  
+
   .vinculos-mobile-cards {
     display: block !important;
   }
@@ -2350,13 +2370,13 @@ button {
   background: #22c55e !important;
   color: #fff !important;
   border-color: #22c55e !important;
-  box-shadow: 0 2px 8px 0 rgba(34,197,94,0.08);
+  box-shadow: 0 2px 8px 0 rgba(34, 197, 94, 0.08);
 }
 .active-btn-danger {
   background: #dc3545 !important;
   color: #fff !important;
   border-color: #dc3545 !important;
-  box-shadow: 0 2px 8px 0 rgba(220,53,69,0.08);
+  box-shadow: 0 2px 8px 0 rgba(220, 53, 69, 0.08);
 }
 
 /* Remove border-radius entre botões do grupo (desktop) */
@@ -2373,15 +2393,16 @@ button {
 /* Hover nos cards de atividades/alunos */
 .custom-card-frequencia:hover {
   background: #f3f6fa !important;
-  box-shadow: 0 2px 8px 0 rgba(37,99,235,0.06);
+  box-shadow: 0 2px 8px 0 rgba(37, 99, 235, 0.06);
   transition: background 0.2s, box-shadow 0.2s;
 }
 
 /* Responsividade para cards mobile */
 @media (max-width: 767.98px) {
-  .materias-card-mobile, .alunos-mobile-cards .materias-card-mobile {
+  .materias-card-mobile,
+  .alunos-mobile-cards .materias-card-mobile {
     border-radius: 12px !important;
-    box-shadow: 0 2px 8px 0 rgba(37,99,235,0.06);
+    box-shadow: 0 2px 8px 0 rgba(37, 99, 235, 0.06);
     background: #fff;
     margin-bottom: 16px;
   }
@@ -2909,27 +2930,22 @@ button {
 
 /* ========== FIM DOS ESTILOS PARA TURMAS/REMATRÍCULA - MOBILE ========== */
 
-  .btn-acao-aprovado:hover {
-    background: #22c55e !important;
-    color: #fff !important;
-  }
+.btn-acao-aprovado:hover {
+  background: #22c55e !important;
+  color: #fff !important;
+}
 
-  .btn-acao-reprovado:hover {
-    background: #dc3545 !important;
-    color: #fff !important;
-  }
+.btn-acao-reprovado:hover {
+  background: #dc3545 !important;
+  color: #fff !important;
+}
 
-  .btn-aprovar-todos {
-    border: 1px solid #93c4a5 !important;
-    font-style: italic;
-  }
+.btn-aprovar-todos {
+  border: 1px solid #93c4a5 !important;
+  font-style: italic;
+}
 
-  .btn-reprovar-todos {
-    border: 1px solid #f5a6a6 !important;
-    font-style: italic;
-  }
-
-  /* .filter-label {
-    font-size: 0.9rem;
-    font-weight: 600;
-  } */
+.btn-reprovar-todos {
+  border: 1px solid #f5a6a6 !important;
+  font-style: italic;
+}

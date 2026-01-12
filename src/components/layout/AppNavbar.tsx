@@ -3,9 +3,9 @@ import { useState } from 'react';
 import { Navbar, Nav, Offcanvas, Button } from 'react-bootstrap';
 import { Link, useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
-import { auth } from '../services/firebase';
-import { useAuth } from '../contexts/AuthContext';
-import logo from '../assets/logo.png';
+import { auth } from '../../services/firebase/firebase';
+import { useAuth } from '../../contexts/AuthContext';
+import logo from '../../assets/logo.png';
 import { FaLink } from 'react-icons/fa';
 
 
@@ -27,6 +27,8 @@ export default function AppNavbar() {
 
   const handleLogout = async () => {
     try {
+      // Limpar o ano letivo do localStorage ao fazer logout
+      localStorage.removeItem('anoLetivo');
       await signOut(auth);
       navigate('/login');
     } catch (error) {

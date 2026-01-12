@@ -6,11 +6,7 @@ import { Form, Button, Spinner } from "react-bootstrap";
 import { useState, useEffect } from "react";
 import { Person, Shield, PeopleFill } from "react-bootstrap-icons";
 import { GraduationCap } from "lucide-react";
-
-export interface Turma {
-  id: string;
-  nome: string;
-}
+import { Turma } from '../../models/Turma';
 
 export interface AlunoOption {
   id: string;
@@ -262,7 +258,9 @@ export default function UsuarioForm({
             <Form.Select isInvalid={!!errors.turmaId} {...register('turmaId')}>
               <option value="">Selecione uma turma</option>
               {[...turmas].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
-                <option key={t.id} value={t.id}>{t.nome}</option>
+                <option key={t.id} value={t.id}>
+                  {t.nome}
+                </option>
               ))}
             </Form.Select>
             <Form.Control.Feedback type="invalid">
@@ -320,7 +318,7 @@ export default function UsuarioForm({
                   key={t.id}
                   type="checkbox"
                   id={`turma-${t.id}`}
-                  label={t.nome}
+                  label={`${t.nome}`}
                   value={t.id}
                   {...register('turmas')}
                 />

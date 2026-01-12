@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button, Modal, Form, Badge, Table, Spinner, Dropdown } from 'react-bootstrap';
-import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy, where } from 'firebase/firestore';
-import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import { toast } from 'react-toastify';
 import {
   Plus,
@@ -19,46 +17,18 @@ import {
   Download,
 } from 'lucide-react';
 import { FaCircleExclamation } from 'react-icons/fa6';
-import Paginacao from '../components/Paginacao';
+import Paginacao from '../components/common/Paginacao';
+import { Ocorrencia } from '../models/Ocorrencia';
+import { Aluno } from '../models/Aluno';
+import { Turma } from '../models/Turma';
+import { OcorrenciaService } from '../services/data/OcorrenciaService';
+import { FirebaseOcorrenciaRepository } from '../repositories/ocorrencia/FirebaseOcorrenciaRepository';
+import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
+import { turmaService } from '../services/data/TurmaService';
 
-// PDF
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-
-// XLSX
-import * as XLSX from 'xlsx';
-
-interface Ocorrencia {
-  id: string;
-  titulo: string;
-  descricao: string;
-  tipo: 'disciplinar' | 'academica' | 'comportamental' | 'outros';
-  gravidade: 'baixa' | 'media' | 'alta' | 'critica';
-  status: 'aberta' | 'em_analise' | 'resolvida' | 'arquivada';
-  alunoId: string;
-  alunoNome: string;
-  turmaId: string;
-  turmaNome: string;
-  professorId: string;
-  professorNome: string;
-  dataOcorrencia: string;
-  dataCriacao: string;
-  dataResolucao?: string;
-  observacoes?: string;
-  medidas?: string;
-}
-
-interface Aluno {
-  id: string;
-  nome: string;
-  turmaId: string;
-}
-
-interface Turma {
-  id: string;
-  nome: string;
-  ano: string;
-}
+const ocorrenciaRepository = new FirebaseOcorrenciaRepository();
+const ocorrenciaService = new OcorrenciaService(ocorrenciaRepository);
+const alunoRepository = new FirebaseAlunoRepository();
 
 export default function Ocorrencias() {
   const authContext = useAuth();
@@ -81,24 +51,8 @@ export default function Ocorrencias() {
 
   // Filtros
   const [filtroTipo, setFiltroTipo] = useState('');
-  // Tipos padrão do sistema
-  const tiposPadrao = [
-    { value: 'nao_fez_atividade', label: 'Não Fez a atividade de casa/classe' },
-    { value: 'esqueceu_material', label: 'Esqueceu o material didático' },
-    { value: 'indisciplina_intervalo', label: 'Indisciplinado no intervalo' },
-    { value: 'indisciplina_sala', label: 'Indisciplinado na sala de aula' },
-    { value: 'aluno_atrasado', label: 'Aluno atrasado' },
-    { value: 'comportamento_agressivo', label: 'Comportamento agressivo' }
-  ];
-  // Tipos personalizados já cadastrados
-  const tiposPersonalizados = Array.from(
-    new Set(
-      ocorrencias
-        .map(o => o.tipo)
-        .filter(tipo => !tiposPadrao.some(t => t.value === tipo))
-    )
-  ).map(tipo => ({ value: tipo, label: tipo }));
-  const tiposParaFiltro = [...tiposPadrao, ...tiposPersonalizados];
+  // Tipos disponíveis (padrão + personalizados)
+  const tiposParaFiltro = ocorrenciaService.obterTodosOsTipos(ocorrencias);
   // Filtro de aluno com ocorrência e turma
   const [filtroAluno, setFiltroAluno] = useState('');
   const [filtroTurma, setFiltroTurma] = useState('');
@@ -143,80 +97,63 @@ export default function Ocorrencias() {
 
   const carregarOcorrencias = async () => {
     try {
-      const q = query(collection(db, 'ocorrencias'), orderBy('dataCriacao', 'desc'));
-      const snapshot = await getDocs(q);
-      const dados = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Ocorrencia[];
+      const dados = await ocorrenciaService.listar();
       setOcorrencias(dados);
     } catch (error) {
-      setOcorrencias([]); // Define array vazio em caso de erro
+      console.error('Erro ao carregar ocorrências:', error);
+      setOcorrencias([]);
     }
   };
 
   const carregarAlunos = async () => {
-    const snapshot = await getDocs(collection(db, 'alunos'));
-    const dados = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as Aluno[];
-    setAlunos(dados);
+    try {
+      const dados = await alunoRepository.findAll();
+      setAlunos(dados);
+    } catch (error) {
+      console.error('Erro ao carregar alunos:', error);
+      setAlunos([]);
+    }
   };
 
   const carregarTurmas = async () => {
-    const snapshot = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())));
-    const dados = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as Turma[];
-    setTurmas(dados);
+    try {
+      const dados = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+      setTurmas(dados);
+    } catch (error) {
+      console.error('Erro ao carregar turmas:', error);
+      setTurmas([]);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.alunoId) {
-      toast.error('Preencha todos os campos obrigatórios');
-      return;
-    }
-    if (formData.tipo === 'outro' && !formData.tipoPersonalizado) {
-      toast.error('Digite o nome do novo tipo de ocorrência');
+    // Validar formulário usando service
+    const validacao = ocorrenciaService.validarFormulario(formData);
+    if (!validacao.valido) {
+      toast.error(validacao.erro!);
       return;
     }
 
     try {
       const aluno = alunos.find(a => a.id === formData.alunoId);
       const turma = turmas.find(t => t.id === (formData.turmaId || aluno?.turmaId));
-
-      // Garante que dataCriacao só é definida na criação
       const isEdit = Boolean(editingOcorrencia);
-      const tipoFinal = formData.tipo === 'outro' ? formData.tipoPersonalizado : formData.tipo;
-      const dataAtual = new Date().toISOString();
-      const ocorrenciaData = {
-        titulo: getTipoLabel(tipoFinal),
-        descricao: formData.observacoes || `Ocorrência do tipo: ${getTipoLabel(tipoFinal)}`,
-        tipo: tipoFinal,
-        gravidade: formData.gravidade,
-        status: formData.status,
-        alunoId: formData.alunoId,
-        turmaId: formData.turmaId || aluno?.turmaId || '',
-        alunoNome: aluno?.nome || '',
-        turmaNome: turma?.nome || '',
-        professorId: userData?.uid || '',
-        professorNome: userData?.nome || userData?.email || '',
-        dataOcorrencia: dataAtual,
-        observacoes: formData.observacoes || '',
-        medidas: formData.medidas || '',
-        ...(isEdit ? {} : { dataCriacao: dataAtual }),
-        ...(formData.status === 'resolvida' && { dataResolucao: dataAtual })
-      };
+
+      // Preparar dados usando service
+      const ocorrenciaData = ocorrenciaService.prepararDadosOcorrencia(
+        formData,
+        aluno,
+        turma,
+        userData || undefined,
+        isEdit
+      );
 
       if (editingOcorrencia) {
-        await updateDoc(doc(db, 'ocorrencias', editingOcorrencia.id), ocorrenciaData);
+        await ocorrenciaService.atualizar(editingOcorrencia.id, ocorrenciaData);
         toast.success('Ocorrência atualizada com sucesso!');
       } else {
-        await addDoc(collection(db, 'ocorrencias'), ocorrenciaData);
+        await ocorrenciaService.criar(ocorrenciaData);
         toast.success('Ocorrência registrada com sucesso!');
       }
 
@@ -231,7 +168,7 @@ export default function Ocorrencias() {
   const handleDelete = async (id: string) => {
     if (window.confirm('Tem certeza que deseja excluir esta ocorrência?')) {
       try {
-        await deleteDoc(doc(db, 'ocorrencias', id));
+        await ocorrenciaService.excluir(id);
         toast.success('Ocorrência excluída com sucesso!');
         carregarOcorrencias();
       } catch (error) {
@@ -255,20 +192,8 @@ export default function Ocorrencias() {
   };
 
   const openEditModal = (ocorrencia: Ocorrencia) => {
-    // Lista de tipos padrão
-    const tiposPadrao = [
-      'nao_fez_atividade',
-      'esqueceu_material',
-      'indisciplina_intervalo',
-      'indisciplina_sala',
-      'aluno_atrasado',
-      'comportamento_agressivo',
-      'disciplinar',
-      'academica',
-      'comportamental',
-      'outros'
-    ];
-    const isTipoPadrao = tiposPadrao.includes(ocorrencia.tipo);
+    // Verificar se é tipo padrão usando service
+    const isTipoPadrao = ocorrenciaService.isTipoPadrao(ocorrencia.tipo);
     setFormData({
       tipo: isTipoPadrao ? ocorrencia.tipo : 'outro',
       tipoPersonalizado: isTipoPadrao ? '' : ocorrencia.tipo,
@@ -288,36 +213,21 @@ export default function Ocorrencias() {
     setShowDetailModal(true);
   };
 
-  // Retorna o rótulo amigável para um tipo (procura em tiposParaFiltro ou converte underscores)
-  const getTipoLabel = (tipo: string) => {
-    const found = tiposParaFiltro.find(t => t.value === tipo);
-    if (found) return found.label;
-    // fallback: substituir underscores por espaços e capitalizar a primeira letra
-    const text = tipo.replace(/_/g, ' ');
-    return text.charAt(0).toUpperCase() + text.slice(1);
-  };
+  // Filtrar ocorrências usando service
+  const ocorrenciasFiltradas = ocorrenciaService.filtrar(
+    ocorrencias,
+    filtroTipo,
+    filtroTurma,
+    filtroAluno,
+    searchQuery
+  );
 
-  // Filtrar ocorrências
-  const ocorrenciasFiltradas = ocorrencias.filter(ocorrencia => {
-    if (filtroTipo && ocorrencia.tipo !== filtroTipo) return false;
-    if (filtroTurma && ocorrencia.turmaId !== filtroTurma) return false;
-    if (filtroAluno && ocorrencia.alunoId !== filtroAluno) return false;
-    if (searchQuery && searchQuery.trim() !== '') {
-      const q = searchQuery.trim().toLowerCase();
-      const inAluno = (ocorrencia.alunoNome || '').toLowerCase().includes(q);
-      const inDescricao = (ocorrencia.descricao || '').toLowerCase().includes(q);
-      const inTipo = getTipoLabel(ocorrencia.tipo).toLowerCase().includes(q);
-      const inTurma = (ocorrencia.turmaNome || '').toLowerCase().includes(q);
-      if (!inAluno && !inDescricao && !inTipo && !inTurma) return false;
-    }
-    return true;
-  });
-
-  // Paginação
-  const totalItens = ocorrenciasFiltradas.length;
-  const totalPaginas = Math.ceil(totalItens / itensPorPagina);
-  const inicio = (paginaAtual - 1) * itensPorPagina;
-  const ocorrenciasPaginadas = ocorrenciasFiltradas.slice(inicio, inicio + itensPorPagina);
+  // Paginação usando service
+  const { ocorrenciasPaginadas, totalPaginas } = ocorrenciaService.paginarOcorrencias(
+    ocorrenciasFiltradas,
+    paginaAtual,
+    itensPorPagina
+  );
 
   const getTipoColor = (tipo: string) => {
     switch (tipo) {
@@ -330,75 +240,28 @@ export default function Ocorrencias() {
 
 
 
-  // Estatísticas
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
-  const feitasEsteMes = ocorrencias.filter(o => {
-    const data = new Date(o.dataCriacao || o.dataOcorrencia);
-    return data.getMonth() === currentMonth && data.getFullYear() === currentYear;
-  }).length;
-  const stats = {
-    total: ocorrencias.length,
-    feitasEsteMes,
-    criticas: ocorrencias.filter(o => o.gravidade === 'critica').length
-  };
+  // Estatísticas usando service
+  const stats = ocorrenciaService.calcularEstatisticas(ocorrencias);
 
-  // Exportação - usa os mesmos padrões do Usuarios.tsx
-  const getFilteredOcorrenciasList = () => {
-    return ocorrencias.filter(o => {
-      if (filtroTipo && o.tipo !== filtroTipo) return false;
-      if (filtroTurma && o.turmaId !== filtroTurma) return false;
-      if (filtroAluno && o.alunoId !== filtroAluno) return false;
-      return true;
-    }).sort((a, b) => new Date(b.dataCriacao || b.dataOcorrencia).getTime() - new Date(a.dataCriacao || a.dataOcorrencia).getTime());
-  };
-
+  // Exportação usando service
   const downloadPDF = () => {
-    const doc = new jsPDF();
-    doc.text(`Relatório de Ocorrências`, 14, 15);
-
-    const headers = [['Aluno', 'Tipo', 'Turma', 'Data', 'Observações']];
-    const body = getFilteredOcorrenciasList().map(o => [
-      o.alunoNome,
-      getTipoLabel(o.tipo),
-      o.turmaNome,
-      new Date(o.dataCriacao || o.dataOcorrencia).toLocaleDateString('pt-BR'),
-      o.observacoes || ''
-    ]);
-
-    autoTable(doc, {
-      startY: 25,
-      head: headers,
-      body,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [41, 128, 185] }
-    });
-
-    doc.save(`ocorrencias-${new Date().toISOString().split('T')[0]}.pdf`);
+    const ocorrenciasParaExportar = ocorrenciaService.prepararParaExportacao(
+      ocorrencias,
+      filtroTipo,
+      filtroTurma,
+      filtroAluno
+    );
+    ocorrenciaService.exportarPDF(ocorrenciasParaExportar);
   };
 
   const downloadExcel = () => {
-    const dadosParaExcel = getFilteredOcorrenciasList().map(o => ({
-      Aluno: o.alunoNome,
-      Tipo: getTipoLabel(o.tipo),
-      Turma: o.turmaNome,
-      Data: new Date(o.dataCriacao || o.dataOcorrencia).toLocaleDateString('pt-BR'),
-      Observacoes: o.observacoes || ''
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(dadosParaExcel);
-    worksheet['!cols'] = [
-      { wch: 25 },
-      { wch: 30 },
-      { wch: 20 },
-      { wch: 12 },
-      { wch: 50 }
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, `Ocorrencias`);
-    XLSX.writeFile(workbook, `ocorrencias-${new Date().toISOString().split('T')[0]}.xlsx`);
+    const ocorrenciasParaExportar = ocorrenciaService.prepararParaExportacao(
+      ocorrencias,
+      filtroTipo,
+      filtroTurma,
+      filtroAluno
+    );
+    ocorrenciaService.exportarExcel(ocorrenciasParaExportar);
   };
 
   const handleExport = (tipo: 'pdf' | 'excel') => {
@@ -552,17 +415,13 @@ export default function Ocorrencias() {
                   disabled={!filtroTurma}
                 >
                   <option value="">Todos os alunos</option>
-                  {Array.from(new Set(
-                    ocorrencias
-                      .filter(o => !filtroTurma || o.turmaId === filtroTurma)
-                      .map(o => o.alunoId)
-                  ))
-                    .map(alunoId => {
-                      const aluno = alunos.find(a => a.id === alunoId);
-                      return aluno ? (
-                        <option key={aluno.id} value={aluno.id}>{aluno.nome}</option>
-                      ) : null;
-                    })}
+                  {ocorrenciaService.obterAlunosComOcorrencias(
+                    ocorrencias,
+                    alunos,
+                    filtroTurma || undefined
+                  ).map(aluno => (
+                    <option key={aluno.id} value={aluno.id}>{aluno.nome}</option>
+                  ))}
                 </Form.Select>
               </Col>
             </Row>
@@ -657,7 +516,7 @@ export default function Ocorrencias() {
                                 </strong>
                               </div>
                             </td>
-                            <td className="text-center text-muted" style={{ paddingTop: '0.75rem', paddingBottom: '0.75rem', background: rowBg, transition: 'all .15s ease' }}>{getTipoLabel(ocorrencia.tipo)}</td>
+                            <td className="text-center text-muted" style={{ paddingTop: '0.75rem', paddingBottom: '0.75rem', background: rowBg, transition: 'all .15s ease' }}>{ocorrenciaService.obterLabelTipo(ocorrencia.tipo)}</td>
                             <td className="text-center" style={{ paddingTop: '0.75rem', paddingBottom: '0.75rem', background: rowBg, transition: 'all .15s ease' }}>
                               <span style={{
                                 background: '#e0edff',
@@ -762,7 +621,7 @@ export default function Ocorrencias() {
                     <div key={ocorrencia.id} className="ocorrencias-card-mobile">
                       <div className="ocorrencias-card-header">
                         <h6 className="ocorrencias-card-title">
-                          {getTipoLabel(ocorrencia.tipo)}
+                          {ocorrenciaService.obterLabelTipo(ocorrencia.tipo)}
                         </h6>
                         <span className="ocorrencias-card-turma-badge">
                           {ocorrencia.turmaNome}
@@ -986,10 +845,7 @@ export default function Ocorrencias() {
                     <Col md={6}>
                       <div style={{ fontWeight: 500 }}>
                         <strong>Total de ocorrências no ano:</strong> {
-                          ocorrencias.filter(o => {
-                            const data = new Date(o.dataCriacao || o.dataOcorrencia);
-                            return o.alunoId === selectedOcorrencia.alunoId && data.getFullYear() === new Date().getFullYear();
-                          }).length
+                          ocorrenciaService.contarOcorrenciasAlunoNoAno(ocorrencias, selectedOcorrencia.alunoId)
                         }
                       </div>
                     </Col>
@@ -1002,7 +858,7 @@ export default function Ocorrencias() {
                   <Col md={6}>
                     <strong>Tipo:</strong>{' '}
                     <Badge bg={getTipoColor(selectedOcorrencia.tipo)}>
-                      {getTipoLabel(selectedOcorrencia.tipo)}
+                      {ocorrenciaService.obterLabelTipo(selectedOcorrencia.tipo)}
                     </Badge>
                   </Col>
                   <Col md={6}>

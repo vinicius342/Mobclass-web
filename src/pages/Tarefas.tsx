@@ -1,75 +1,38 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
-  Container, Row, Col, Card, Button, Modal, Form, Dropdown, ButtonGroup, Table
+  Container, Button, Modal, Form
 } from 'react-bootstrap';
-import {
-  collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, getDoc
-} from 'firebase/firestore';
-import { db } from '../services/firebase';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
-import Paginacao from '../components/Paginacao';
 import { useUrlValidator } from '../hooks/useUrlValidator';
+import TarefasAcompanhamento from '../components/tarefas/TarefasAcompanhamento';
 
-import { GraduationCap, Plus, Eye, Trash2, ArrowLeft, Edit, ArrowDownUp } from "lucide-react";
+import { GraduationCap, Plus, Trash2 } from "lucide-react";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faX, faCircleExclamation, faCheck, faComment } from '@fortawesome/free-solid-svg-icons';
-import { CheckCircle, XCircle, ExclamationCircle } from 'react-bootstrap-icons';
+import { faX, faCircleExclamation, faCheck } from '@fortawesome/free-solid-svg-icons';
 
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
 import React from 'react';
 
-// -------------------- Tipagens --------------------
-interface Entrega {
-  id: string;
-  alunoId: string;
-  tarefaId: string;
-  dataEntrega: string;
-  status: string;
-  dataConclusao?: string;
-  anexoUrl?: string;
-  observacoes?: string;
-}
+// Models
+import { Tarefa } from '../models/Tarefa';
+import { Entrega } from '../models/Entrega';
+import { Aluno } from '../models/Aluno';
+import { Turma } from '../models/Turma';
+import { Materia } from '../models/Materia';
+import { ProfessorMateria as Vinculo } from '../models/ProfessorMateria';
 
-interface Aluno {
-  id: string;
-  nome: string;
-  turmaId: string;
-}
-
-interface Tarefa {
-  id: string;
-  materiaId: string;
-  titulo?: string;
-  descricao: string;
-  turmaId: string;
-  dataEntrega: string;
-  excluida?: boolean;
-  bloqueado?: boolean; // (opcional) se quiser marcar tarefa por ter links ruins
-  links?: Array<{
-    url: string;
-    titulo: string;
-  }>;
-}
-
-interface Turma {
-  id: string;
-  nome: string;
-}
-
-interface Materia {
-  id: string;
-  nome: string;
-}
-
-interface Vinculo {
-  professorId: string;
-  materiaId: string;
-  turmaId: string;
-}
+// Services
+import { TarefaService } from '../services/data/TarefaService';
+import { FirebaseTarefaRepository } from '../repositories/tarefa/FirebaseTarefaRepository';
+import { FirebaseEntregaRepository } from '../repositories/entrega/FirebaseEntregaRepository';
+import { turmaService } from '../services/data/TurmaService';
+import { MateriaService } from '../services/data/MateriaService';
+import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
+import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
+import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
+import { AlunoService } from '../services/usuario/AlunoService';
+import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
 
 export default function Tarefas() {
   const { userData } = useAuth()!;
@@ -78,6 +41,18 @@ export default function Tarefas() {
 
   // Novo sistema de validação de URLs com segurança avançada
   const { validateUrl } = useUrlValidator();
+
+  // Service instances
+  const tarefaService = useMemo(() => {
+    return new TarefaService(
+      new FirebaseTarefaRepository(),
+      new FirebaseEntregaRepository()
+    );
+  }, []);
+
+  const materiaService = useMemo(() => new MateriaService(new FirebaseMateriaRepository()), []);
+  const professorMateriaService = useMemo(() => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()), []);
+  const alunoService = useMemo(() => new AlunoService(new FirebaseAlunoRepository()), []);
 
   // Função auxiliar para verificar se um link é seguro (async)
   const isSafeLink = async (url: string): Promise<boolean> => {
@@ -93,26 +68,10 @@ export default function Tarefas() {
   // Estado para links filtrados (para renderização)
   const [linksSegurosFiltrados, setLinksSegurosFiltrados] = useState<{ [tarefaId: string]: Array<{ url: string; titulo: string }> }>({});
 
-  // Função para filtrar links seguros de todas as tarefas
+  // Função para filtrar links seguros de todas as tarefas usando o service
   const filtrarLinksSegurosDasTarefas = async (tarefasList: Tarefa[]) => {
-    const linksSegurosPorTarefa: { [tarefaId: string]: Array<{ url: string; titulo: string }> } = {};
-
-    for (const tarefa of tarefasList) {
-      if (tarefa.links && tarefa.links.length > 0) {
-        const linksValidos = [];
-        for (const link of tarefa.links) {
-          const isSeguro = await isSafeLink(link.url);
-          if (isSeguro) {
-            linksValidos.push(link);
-          }
-        }
-        linksSegurosPorTarefa[tarefa.id] = linksValidos;
-      } else {
-        linksSegurosPorTarefa[tarefa.id] = [];
-      }
-    }
-
-    setLinksSegurosFiltrados(linksSegurosPorTarefa);
+    const resultado = await tarefaService.filtrarLinksSegurosDeTarefas(tarefasList, isSafeLink);
+    setLinksSegurosFiltrados(resultado);
   };
 
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
@@ -147,7 +106,7 @@ export default function Tarefas() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [tarefaParaExcluir, setTarefaParaExcluir] = useState<Tarefa | null>(null);
 
-  const [ordenacao, setOrdenacao] = useState<'titulo' | 'data' | 'status' | 'materia'>('data');
+  const [ordenacao, setOrdenacao] = useState<'titulo' | 'data'>('data');
 
   const [showObsModal, setShowObsModal] = React.useState(false);
   const [currentObs, setCurrentObs] = React.useState('');
@@ -164,62 +123,28 @@ export default function Tarefas() {
 
   const exportarPDF = () => {
     if (!atividadeSelecionada) return;
-
-    const doc = new jsPDF();
-    doc.text(`Relatório de Acompanhamento - ${atividadeSelecionada.titulo || atividadeSelecionada.descricao}`, 14, 15);
-
-    autoTable(doc, {
-      startY: 20,
-      head: [['Status', 'Aluno', 'Data Conclusao', 'Anexo']],
-      body: alunosFiltrados
-        .sort((a, b) => a.nome.localeCompare(b.nome))
-        .map(aluno => {
-          const entrega = entregas.find(e => e.alunoId === aluno.id && e.tarefaId === atividadeSelecionada.id);
-          return [
-            entrega?.status ?? 'Não entregue',
-            aluno.nome,
-            entrega?.dataConclusao ? formatarDataBR(entrega.dataConclusao) : '-',
-            entrega?.anexoUrl ? 'Sim' : 'Não'
-          ];
-        })
-    });
-
-    doc.save(`acompanhamento_${atividadeSelecionada.titulo || atividadeSelecionada.descricao}.pdf`);
+    tarefaService.exportarPDF(
+      atividadeSelecionada,
+      alunosFiltrados,
+      entregas,
+      tarefaService.formatarDataBR
+    );
   };
 
   const exportarExcel = () => {
     if (!atividadeSelecionada) return;
-
-    const data = alunosFiltrados.map(aluno => {
-      const entrega = entregas.find(e => e.alunoId === aluno.id && e.tarefaId === atividadeSelecionada.id);
-      return {
-        Aluno: aluno.nome,
-        Status: entrega?.status ?? 'Não entregue',
-        'Data de Conclusão': entrega?.dataConclusao ? formatarDataBR(entrega.dataConclusao) : '-',
-        Anexo: entrega?.anexoUrl ? 'Sim' : 'Não'
-      };
-    });
-
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    worksheet['!cols'] = [
-      { wch: 35 },
-      { wch: 15 },
-      { wch: 20 },
-      { wch: 10 }
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Acompanhamento');
-    XLSX.writeFile(
-      workbook,
-      `acompanhamento_${atividadeSelecionada.titulo || atividadeSelecionada.descricao}.xlsx`
+    tarefaService.exportarExcel(
+      atividadeSelecionada,
+      alunosFiltrados,
+      entregas,
+      tarefaService.formatarDataBR
     );
   };
 
   const handleSaveObs = async () => {
     if (!editingId) return;
     try {
-      await updateDoc(doc(db, "entregas", editingId), { observacoes: currentObs });
+      await tarefaService.atualizarObservacoes(editingId, currentObs);
       setEntregas(prev => prev.map(item => (item.id === editingId ? { ...item, observacoes: currentObs } : item)));
       setShowObsModal(false);
       setEditingId(null);
@@ -233,70 +158,61 @@ export default function Tarefas() {
   const fetchData = async () => {
     setLoading(true);
 
-    let turmaDocs: any[] = [];
-    if (isAdmin) {
-      turmaDocs = (await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())))).docs;
-    } else {
-      if (!userData) {
-        setLoading(false);
-        return;
+    try {
+      // Buscar turmas usando service
+      const todasTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+
+      // Buscar vínculos professor-matéria usando service
+      let vincList: Vinculo[];
+      if (isAdmin) {
+        vincList = await professorMateriaService.listar();
+      } else {
+        if (!userData) {
+          setLoading(false);
+          return;
+        }
+        vincList = await professorMateriaService.listarPorProfessor(userData.uid);
       }
-      const vincSnap = await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userData.uid)));
-      const vincList = vincSnap.docs.map(d => d.data() as Vinculo);
       setVinculos(vincList);
 
-      const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-      const turmaDocsTemp = await Promise.all(
-        turmaIds.map(async id => await getDoc(doc(db, 'turmas', id)))
-      );
-      // Filtrar apenas turmas do ano letivo atual
-      turmaDocs = turmaDocsTemp.filter(d => d.data()?.anoLetivo?.toString() === anoLetivo.toString());
+      // Filtrar turmas do professor se não for admin
+      let turmasFiltradas: Turma[];
+      if (isAdmin) {
+        turmasFiltradas = todasTurmas;
+      } else {
+        const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
+        turmasFiltradas = todasTurmas.filter(t => turmaIds.includes(t.id));
+      }
+      setTurmas(turmasFiltradas);
+
+      // Buscar entregas usando service
+      const entregasList = await tarefaService.listarEntregas();
+      setEntregas(entregasList);
+
+      // Buscar matérias usando service
+      const materiaIds = [...new Set(vincList.map(v => v.materiaId))];
+      const todasMaterias = await materiaService.listar();
+      const materiasFiltradas = todasMaterias.filter(m => materiaIds.includes(m.id));
+      setMaterias(materiasFiltradas);
+
+      // Buscar tarefas usando service
+      const todasTarefas = await tarefaService.listarTarefas();
+      const tarefasFiltradas = isAdmin
+        ? todasTarefas
+        : todasTarefas.filter(tarefa => materiaIds.includes(tarefa.materiaId));
+      setTarefas(tarefasFiltradas);
+
+      // Filtrar links seguros das tarefas carregadas
+      await filtrarLinksSegurosDasTarefas(tarefasFiltradas);
+
+      // Buscar alunos usando service
+      const alunosList = await alunoService.listar();
+      setAlunos(alunosList);
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+    } finally {
+      setLoading(false);
     }
-    setTurmas(turmaDocs.map(d => ({ id: d.id, nome: d.data()?.nome || '-' })));
-
-    const vincSnap2 = isAdmin
-      ? await getDocs(collection(db, 'professores_materias'))
-      : userData
-        ? await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userData.uid)))
-        : { docs: [] as any[] };
-
-    const vincList2 = vincSnap2.docs.map(d => d.data() as Vinculo);
-    setVinculos(vincList2);
-
-    const entregasSnap = await getDocs(collection(db, 'entregas'));
-    setEntregas(entregasSnap.docs.map(docu => {
-      const { id: _id, ...data } = docu.data() as Entrega;
-      return { id: docu.id, ...data };
-    }));
-
-    const materiaIds = [...new Set(vincList2.map(v => v.materiaId))];
-    const materiasSnap = await Promise.all(
-      materiaIds.map(async id => {
-        const m = await getDoc(doc(db, 'materias', id));
-        return { id: m.id, nome: m.data()?.nome || '-' };
-      })
-    );
-    setMaterias(materiasSnap);
-
-    const tarefasSnap = await getDocs(collection(db, 'tarefas'));
-    const tarefasFiltradas = isAdmin
-      ? tarefasSnap.docs
-      : tarefasSnap.docs.filter(docu => materiaIds.includes(docu.data().materiaId));
-
-    setTurmas(turmaDocs.map(d => ({ id: d.id, nome: d.data()?.nome || '-' })));
-    const tarefasProcessadas = tarefasFiltradas.map(d => ({ id: d.id, ...(d.data() as any) }));
-    setTarefas(tarefasProcessadas);
-
-    // Filtrar links seguros das tarefas carregadas
-    filtrarLinksSegurosDasTarefas(tarefasProcessadas);
-
-    setLoading(false);
-
-    const alunosSnap = await getDocs(collection(db, 'alunos'));
-    setAlunos(alunosSnap.docs.map(docu => {
-      const data = docu.data() as Omit<Aluno, 'id'>;
-      return { ...data, id: docu.id };
-    }));
   };
 
   const handleClose = () => {
@@ -317,37 +233,24 @@ export default function Tarefas() {
     if (!materiaSelecionada || !descricao || !turmaId || !dataEntrega) return;
     if (!userData) return;
 
-    // Valida e sanitiza links usando o novo sistema (agora assíncrono)
-    const validatedLinks = [];
-    for (const link of links) {
-      const validation = await validateUrl(link.url);
-      if (validation.isValid) {
-        validatedLinks.push({
-          url: validation.sanitizedUrl || link.url,
-          titulo: link.titulo
-        });
-      }
-    }
+    // Valida e sanitiza links usando o service
+    const validatedLinks = await tarefaService.validarESanitizarLinks(links, validateUrl);
 
-    const payload: any = {
-      materiaId: materiaSelecionada,
+    const payload = tarefaService.prepararDadosTarefa(
+      materiaSelecionada,
       titulo,
       descricao,
       turmaId,
       dataEntrega,
-      professorId: userData.uid,
-      links: validatedLinks
-    };
-
-    // Se houver diferença (links foram removidos por segurança)
-    if (links.length > 0 && validatedLinks.length < links.length) {
-      payload.bloqueado = false; // Pode marcar como bloqueado se preferir
-    }
+      userData.uid,
+      validatedLinks,
+      links.length
+    );
 
     if (editandoId) {
-      await updateDoc(doc(db, 'tarefas', editandoId), payload);
+      await tarefaService.atualizarTarefa(editandoId, payload);
     } else {
-      await addDoc(collection(db, 'tarefas'), payload);
+      await tarefaService.criarTarefa(payload);
     }
     handleClose();
     fetchData();
@@ -355,42 +258,40 @@ export default function Tarefas() {
 
   const atualizarEntrega = async (alunoId: string, status: string) => {
     if (!atividadeSelecionada) return;
+    
+    const entregaId = await tarefaService.atualizarOuCriarEntrega(
+      alunoId,
+      atividadeSelecionada.id,
+      status
+    );
 
+    // Atualiza estado local
     const entregaExistente = entregas.find(
       e => e.alunoId === alunoId && e.tarefaId === atividadeSelecionada.id
     );
 
-    // Prepara os dados para atualização
-    const updateData: any = { status };
-    if (status === 'concluida') {
-      updateData.dataConclusao = new Date().toISOString();
-    } else {
-      updateData.dataConclusao = null; // Remove a data se não está concluída
-    }
-
     if (entregaExistente) {
-      const entregaRef = doc(db, 'entregas', entregaExistente.id);
-      await updateDoc(entregaRef, { status });
-      setEntregas(prev => prev.map(e => (e.id === entregaExistente.id ? { ...e, status } : e)));
+      setEntregas(prev => prev.map(e => 
+        e.id === entregaExistente.id 
+          ? { ...e, status, dataConclusao: status === 'concluida' ? new Date().toISOString() : undefined } 
+          : e
+      ));
     } else {
-      const novaEntrega = {
+      const novaEntrega: Entrega = {
+        id: entregaId,
         alunoId,
         tarefaId: atividadeSelecionada.id,
-        ...updateData
+        dataEntrega: new Date().toISOString(),
+        status,
+        ...(status === 'concluida' && { dataConclusao: new Date().toISOString() })
       };
-      const docRef = await addDoc(collection(db, 'entregas'), novaEntrega);
-      setEntregas(prev => [...prev, { id: docRef.id, ...novaEntrega }]);
+      setEntregas(prev => [...prev, novaEntrega]);
     }
   };
 
   const alunosFiltrados = filtroTurma
     ? alunos.filter(aluno => aluno.turmaId === filtroTurma)
     : [];
-
-  const tarefasFiltradas = tarefas.filter(
-    t => t.turmaId === filtroTurma && t.materiaId === filtroMateria && !t.excluida
-  );
-
 
   const editarTarefa = async (tarefaId: string) => {
     const tarefa = tarefas.find(t => t.id === tarefaId);
@@ -401,29 +302,18 @@ export default function Tarefas() {
     setDescricao(tarefa.descricao);
     setTurmaId(tarefa.turmaId);
     setDataEntrega(tarefa.dataEntrega);
-    // Valida e higieniza os links ao abrir para edição (agora assíncrono)
-    const validatedLinks = [];
+    // Valida e higieniza os links ao abrir para edição usando o service
     if (tarefa.links) {
-      for (const link of tarefa.links) {
-        const validation = await validateUrl(link.url);
-        if (validation.isValid) {
-          validatedLinks.push({
-            url: validation.sanitizedUrl || link.url,
-            titulo: link.titulo
-          });
-        }
-      }
+      const validatedLinks = await tarefaService.validarESanitizarLinks(tarefa.links, validateUrl);
+      setLinks(validatedLinks);
+    } else {
+      setLinks([]);
     }
-    setLinks(validatedLinks);
     setShowModal(true);
   };
 
   const excluirTarefa = async (tarefaId: string) => {
-    await deleteDoc(doc(db, 'tarefas', tarefaId));
-    const entregasQuery = query(collection(db, 'entregas'), where('tarefaId', '==', tarefaId));
-    const entregasSnap = await getDocs(entregasQuery);
-    const promises = entregasSnap.docs.map(entregaDoc => deleteDoc(doc(db, 'entregas', entregaDoc.id)));
-    await Promise.all(promises);
+    await tarefaService.excluirTarefa(tarefaId);
     fetchData();
   };
 
@@ -441,15 +331,16 @@ export default function Tarefas() {
       return;
     }
 
-    // Usa o novo sistema de validação avançada (agora assíncrono)
-    const validation = await validateUrl(novoLinkUrl.trim());
+    // Usa o service para validar a URL
+    const validation = await tarefaService.validarUrl(novoLinkUrl.trim(), validateUrl);
 
-    if (!validation.isValid) {
-      setUrlError(`🚫 BLOQUEADO: ${validation.error || 'URL inválida'}`);
+    // Processa a validação usando o service
+    const resultado = tarefaService.processarValidacaoLink(validation);
+
+    if (resultado.erro) {
+      setUrlError(resultado.erro);
       setUrlSuccess('');
       setSecurityWarnings([]);
-
-      // Log detalhado para debug
       console.error('[Security Block]', {
         url: novoLinkUrl.trim(),
         error: validation.error,
@@ -459,40 +350,10 @@ export default function Tarefas() {
       return;
     }
 
-    // URL válida - mostra sucesso e warnings se houver
+    // URL válida
     setUrlError('');
-
-    // Mostra informações baseadas na categoria do domínio
-    const warnings = validation.warnings || [];
-    const score = validation.securityScore || 100;
-    const category = validation.domainCategory || 'unknown';
-
-    let successMessage = '';
-
-    switch (category) {
-      case 'trusted':
-        successMessage = `✅ Site confiável validado (Score: ${score}/100)`;
-        break;
-      case 'educational':
-        successMessage = `🎓 Site educacional aceito (Score: ${score}/100)`;
-        break;
-      case 'unknown':
-        if (validation.allowWithWarning) {
-          successMessage = `⚠️ Site aceito com verificação extra (Score: ${score}/100)`;
-          warnings.unshift('Este site não está na lista de confiáveis, mas passou na verificação de segurança');
-        } else {
-          successMessage = `✅ URL aceita (Score: ${score}/100)`;
-        }
-        break;
-    }
-
-    if (score < 80) {
-      warnings.push(`⚠️ Score de segurança moderado: ${score}/100`);
-      console.warn(`[Security Warning] URL com score baixo: ${score}`, validation.warnings);
-    }
-
-    setSecurityWarnings(warnings);
-    setUrlSuccess(successMessage);
+    setUrlSuccess(resultado.sucesso || '');
+    setSecurityWarnings(resultado.avisos);
 
     const novoLink = {
       url: validation.sanitizedUrl || novoLinkUrl.trim(),
@@ -503,13 +364,12 @@ export default function Tarefas() {
     setNovoLinkUrl('');
     setNovoLinkTitulo('');
 
-    // Limpa mensagens após 5 segundos para dar tempo de ler
+    // Limpa mensagens após 5 segundos
     setTimeout(() => {
       setUrlSuccess('');
       setSecurityWarnings([]);
     }, 5000);
 
-    // Log de sucesso
     console.info('[URL Security] Link adicionado com sucesso:', {
       originalUrl: novoLinkUrl.trim(),
       sanitizedUrl: validation.sanitizedUrl,
@@ -523,12 +383,9 @@ export default function Tarefas() {
     setLinks(prev => prev.filter((_, i) => i !== index));
   };
 
-  function formatarDataBR(data: string) {
-    if (!data) return '-';
-    const d = new Date(data);
-    if (isNaN(d.getTime())) return data;
-    return d.toLocaleDateString('pt-BR');
-  }
+  const formatarDataBR = (data: string) => {
+    return tarefaService.formatarDataBR(data);
+  };
 
   // -------------------- Render --------------------
   return (
@@ -586,637 +443,34 @@ export default function Tarefas() {
           {/* Main Content */}
           <div className="container py-0 px-0">
             {activeTab === 'acompanhamento' && (
-              <>
-                <Card className="mb-3">
-                  <Card.Body>
-                    <Row>
-                      <Col md={6}>
-                        <Form.Select
-                          value={filtroTurma}
-                          onChange={e => {
-                            setFiltroTurma(e.target.value);
-                            setFiltroMateria('');
-                            setAtividadeSelecionada(null);
-                          }}
-                        >
-                          <option value="">Selecione a turma</option>
-                          {[...turmas].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
-                            <option key={t.id} value={t.id}>{t.nome}</option>
-                          ))}
-                        </Form.Select>
-                      </Col>
-                      <Col md={6}>
-                        <Form.Select
-                          value={filtroMateria}
-                          onChange={e => {
-                            setFiltroMateria(e.target.value);
-                            setAtividadeSelecionada(null);
-                          }}
-                          disabled={!filtroTurma}
-                        >
-                          <option value="">Selecione a matéria</option>
-                          {materias.map(m => (
-                            <option key={m.id} value={m.id}>{m.nome}</option>
-                          ))}
-                        </Form.Select>
-                      </Col>
-                    </Row>
-                  </Card.Body>
-                </Card>
-
-                {!atividadeSelecionada ? (
-                  (!filtroTurma || !filtroMateria) ? (
-                    <Card className="shadow-sm">
-                      <Card.Body>
-                        <div className="text-center text-muted py-5">
-                          <FontAwesomeIcon icon={faCircleExclamation} size="2x" className="mb-3" />
-                          <div>Selecione a turma e atividade para visualizar os alunos.</div>
-                        </div>
-                      </Card.Body>
-                    </Card>
-                  ) : (
-                    <>
-                      {/* Desktop */}
-                      <div className="d-none d-md-block">
-                        <Card className="shadow-sm">
-                          <Card.Body>
-                            <div className="d-flex justify-content-between align-items-center mb-3 px-3">
-                              <h3 className="mb-0">Lista de Tarefas</h3>
-                              <div className="d-flex align-items-center gap-2">
-                                {tarefasFiltradas.length > 0 && !atividadeSelecionada && (
-                                  <span className="text-muted px-2" style={{ fontSize: 14 }}>
-                                    Clique em uma atividade para acompanhar as entregas dos alunos
-                                  </span>
-                                )}
-                                {tarefasFiltradas.length > 0 && (
-                                  <Dropdown onSelect={key => setOrdenacao(key as any)}>
-                                    <Dropdown.Toggle
-                                      size="sm"
-                                      variant="outline-secondary"
-                                      id="dropdown-ordenar-tarefas"
-                                      className="d-flex align-items-center gap-2 py-1 px-2"
-                                    >
-                                      <ArrowDownUp size={16} />
-                                      Ordenar
-                                    </Dropdown.Toggle>
-                                    <Dropdown.Menu>
-                                      <Dropdown.Item eventKey="titulo" active={ordenacao === 'titulo'}>Título</Dropdown.Item>
-                                      <Dropdown.Item eventKey="data" active={ordenacao === 'data'}>Data de Entrega</Dropdown.Item>
-                                    </Dropdown.Menu>
-                                  </Dropdown>
-                                )}
-                              </div>
-                            </div>
-
-                            <div>
-                              {tarefasFiltradas.length > 0 ? (
-                                <Table responsive hover className="mb-0 align-middle">
-                                  <thead>
-                                    <tr>
-                                      <th style={{ width: '35%' }} className='text-muted px-3'>Título</th>
-                                      <th style={{ width: '28%' }} className='text-muted px-3'>Descrição</th>
-                                      <th style={{ width: '13%', textAlign: 'center' }} className='text-muted'>Data Entrega</th>
-                                      <th style={{ width: '9%', textAlign: 'center' }} className='text-muted'>Status</th>
-                                      <th style={{ width: '15%', textAlign: 'center', paddingRight: 0 }} className='text-muted'>Ações</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {tarefasFiltradas
-                                      .slice()
-                                      .sort((a, b) => {
-                                        switch (ordenacao) {
-                                          case 'titulo':
-                                            return (a.titulo || 'Sem título').localeCompare(b.titulo || 'Sem título');
-                                          case 'data':
-                                            return new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime();
-                                          default:
-                                            return 0;
-                                        }
-                                      })
-                                      .map(tarefa => (
-                                        <tr key={tarefa.id} style={{ cursor: 'pointer', borderBottom: 'white' }} onClick={() => setAtividadeSelecionada(tarefa)}>
-                                          <td className="py-3 px-3" style={{ width: '35%' }}>
-                                            <span style={{ fontSize: '1rem', fontWeight: 500 }}>
-                                              {tarefa.titulo ? tarefa.titulo : tarefa.descricao || 'Sem título'}
-                                            </span>
-                                          </td>
-                                          <td className="py-3 px-3" style={{ width: '28%' }}>
-                                            <span style={{ color: '#6b7280' }}>
-                                              {tarefa.descricao ? tarefa.descricao : tarefa.titulo || 'Sem descrição'}
-                                            </span>
-                                            {/* Links seguros (se houver) */}
-                                            {Array.isArray(tarefa.links) && tarefa.links.length > 0 && (
-                                              <div className="mt-1">
-                                                <small className="text-muted fw-semibold">Links:</small>{' '}
-                                                {(linksSegurosFiltrados[tarefa.id] || []).map((link, idx) => (
-                                                  <a
-                                                    key={idx}
-                                                    href={link.url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="ms-2"
-                                                  >
-                                                    🔗 {link.titulo || 'link'}
-                                                  </a>
-                                                ))}
-                                                {tarefa.links.length > (linksSegurosFiltrados[tarefa.id]?.length || 0) && (
-                                                  <span className="ms-2 text-warning" style={{ fontSize: 12 }}>
-                                                    (alguns links foram ocultados por segurança)
-                                                  </span>
-                                                )}
-                                              </div>
-                                            )}
-                                          </td>
-                                          <td className="py-3 px-3" style={{ width: '13%', textAlign: 'center' }}>{formatarDataBR(tarefa.dataEntrega)}</td>
-                                          <td className="py-3 px-3" style={{ width: '12%', textAlign: 'center' }}>
-                                            {(() => {
-                                              const hoje = new Date();
-                                              const dataEntrega = tarefa.dataEntrega ? new Date(tarefa.dataEntrega) : null;
-                                              if (dataEntrega) {
-                                                if (dataEntrega.getTime() < new Date(hoje.setHours(0, 0, 0, 0)).getTime()) {
-                                                  return <span className="status-badge enviado">Concluída</span>;
-                                                } else {
-                                                  return <span className="status-badge agendado">Em andamento</span>;
-                                                }
-                                              }
-                                              return <span className="status-badge rascunho">Sem data</span>;
-                                            })()}
-                                          </td>
-                                          <td className="py-3 px-3" style={{ width: '12%', textAlign: 'center', paddingRight: 0 }} onClick={e => e.stopPropagation()}>
-                                            <Dropdown align="end">
-                                              <Dropdown.Toggle
-                                                variant="light"
-                                                size="sm"
-                                                style={{ border: 'none', background: 'transparent', boxShadow: 'none' }}
-                                                className="dropdown-toggle-no-caret"
-                                                id={`dropdown-acao-tarefa-${tarefa.id}`}
-                                              >
-                                                ⋯
-                                              </Dropdown.Toggle>
-                                              <Dropdown.Menu>
-                                                <Dropdown.Item
-                                                  onClick={() => setAtividadeSelecionada(tarefa)}
-                                                  className="d-flex align-items-center gap-2"
-                                                >
-                                                  <Eye size={16} /> Acompanhar
-                                                </Dropdown.Item>
-                                                <Dropdown.Item
-                                                  onClick={() => editarTarefa(tarefa.id)}
-                                                  className="d-flex align-items-center gap-2 text-primary"
-                                                >
-                                                  <Edit size={16} /> Editar
-                                                </Dropdown.Item>
-                                                <Dropdown.Item
-                                                  onClick={() => {
-                                                    setTarefaParaExcluir(tarefa);
-                                                    setShowDeleteModal(true);
-                                                  }}
-                                                  className="d-flex align-items-center gap-2 text-danger"
-                                                >
-                                                  <Trash2 size={16} /> Excluir
-                                                </Dropdown.Item>
-                                              </Dropdown.Menu>
-                                            </Dropdown>
-                                          </td>
-                                        </tr>
-                                      ))}
-                                  </tbody>
-                                </Table>
-                              ) : (
-                                <div className="text-center text-muted py-5">
-                                  <FontAwesomeIcon icon={faCircleExclamation} size="2x" className="mb-3" />
-                                  <div>Nenhuma atividade encontrada para esta turma e matéria.</div>
-                                </div>
-                              )}
-                            </div>
-                          </Card.Body>
-                        </Card>
-                      </div>
-
-                      {/* Mobile */}
-                      <div className="d-block d-md-none materias-mobile-cards">
-                        <div className="materias-header-mobile mb-3">
-                          <div className="d-flex align-items-center justify-content-between">
-                            <h3 className="mb-0">Tarefas</h3>
-                            {tarefasFiltradas.length > 0 && (
-                              <Dropdown onSelect={key => setOrdenacao(key as any)}>
-                                <Dropdown.Toggle
-                                  size="sm"
-                                  variant="outline-secondary"
-                                  id="dropdown-ordenar-tarefas-mobile"
-                                  className="d-flex align-items-center gap-1 py-1 px-2"
-                                >
-                                  <ArrowDownUp size={14} />
-                                  <span className="d-none d-sm-inline">Ordenar</span>
-                                </Dropdown.Toggle>
-                                <Dropdown.Menu>
-                                  <Dropdown.Item eventKey="titulo" active={ordenacao === 'titulo'}>Título</Dropdown.Item>
-                                  <Dropdown.Item eventKey="data" active={ordenacao === 'data'}>Data de Entrega</Dropdown.Item>
-                                </Dropdown.Menu>
-                              </Dropdown>
-                            )}
-                          </div>
-                        </div>
-
-                        {tarefasFiltradas.length > 0 ? (
-                          <div className="materias-grid-mobile">
-                            {tarefasFiltradas
-                              .slice()
-                              .sort((a, b) => {
-                                switch (ordenacao) {
-                                  case 'titulo':
-                                    return (a.titulo || 'Sem título').localeCompare(b.titulo || 'Sem título');
-                                  case 'data':
-                                    return new Date(b.dataEntrega).getTime() - new Date(a.dataEntrega).getTime();
-                                  default:
-                                    return 0;
-                                }
-                              })
-                              .map(tarefa => (
-                                <div key={tarefa.id} className="materias-card-mobile" style={{ marginBottom: 16 }}>
-                                  <div className="materias-card-header">
-                                    <div className="materias-card-info">
-                                      <div className="materias-card-title">{tarefa.titulo || 'Sem título'}</div>
-                                      <div className="materias-card-codigo">{tarefa.descricao}</div>
-                                    </div>
-                                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 22 }}>
-                                      {(() => {
-                                        const hoje = new Date();
-                                        const dataEntrega = tarefa.dataEntrega ? new Date(tarefa.dataEntrega) : null;
-                                        if (dataEntrega) {
-                                          if (dataEntrega.getTime() < new Date(hoje.setHours(0, 0, 0, 0)).getTime()) {
-                                            return <span className="status-badge enviado">Concluída</span>;
-                                          } else {
-                                            return <span className="status-badge agendado">Em andamento</span>;
-                                          }
-                                        }
-                                        return <span className="status-badge rascunho">Sem data</span>;
-                                      })()}
-                                    </span>
-                                  </div>
-
-                                  {/* Links seguros no mobile */}
-                                  {Array.isArray(tarefa.links) && tarefa.links.length > 0 && (
-                                    <div className="mb-2">
-                                      <small className="text-muted fw-semibold">Links:</small>
-                                      <div className="d-flex flex-wrap gap-1 mt-1">
-                                        {(linksSegurosFiltrados[tarefa.id] || []).map((link, index) => (
-                                          <a
-                                            key={index}
-                                            href={link.url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="btn btn-sm btn-outline-primary"
-                                            style={{ fontSize: '0.7rem', padding: '2px 6px' }}
-                                          >
-                                            🔗 {link.titulo || 'link'}
-                                          </a>
-                                        ))}
-                                      </div>
-                                      {tarefa.links.length > (linksSegurosFiltrados[tarefa.id]?.length || 0) && (
-                                        <div className="text-warning" style={{ fontSize: 12 }}>
-                                          Alguns links foram ocultados por segurança.
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  <div className="materias-card-actions">
-                                    <button
-                                      className="materias-action-btn materias-edit-btn"
-                                      onClick={() => setAtividadeSelecionada(tarefa)}
-                                    >
-                                      <Eye size={18} /> Acompanhar
-                                    </button>
-                                    <button
-                                      className="materias-action-btn"
-                                      style={{ background: '#f3f4f6', color: '#2563eb' }}
-                                      onClick={() => editarTarefa(tarefa.id)}
-                                    >
-                                      <Edit size={18} /> Editar
-                                    </button>
-                                    <button
-                                      className="materias-action-btn materias-delete-btn"
-                                      onClick={() => {
-                                        setTarefaParaExcluir(tarefa);
-                                        setShowDeleteModal(true);
-                                      }}
-                                    >
-                                      <Trash2 size={18} /> Excluir
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                          </div>
-                        ) : (
-                          <div className="materias-empty-state">
-                            <div className="materias-empty-icon">
-                              <FontAwesomeIcon icon={faX} size="2x" />
-                            </div>
-                            <h5 className="materias-empty-title">Nenhuma tarefa encontrada</h5>
-                            <p className="materias-empty-text">Nenhuma atividade para esta turma/matéria.</p>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )
-                ) : (
-                  <>
-                    {/* Botões desktop acima da lista de alunos */}
-                    <Row className="align-items-center mb-3 d-none d-md-flex">
-                      <Col xs="auto">
-                        <Button
-                          variant="outline-primary"
-                          className="d-flex align-items-center gap-2"
-                          onClick={() => setAtividadeSelecionada(null)}
-                        >
-                          <ArrowLeft size={18} />
-                          <span>Voltar para lista de atividades</span>
-                        </Button>
-                      </Col>
-                      <Col className="d-flex justify-content-end gap-2">
-                        <Button variant="outline-primary" onClick={exportarPDF}>
-                          Exportar PDF
-                        </Button>
-                        <Button variant="outline-success" onClick={exportarExcel}>
-                          Exportar Excel
-                        </Button>
-                      </Col>
-                    </Row>
-
-                    {/* Lista de alunos (desktop) */}
-                    <div className="alunos-list-desktop d-none d-md-block">
-                      <Card>
-                        <Card.Body>
-                          <h3 className="mb-3 px-3">Lista de Alunos</h3>
-                          <div className="d-flex justify-content-between px-3 py-2 border-bottom fw-bold text-muted" style={{ fontSize: '1rem', fontWeight: 600 }}>
-                            <div style={{ width: '8%', textAlign: 'center' }}>Status</div>
-                            <div style={{ width: '32%' }}>Nome</div>
-                            <div style={{ width: '16%', textAlign: 'center' }}>Data Conclusão</div>
-                            <div style={{ width: '12%', textAlign: 'center' }}>Anexo</div>
-                            <div style={{ width: '12%', textAlign: 'center' }}>Observações</div>
-                            <div style={{ width: '16%', textAlign: 'center' }}>Entregue?</div>
-                          </div>
-                          <div>
-                            {alunosFiltrados
-                              .sort((a, b) => a.nome.localeCompare(b.nome))
-                              .slice((paginaAtual - 1) * tarefasPorPagina, paginaAtual * tarefasPorPagina)
-                              .map(aluno => {
-                                const entrega = entregas.find(e =>
-                                  e.alunoId === aluno.id &&
-                                  e.tarefaId === atividadeSelecionada!.id
-                                );
-                                return (
-                                  <Card key={aluno.id} className="custom-card-frequencia" style={{ borderBottom: '1px solid #f1f3f4' }}>
-                                    <Card.Body className="d-flex justify-content-between align-items-center py-3 px-3">
-                                      <div style={{ width: '8%', textAlign: 'center' }}>
-                                        {entrega?.status === 'concluida' ? (
-                                          <CheckCircle color="#22c55e" size={20} title="Entregue" />
-                                        ) : entrega?.status === 'nao_entregue' ? (
-                                          <XCircle color="#dc3545" size={20} title="Não entregue" />
-                                        ) : (
-                                          <ExclamationCircle color="#6c757d" size={20} title="Pendente" />
-                                        )}
-                                      </div>
-                                      <div style={{ width: '32%' }}>
-                                        <span className="aluno-nome-frequencia" style={{ fontSize: '1rem' }}>{aluno.nome}</span>
-                                      </div>
-                                      <div style={{ width: '16%', textAlign: 'center' }}>{entrega?.dataConclusao ? formatarDataBR(entrega.dataConclusao) : '-'}</div>
-                                      <div style={{ width: '12%', textAlign: 'center' }}>
-                                        {entrega?.anexoUrl ? (
-                                          <a href={entrega.anexoUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6" }}>
-                                            Ver Anexo
-                                          </a>
-                                        ) : (
-                                          <span style={{ color: "rgb(33 37 41 / 75%)" }}>Sem anexo</span>
-                                        )}
-                                      </div>
-                                      <div style={{ width: '12%', textAlign: 'center' }}>
-                                        <FontAwesomeIcon
-                                          icon={faComment}
-                                          size="lg"
-                                          style={{
-                                            color:
-                                              entrega?.observacoes && entrega.observacoes.trim() !== ""
-                                                ? "#FFC107"
-                                                : "#212529",
-                                            cursor: "pointer"
-                                          }}
-                                          onClick={() => {
-                                            openObsModal(entrega ? entrega.id : "", entrega?.observacoes || "");
-                                          }}
-                                        />
-                                      </div>
-                                      <div style={{ width: '16%', textAlign: 'center' }}>
-                                        <ButtonGroup className="aluno-btn-group">
-                                          <Button
-                                            variant="outline-success"
-                                            size="sm"
-                                            className={`aluno-btn-action${entrega?.status === 'concluida' ? ' active-btn-success' : ''}`}
-                                            style={{ borderRight: 'none' }}
-                                            title="Confirmar entrega"
-                                            active={entrega?.status === 'concluida'}
-                                            onClick={() => atualizarEntrega(aluno.id, 'concluida')}
-                                          >
-                                            <FontAwesomeIcon icon={faCheck} /> <span className="d-none d-md-inline">Sim</span>
-                                          </Button>
-                                          <Button
-                                            variant="outline-danger"
-                                            size="sm"
-                                            className={`aluno-btn-action${entrega?.status === 'nao_entregue' ? ' active-btn-danger' : ''}`}
-                                            title="Marcar como não entregue"
-                                            style={{ borderLeft: 'none' }}
-                                            active={entrega?.status === 'nao_entregue'}
-                                            onClick={() => atualizarEntrega(aluno.id, 'nao_entregue')}
-                                          >
-                                            <FontAwesomeIcon icon={faX} /> <span className="d-none d-md-inline">Não</span>
-                                          </Button>
-                                        </ButtonGroup>
-                                      </div>
-                                    </Card.Body>
-                                  </Card>
-                                );
-                              })}
-                          </div>
-                        </Card.Body>
-                      </Card>
-                      <Paginacao
-                        paginaAtual={paginaAtual}
-                        totalPaginas={Math.ceil(alunosFiltrados.length / tarefasPorPagina)}
-                        aoMudarPagina={setPaginaAtual}
-                      />
-                    </div>
-
-                    {/* Versão Mobile */}
-                    <div className="alunos-mobile-cards d-block d-md-none">
-                      <div className="materias-header-mobile mb-3 d-flex flex-column gap-2">
-                        <h3 className="mb-0">Alunos</h3>
-                        <div className="d-flex gap-2 flex-wrap">
-                          <button
-                            className="materias-action-btn materias-edit-btn"
-                            style={{ minWidth: 0, flex: 1 }}
-                            onClick={() => setAtividadeSelecionada(null)}
-                          >
-                            <ArrowLeft size={18} /> Voltar
-                          </button>
-                          <button
-                            className="materias-action-btn"
-                            style={{ background: '#f3f4f6', color: '#2563eb', minWidth: 0, flex: 1 }}
-                            onClick={exportarPDF}
-                          >
-                            <FontAwesomeIcon icon={faCheck} /> PDF
-                          </button>
-                          <button
-                            className="materias-action-btn"
-                            style={{ background: '#e0f7e9', color: '#22c55e', minWidth: 0, flex: 1 }}
-                            onClick={exportarExcel}
-                          >
-                            <FontAwesomeIcon icon={faCheck} /> Excel
-                          </button>
-                        </div>
-                      </div>
-                      {alunosFiltrados.length > 0 ? (
-                        <div className="materias-grid-mobile">
-                          {alunosFiltrados
-                            .sort((a, b) => a.nome.localeCompare(b.nome))
-                            .slice((paginaAtual - 1) * tarefasPorPagina, paginaAtual * tarefasPorPagina)
-                            .map(aluno => {
-                              const entrega = entregas.find(e =>
-                                e.alunoId === aluno.id &&
-                                e.tarefaId === atividadeSelecionada!.id
-                              );
-                              return (
-                                <div key={aluno.id} className="materias-card-mobile" style={{ marginBottom: 16 }}>
-                                  <div className="materias-card-header">
-                                    <div className="materias-card-info">
-                                      <div className="materias-card-title">{aluno.nome}</div>
-                                    </div>
-                                    <span
-                                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22 }}
-                                      title={
-                                        entrega?.status === 'concluida'
-                                          ? 'Entregue'
-                                          : entrega?.status === 'nao_entregue'
-                                            ? 'Não entregue'
-                                            : 'Pendente'
-                                      }
-                                    >
-                                      {entrega?.status === 'concluida' ? (
-                                        <CheckCircle color="#22c55e" size={20} title="Entregue" />
-                                      ) : entrega?.status === 'nao_entregue' ? (
-                                        <XCircle color="#dc3545" size={20} title="Não entregue" />
-                                      ) : (
-                                        <ExclamationCircle color="#6c757d" size={20} title="Pendente" />
-                                      )}
-                                    </span>
-                                  </div>
-                                  <div className="materias-card-actions materias-card-actions-mobile">
-                                    <div className="aluno-btn-group-mobile" style={{ display: 'flex', width: '100%' }}>
-                                      <button
-                                        className={`materias-action-btn aluno-btn-mobile-left${entrega?.status === 'concluida' ? ' btn-active-success' : ' materias-edit-btn'}`}
-                                        style={
-                                          entrega?.status === 'concluida'
-                                            ? {
-                                              flex: 1,
-                                              borderRadius: '8px 0 0 8px',
-                                              borderRight: '1px solid #fff',
-                                              margin: 0,
-                                              background: '#22c55e',
-                                              color: '#fff',
-                                              fontWeight: 600,
-                                              border: '2px solid #22c55e'
-                                            }
-                                            : {
-                                              flex: 1,
-                                              borderRadius: '8px 0 0 8px',
-                                              borderRight: '1px solid #fff',
-                                              margin: 0
-                                            }
-                                        }
-                                        onClick={() => atualizarEntrega(aluno.id, 'concluida')}
-                                      >
-                                        <FontAwesomeIcon icon={faCheck} /> Confirmar
-                                      </button>
-                                      <button
-                                        className={`materias-action-btn aluno-btn-mobile-right${entrega?.status === 'nao_entregue' ? ' btn-active-danger' : ' materias-delete-btn'}`}
-                                        style={
-                                          entrega?.status === 'nao_entregue'
-                                            ? {
-                                              flex: 1,
-                                              borderRadius: '0 8px 8px 0',
-                                              borderLeft: '1px solid #fff',
-                                              margin: 0,
-                                              background: '#dc3545',
-                                              color: '#fff',
-                                              fontWeight: 600,
-                                              border: '2px solid #dc3545'
-                                            }
-                                            : {
-                                              flex: 1,
-                                              borderRadius: '0 8px 8px 0',
-                                              borderLeft: '1px solid #fff',
-                                              margin: 0
-                                            }
-                                        }
-                                        onClick={() => atualizarEntrega(aluno.id, 'nao_entregue')}
-                                      >
-                                        <FontAwesomeIcon icon={faX} /> Não Entregue
-                                      </button>
-                                    </div>
-                                    <button
-                                      className="materias-action-btn aluno-btn-mobile-obs"
-                                      style={{
-                                        background: entrega?.observacoes && '#f3f4f6',
-                                        color: entrega?.observacoes ? '#92400e' : '#212529',
-                                        width: '100%',
-                                        marginTop: 8,
-                                        borderRadius: 8,
-                                        fontWeight: entrega?.observacoes ? 600 : 400
-                                      }}
-                                      onClick={() => openObsModal(entrega ? entrega.id : '', entrega?.observacoes || '')}
-                                    >
-                                      <FontAwesomeIcon icon={faComment} />
-                                      Obs
-                                      {entrega?.observacoes && (
-                                        <FontAwesomeIcon icon={faCircleExclamation} className="ms-1" />
-                                      )}
-                                    </button>
-                                    {entrega?.anexoUrl && (
-                                      <a
-                                        href={entrega.anexoUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="materias-action-btn aluno-btn-mobile-anexo"
-                                        style={{ background: '#e0e7ef', color: '#2563eb', width: '100%', marginTop: 8, borderRadius: 8 }}
-                                      >
-                                        Anexo
-                                      </a>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                        </div>
-                      ) : (
-                        <div className="materias-empty-state">
-                          <div className="materias-empty-icon">
-                            <FontAwesomeIcon icon={faX} size="2x" />
-                          </div>
-                          <h5 className="materias-empty-title">Nenhum aluno encontrado</h5>
-                          <p className="materias-empty-text">Nenhum aluno para esta turma/matéria.</p>
-                        </div>
-                      )}
-                      <div className="mt-3 d-flex justify-content-center">
-                        <Paginacao
-                          paginaAtual={paginaAtual}
-                          totalPaginas={Math.ceil(alunosFiltrados.length / tarefasPorPagina)}
-                          aoMudarPagina={setPaginaAtual}
-                        />
-                      </div>
-                    </div>
-                  </>
-                )}
-              </>
+              <TarefasAcompanhamento
+                turmas={turmas}
+                materias={materias}
+                tarefas={tarefas}
+                alunos={alunos}
+                entregas={entregas}
+                filtroTurma={filtroTurma}
+                filtroMateria={filtroMateria}
+                paginaAtual={paginaAtual}
+                tarefasPorPagina={tarefasPorPagina}
+                ordenacao={ordenacao}
+                linksSegurosFiltrados={linksSegurosFiltrados}
+                onFiltroTurmaChange={setFiltroTurma}
+                onFiltroMateriaChange={setFiltroMateria}
+                onAtividadeSelecionada={setAtividadeSelecionada}
+                onOrdenacaoChange={setOrdenacao}
+                onEditarTarefa={editarTarefa}
+                onExcluirTarefa={(tarefa) => {
+                  setTarefaParaExcluir(tarefa);
+                  setShowDeleteModal(true);
+                }}
+                onAtualizarEntrega={atualizarEntrega}
+                onOpenObsModal={openObsModal}
+                onExportarPDF={exportarPDF}
+                onExportarExcel={exportarExcel}
+                onPaginaChange={setPaginaAtual}
+                formatarDataBR={formatarDataBR}
+              />
             )}
 
             <Modal show={showObsModal} onHide={() => setShowObsModal(false)}>
@@ -1495,24 +749,3 @@ export default function Tarefas() {
     </AppLayout>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

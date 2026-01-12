@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Form, Button, Alert, Spinner, Container, Card } from 'react-bootstrap';
 import { getAuth, sendPasswordResetEmail } from 'firebase/auth';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db } from '../services/firebase/firebase';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');

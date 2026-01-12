@@ -1,8 +1,8 @@
 // src/components/AppLayout.tsx
 import React, { useState } from 'react';
 import AppNavbar from './AppNavbar';
-import { useAuth } from '../contexts/AuthContext';
-import { useAnoLetivo } from '../contexts/AnoLetivoContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { useAnoLetivo } from '../../contexts/AnoLetivoContext';
 import { Spinner, Container, Modal, Form, Button } from 'react-bootstrap';
 import { Settings } from 'lucide-react';
 
@@ -107,7 +107,7 @@ export default function AppLayout({ children }: Props) {
                 >
                   {anosDisponiveis.map(ano => (
                     <option key={ano} value={ano}>
-                      {ano} {ano === new Date().getFullYear() && '(Atual)'} {ano === new Date().getFullYear() + 1 && '(Próximo)'}
+                      {ano} {ano === new Date().getFullYear() && '- Atual'} {ano === new Date().getFullYear() + 1 && ''}
                     </option>
                   ))}
                 </Form.Select>

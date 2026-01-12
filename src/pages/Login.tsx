@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { getToken } from 'firebase/messaging';
-import { auth, db, messaging } from '../services/firebase';
+import { auth, db, messaging } from '../services/firebase/firebase';
 import logo from '../assets/logo.png';
 import {
   Container,

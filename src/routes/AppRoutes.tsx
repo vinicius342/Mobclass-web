@@ -21,6 +21,7 @@ import FirstChangePassword from '../pages/FirstChangePassword';
 import ResetPassword from '../pages/ResetPassword';
 import Vinculos from '../pages/Vinculos';
 import Ocorrencias from '../pages/Ocorrencias';
+// import Register from '../pages/Register';
 
 export default function AppRoutes(): JSX.Element {
   return (
@@ -29,6 +30,7 @@ export default function AppRoutes(): JSX.Element {
       <Route path="/login" element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      {/* <Route path="/register" element={<Register />} /> */}
 
       {/* Rotas protegidas */}
       <Route element={<PrivateRoute />}>

@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import {
   Container, Table, Spinner, Button, Modal, Form, ToastContainer, Toast,
   Dropdown, Card
 } from 'react-bootstrap';
 import { PlusCircle } from 'react-bootstrap-icons';
 import { Link2, Trash2 } from 'lucide-react';
-import Paginacao from '../components/Paginacao';
+import Paginacao from '../components/common/Paginacao';
 import {
   collection, getDocs, addDoc, deleteDoc, doc, query, where
 } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db } from '../services/firebase/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 

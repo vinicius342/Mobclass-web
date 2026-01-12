@@ -1,51 +1,39 @@
-// src/pages/Comunicados.tsx - Atualizado para permitir professores criarem comunicados e usar vínculos
 import { useEffect, useState } from 'react';
 import React from 'react';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import {
   Container, Button, Modal, Form, ToastContainer, Toast, Row, Col, FormControl,
   Card, Badge,
-  // ProgressBar
 } from 'react-bootstrap';
 import { PlusCircle, CheckCircle, Clock, FileEarmark, Calendar } from 'react-bootstrap-icons';
 import { X } from 'lucide-react';
-import {
-  collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy, Timestamp, getDoc
-} from 'firebase/firestore';
-import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
-import Paginacao from '../components/Paginacao';
+import Paginacao from '../components/common/Paginacao';
 import { Megaphone, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { turmaService } from '../services/data/TurmaService';
+import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
+import { ComunicadoService } from '../services/data/ComunicadoService';
+import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
+import { FirebaseComunicadoRepository } from '../repositories/comunicado/FirebaseComunicadoRepository';
+import type { Turma } from '../models/Turma';
+import type { ProfessorMateria } from '../models/ProfessorMateria';
+import type { Comunicado } from '../models/Comunicado';
+import { truncateText } from '../utils/textUtils';
 
-// Imports para DatePicker
+// Instanciar services
+const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
+const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
+
+const comunicadoRepository = new FirebaseComunicadoRepository();
+const comunicadoService = new ComunicadoService(comunicadoRepository);
+
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { ptBR } from "date-fns/locale";
 import { registerLocale } from "react-datepicker";
 
-// Registrar locale português
 registerLocale("pt-BR", ptBR as any);
-
-interface Comunicado {
-  id: string;
-  assunto: string;
-  mensagem: string;
-  turmaId: string;
-  turmaNome: string;
-  data: Timestamp;
-  status: 'enviado' | 'agendado' | 'rascunho';
-  dataAgendamento?: Timestamp;
-}
-interface Turma {
-  id: string;
-  nome: string;
-}
-interface Vinculo {
-  professorId: string;
-  materiaId: string;
-  turmaId: string;
-}
 
 export default function Comunicados() {
   const { userData } = useAuth()!;
@@ -57,7 +45,7 @@ export default function Comunicados() {
     value?: string;
     onClick?: () => void;
   };
-  
+
   const CustomDateInput = React.forwardRef<HTMLInputElement, CustomDateInputProps>(
     ({ value, onClick }, ref) => {
       return (
@@ -94,13 +82,12 @@ export default function Comunicados() {
 
   const [comunicados, setComunicados] = useState<Comunicado[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
-  const [, setVinculos] = useState<Vinculo[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [assunto, setAssunto] = useState('');
   const [mensagem, setMensagem] = useState('');
-  const [turmaId, setTurmaId] = useState('');
   const [turmasSelecionadas, setTurmasSelecionadas] = useState<string[]>([]);
   const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [editandoIds, setEditandoIds] = useState<string[]>([]); // IDs de todos os comunicados do grupo
   const [status, setStatus] = useState<'enviado' | 'agendado' | 'rascunho'>('enviado');
   const [dataAgendamento, setDataAgendamento] = useState<Date | null>(null);
   const [toast, setToast] = useState({ show: false, message: '', variant: 'success' as 'success' | 'danger' });
@@ -111,119 +98,100 @@ export default function Comunicados() {
   const [filtroStatus, setFiltroStatus] = useState('');
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [expandedMessages, setExpandedMessages] = useState<Record<string, boolean>>({});
+  const [expandedTurmas, setExpandedTurmas] = useState<Set<string>>(new Set());
   const itensPorPagina = 6;
   const maxCaracteres = 150;
 
   useEffect(() => {
     fetchData();
-  }, [userData, anoLetivo]);
-
-  useEffect(() => {
     if (showModal) {
       setTimeout(() => {
         document.getElementById('input-assunto')?.focus();
       }, 100);
     }
-  }, [showModal]);
+  }, [showModal, userData, anoLetivo]);
 
   const fetchData = async () => {
-    let turmaDocs = [];
+    let listaTurmas: Turma[] = [];
+
     if (isAdmin) {
-      const turmaSnap = await getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString())));
-      turmaDocs = turmaSnap.docs;
+      listaTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
     } else {
-      const vincSnap = await getDocs(query(collection(db, 'professores_materias'), where('professorId', '==', userData?.uid)));
-      const vincList = vincSnap.docs.map(d => d.data() as Vinculo);
-      setVinculos(vincList);
-      const turmaIds = [...new Set(vincList.map(v => v.turmaId))];
-      const turmaDocsTemp = await Promise.all(turmaIds.map(async id => await getDoc(doc(db, 'turmas', id))));
-      // Filtrar apenas turmas do ano letivo atual
-      turmaDocs = turmaDocsTemp.filter(d => d.data()?.anoLetivo?.toString() === anoLetivo.toString());
+      const vincList = await professorMateriaService.listarPorProfessor(userData?.uid || '');
+
+      const turmaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.turmaId))];
+      const todasTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+      listaTurmas = todasTurmas.filter((t: Turma) => turmaIds.includes(t.id));
     }
 
-    const listaTurmas = turmaDocs
-      .map(d => ({ id: d.id, nome: d.data()?.nome || '-' }))
-      .sort((a, b) => a.nome.localeCompare(b.nome));
-    setTurmas(listaTurmas);
+    setTurmas(listaTurmas.sort((a, b) => a.nome.localeCompare(b.nome)));
 
-    const comunicadosQuery = isAdmin
-      ? query(collection(db, 'comunicados'), orderBy('data', 'desc'))
-      : query(collection(db, 'comunicados'), where('turmaId', 'in', listaTurmas.map(t => t.id)), orderBy('data', 'desc'));
-
-    const snap = await getDocs(comunicadosQuery);
-    const lista = snap.docs.map(d => ({ 
-      id: d.id, 
-      ...(d.data() as any),
-      status: d.data().status || 'enviado'
-    })) as Comunicado[];
-    setComunicados(lista);
+    let comunicadosList: Comunicado[];
+    if (isAdmin) {
+      comunicadosList = await comunicadoService.listar();
+    } else {
+      const turmaIds = listaTurmas.map(t => t.id);
+      comunicadosList = turmaIds.length > 0 
+        ? await comunicadoService.listarPorTurmas(turmaIds)
+        : [];
+    }
+    setComunicados(comunicadosList);
   };
 
   const handleSalvar = async () => {
-    if (!assunto || !mensagem) return;
-    
-    // Validar data de agendamento se status for agendado
-    if (status === 'agendado' && !dataAgendamento) {
-      setToast({ show: true, message: 'Data de agendamento é obrigatória para comunicados agendados.', variant: 'danger' });
-      return;
-    }
+    // Validar dados
+    const validacao = comunicadoService.validarComunicado({
+      assunto,
+      mensagem,
+      turmasSelecionadas,
+      status,
+      dataAgendamento,
+    });
 
-    // Validar se pelo menos uma turma foi selecionada
-    if (turmasSelecionadas.length === 0) {
-      setToast({ show: true, message: 'Selecione pelo menos uma turma.', variant: 'danger' });
+    if (!validacao.valido) {
+      setToast({ show: true, message: validacao.erro || 'Erro de validação', variant: 'danger' });
       return;
     }
 
     try {
-      if (editandoId) {
-        // No modo edição, mantém o comportamento antigo (uma turma)
-        const turmaSelecionada = turmas.find(t => t.id === turmaId);
-        const payload: any = {
-          assunto,
-          mensagem,
-          turmaId,
-          turmaNome: turmaSelecionada?.nome || '',
-          data: Timestamp.now(),
-          status,
-        };
+      if (editandoId && editandoIds.length > 0) {
+        // Modo edição - atualizar todos os comunicados do grupo
+        const promises = editandoIds.map(async (id) => {
+          const comunicadoOriginal = comunicados.find(c => c.id === id);
+          if (comunicadoOriginal) {
+            const turmaSelecionada = turmas.find(t => t.id === comunicadoOriginal.turmaId);
+            const payload = comunicadoService.prepararPayloadAtualizacao({
+              assunto,
+              mensagem,
+              turmaId: comunicadoOriginal.turmaId,
+              turmaNome: turmaSelecionada?.nome || '',
+              status,
+              dataAgendamento: dataAgendamento || undefined,
+            });
 
-        // Adicionar data de agendamento se status for agendado
-        if (status === 'agendado' && dataAgendamento) {
-          payload.dataAgendamento = Timestamp.fromDate(dataAgendamento);
-        }
+            await comunicadoService.atualizar(id, payload);
+          }
+        });
 
-        await updateDoc(doc(db, 'comunicados', editandoId), payload);
-        setToast({ show: true, message: 'Comunicado atualizado com sucesso!', variant: 'success' });
+        await Promise.all(promises);
+        setToast({ show: true, message: `${editandoIds.length} comunicado(s) atualizado(s) com sucesso!`, variant: 'success' });
       } else {
-        // No modo criação, cria um comunicado para cada turma selecionada
-        let turmasParaCriar: string[] = [];
-        
-        // Se "todas" foi selecionado, usar todas as turmas disponíveis
-        if (turmasSelecionadas.includes('todas')) {
-          turmasParaCriar = turmasDisponiveis.map(t => t.id);
-        } else {
-          turmasParaCriar = turmasSelecionadas;
-        }
+        // Modo criação - determinar turmas
+        let turmasParaCriar = turmasSelecionadas.includes('todas')
+          ? turmasDisponiveis
+          : turmas.filter(t => turmasSelecionadas.includes(t.id));
 
-        for (const turmaIdSelecionada of turmasParaCriar) {
-          const turmaSelecionada = turmas.find(t => t.id === turmaIdSelecionada);
-          const payload: any = {
+        const totalCriados = await comunicadoService.criarParaMultiplasTurmas(
+          {
             assunto,
             mensagem,
-            turmaId: turmaIdSelecionada,
-            turmaNome: turmaSelecionada?.nome || '',
-            data: Timestamp.now(),
             status,
-          };
+            dataAgendamento: dataAgendamento || undefined,
+          },
+          turmasParaCriar
+        );
 
-          // Adicionar data de agendamento se status for agendado
-          if (status === 'agendado' && dataAgendamento) {
-            payload.dataAgendamento = Timestamp.fromDate(dataAgendamento);
-          }
-
-          await addDoc(collection(db, 'comunicados'), payload);
-        }
-        setToast({ show: true, message: `Comunicado criado para ${turmasParaCriar.length} turma(s)!`, variant: 'success' });
+        setToast({ show: true, message: `Comunicado criado para ${totalCriados} turma(s)!`, variant: 'success' });
       }
       setShowModal(false);
       limparFormulario();
@@ -235,27 +203,75 @@ export default function Comunicados() {
     }
   };
 
-  const handleEditar = (comunicado: Comunicado) => {
+  const handleEditar = (comunicado: any) => {
     setEditandoId(comunicado.id);
     setAssunto(comunicado.assunto);
     setMensagem(comunicado.mensagem);
-    setTurmaId(comunicado.turmaId);
-    setTurmasSelecionadas([comunicado.turmaId]);
-    setStatus(comunicado.status);
     
+    // Se o comunicado está agrupado (tem turmasIds), buscar todos os IDs originais
+    if (comunicado.turmasIds && Array.isArray(comunicado.turmasIds) && comunicado.turmasIds.length > 0) {
+      setTurmasSelecionadas(comunicado.turmasIds);
+      
+      // Buscar os IDs originais de todos os comunicados do grupo
+      const idsOriginais = comunicados
+        .filter(c => 
+          c.assunto === comunicado.assunto && 
+          c.mensagem === comunicado.mensagem && 
+          c.status === comunicado.status &&
+          comunicado.turmasIds.includes(c.turmaId)
+        )
+        .map(c => c.id);
+      
+      setEditandoIds(idsOriginais);
+    } else {
+      setTurmasSelecionadas([comunicado.turmaId]);
+      setEditandoIds([comunicado.id]);
+    }
+    
+    setStatus(comunicado.status);
+
     // Definir data de agendamento se existir
     if (comunicado.dataAgendamento) {
       setDataAgendamento(comunicado.dataAgendamento.toDate());
     }
-    
+
     setShowModal(true);
   };
 
-  const handleExcluir = async (id: string) => {
-    if (!window.confirm('Excluir este comunicado?')) return;
+  const handleExcluir = async (comunicado: any) => {
+    // Determinar quantos comunicados serão excluídos
+    let idsParaExcluir: string[] = [];
+    
+    if (comunicado.turmasIds && Array.isArray(comunicado.turmasIds) && comunicado.turmasIds.length > 0) {
+      // Comunicado agrupado - buscar todos os IDs originais
+      idsParaExcluir = comunicados
+        .filter(c => 
+          c.assunto === comunicado.assunto && 
+          c.mensagem === comunicado.mensagem && 
+          c.status === comunicado.status &&
+          comunicado.turmasIds.includes(c.turmaId)
+        )
+        .map(c => c.id);
+    } else {
+      // Comunicado único
+      idsParaExcluir = [comunicado.id];
+    }
+
+    const mensagemConfirmacao = idsParaExcluir.length > 1 
+      ? `Excluir este comunicado de ${idsParaExcluir.length} turmas?`
+      : 'Excluir este comunicado?';
+
+    if (!window.confirm(mensagemConfirmacao)) return;
+    
     try {
-      await deleteDoc(doc(db, 'comunicados', id));
-      setToast({ show: true, message: 'Comunicado excluído.', variant: 'success' });
+      // Excluir todos os comunicados do grupo
+      await Promise.all(idsParaExcluir.map(id => comunicadoService.deletar(id)));
+      
+      setToast({ 
+        show: true, 
+        message: `${idsParaExcluir.length} comunicado(s) excluído(s).`, 
+        variant: 'success' 
+      });
       fetchData();
     } catch (err) {
       console.error(err);
@@ -266,11 +282,11 @@ export default function Comunicados() {
   const limparFormulario = () => {
     setAssunto('');
     setMensagem('');
-    setTurmaId('');
     setTurmasSelecionadas([]);
     setStatus('enviado');
     setDataAgendamento(null);
     setEditandoId(null);
+    setEditandoIds([]);
   };
 
   const limparFiltros = () => {
@@ -285,28 +301,139 @@ export default function Comunicados() {
     setExpandedMessages(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const truncateText = (text: string, maxLength: number) => {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
+  const toggleExpandTurmas = (comunicadoId: string) => {
+    setExpandedTurmas(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(comunicadoId)) {
+        newSet.delete(comunicadoId);
+      } else {
+        newSet.add(comunicadoId);
+      }
+      return newSet;
+    });
+  };
+
+  const renderTurmasBadges = (turmasNomes: string[], comunicadoId: string, maxVisible: number = 2) => {
+    if (!turmasNomes || !Array.isArray(turmasNomes) || turmasNomes.length === 0) {
+      return <span style={{ color: '#6c757d', fontSize: '0.8rem' }}>Sem turma</span>;
+    }
+
+    if (turmasNomes.length === 1) {
+      return (
+        <span
+          style={{
+            background: '#e0edff',
+            color: '#2563eb',
+            fontWeight: 700,
+            border: 'none',
+            borderRadius: '12px',
+            padding: '0.25rem 0.6rem',
+            fontSize: '0.75rem',
+            letterSpacing: '0.1px',
+            lineHeight: 1.1,
+            display: 'inline-block'
+          }}
+        >
+          {turmasNomes[0]}
+        </span>
+      );
+    }
+
+    const isExpanded = expandedTurmas.has(comunicadoId);
+    const turmasSorted = [...turmasNomes].sort();
+    const turmasToShow = isExpanded ? turmasSorted : turmasSorted.slice(0, maxVisible);
+    const remainingCount = turmasSorted.length - maxVisible;
+
+    return (
+      <>
+        {turmasToShow.map((nome, idx) => (
+          <span
+            key={idx}
+            style={{
+              background: '#e0edff',
+              color: '#2563eb',
+              fontWeight: 700,
+              border: 'none',
+              borderRadius: '12px',
+              padding: '0.25rem 0.6rem',
+              fontSize: '0.75rem',
+              letterSpacing: '0.1px',
+              lineHeight: 1.1,
+              marginRight: 4,
+              marginBottom: 4,
+              display: 'inline-block'
+            }}
+          >
+            {nome}
+          </span>
+        ))}
+        {remainingCount > 0 && (
+          <span
+            onClick={() => toggleExpandTurmas(comunicadoId)}
+            style={{
+              background: '#f1f5f9',
+              color: '#64748b',
+              fontWeight: 600,
+              border: 'none',
+              borderRadius: '12px',
+              padding: '0.25rem 0.6rem',
+              fontSize: '0.75rem',
+              letterSpacing: '0.1px',
+              lineHeight: 1.1,
+              marginRight: 4,
+              marginBottom: 4,
+              display: 'inline-block',
+              cursor: 'pointer',
+              transition: 'background-color 0.2s'
+            }}
+            onMouseEnter={(e) => (e.target as HTMLElement).style.backgroundColor = '#e2e8f0'}
+            onMouseLeave={(e) => (e.target as HTMLElement).style.backgroundColor = '#f1f5f9'}
+          >
+            {isExpanded ? 'menos' : `+${remainingCount} mais`}
+          </span>
+        )}
+      </>
+    );
   };
 
   const turmasDisponiveis = turmas;
-  const assuntosDisponiveis = [...new Set(comunicados.map(c => c.assunto))].sort();
+  const assuntosDisponiveis = comunicadoService.extrairAssuntos(comunicados);
 
-  const comunicadosFiltrados = comunicados.filter(c => {
-    const matchBusca = c.assunto.toLowerCase().includes(busca.toLowerCase()) ||
-      c.mensagem.toLowerCase().includes(busca.toLowerCase()) ||
-      (c.turmaNome || '').toLowerCase().includes(busca.toLowerCase());
-    
-    const matchTurma = filtroTurma === '' || c.turmaId === filtroTurma;
-    const matchAssunto = filtroAssunto === '' || c.assunto === filtroAssunto;
-    const matchStatus = filtroStatus === '' || c.status === filtroStatus;
-    
-    return matchBusca && matchTurma && matchAssunto && matchStatus;
+  const comunicadosFiltrados = comunicadoService.aplicarFiltros(comunicados, {
+    busca,
+    turmaId: filtroTurma,
+    assunto: filtroAssunto,
+    status: filtroStatus,
   });
 
-  const totalPaginas = Math.ceil(comunicadosFiltrados.length / itensPorPagina);
-  const comunicadosPaginados = comunicadosFiltrados.slice((paginaAtual - 1) * itensPorPagina, paginaAtual * itensPorPagina);
+  // Agrupar comunicados por assunto + mensagem + status + dataAgendamento (SEM o campo data que varia)
+  const comunicadosAgrupados = comunicadosFiltrados.reduce((acc, comunicado) => {
+    // Criar chave única baseada APENAS no conteúdo (sem timestamp de criação)
+    const dataAgendamentoKey = comunicado.dataAgendamento ? comunicado.dataAgendamento.toMillis() : 'sem-agendamento';
+    const chave = `${comunicado.assunto}|${comunicado.mensagem}|${comunicado.status}|${dataAgendamentoKey}`;
+    
+    if (!acc[chave]) {
+      acc[chave] = {
+        ...comunicado,
+        turmasIds: [comunicado.turmaId],
+        turmasNomes: [comunicado.turmaNome || turmas.find(t => t.id === comunicado.turmaId)?.nome || '-']
+      };
+    } else {
+      // Adicionar turma ao grupo existente se não estiver já incluída
+      if (!acc[chave].turmasIds.includes(comunicado.turmaId)) {
+        acc[chave].turmasIds.push(comunicado.turmaId);
+        acc[chave].turmasNomes.push(comunicado.turmaNome || turmas.find(t => t.id === comunicado.turmaId)?.nome || '-');
+      }
+    }
+    
+    return acc;
+  }, {} as Record<string, any>);
+
+  // Converter objeto agrupado em array
+  const comunicadosUnicos = Object.values(comunicadosAgrupados);
+
+  const totalPaginas = Math.ceil(comunicadosUnicos.length / itensPorPagina);
+  const comunicadosPaginados = comunicadosUnicos.slice((paginaAtual - 1) * itensPorPagina, paginaAtual * itensPorPagina);
 
   return (
     <AppLayout>
@@ -369,7 +496,7 @@ export default function Comunicados() {
                   >
                     <option value="" disabled hidden>Filtrar por turma</option>
                     <option value="">Todas</option>
-                    {turmasDisponiveis.map(t => (
+                    {[...turmasDisponiveis].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
                       <option key={t.id} value={t.id}>{t.nome}</option>
                     ))}
                   </Form.Select>
@@ -439,8 +566,8 @@ export default function Comunicados() {
           <div className="w-100 mb-3 d-block d-md-none">
             <Row>
               <Col>
-                <Button 
-                  variant="primary" 
+                <Button
+                  variant="primary"
                   className="w-100 d-flex align-items-center justify-content-center gap-2"
                   onClick={() => { limparFormulario(); setShowModal(true); }}
                 >
@@ -498,7 +625,7 @@ export default function Comunicados() {
                         variant="link"
                         className="p-0 text-danger d-flex align-items-center px-2"
                         style={{ fontSize: '1rem' }}
-                        onClick={() => handleExcluir(c.id)}
+                        onClick={() => handleExcluir(c)}
                         title="Excluir"
                       >
                         <Trash2 size={18} />
@@ -507,82 +634,32 @@ export default function Comunicados() {
                   </div>
                 </div>
                 {/* Turma e Data abaixo do título, lado a lado */}
-                <div className="d-flex align-items-center gap-3 mb-2" style={{ marginLeft: '2px' }}>
-                  <p style={{ color: '#6c757d', fontWeight: 'bold', fontSize: '0.8rem', marginBottom: 0 }}>
-                    Turma: {(c.turmaNome === '-' || c.turmaId === '') ? 'Todas as turmas' : (c.turmaNome || turmas.find(t => t.id === c.turmaId)?.nome || '-')}
-                  </p>
+                <div className="d-flex align-items-center gap-3 mb-2" style={{ marginLeft: '2px', flexWrap: 'wrap' }}>
+                  <div className="d-flex align-items-center gap-1" style={{ flexWrap: 'wrap' }}>
+                    <span style={{ color: '#6c757d', fontWeight: 'bold', fontSize: '0.8rem', marginRight: '0.25rem' }}>
+                      {c.turmasNomes && c.turmasNomes.length > 1 ? 'Turmas:' : 'Turma:'}
+                    </span>
+                    {c.turmasNomes && c.turmasNomes.length > 0 ? (
+                      renderTurmasBadges(c.turmasNomes, c.id)
+                    ) : (
+                      <span style={{ color: '#6c757d', fontSize: '0.8rem' }}>
+                        {(c.turmaNome === '-' || c.turmaId === '') ? 'Todas as turmas' : (c.turmaNome || turmas.find(t => t.id === c.turmaId)?.nome || '-')}
+                      </span>
+                    )}
+                  </div>
                   <small style={{ color: '#6c757d', fontSize: '0.8rem' }}>
-                    {c.status === 'agendado' && c.dataAgendamento 
-                      ? `Agendado para: ${c.dataAgendamento.toDate().toLocaleDateString('pt-BR', { 
-                          day: '2-digit', 
-                          month: '2-digit', 
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}`
+                    {c.status === 'agendado' && c.dataAgendamento
+                      ? `Agendado para: ${c.dataAgendamento.toDate().toLocaleDateString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}`
                       : `Criado em: ${c.data?.toDate().toLocaleDateString('pt-BR')}`
                     }
                   </small>
                 </div>
-                {/*
-                Barra de Progresso de Leitura
-                <div className="mb-3">
-                  <div className="d-flex align-items-center mb-1" style={{ width: '70%', minHeight: '24px' }}>
-                    <div className="d-flex align-items-center w-100">
-                      // Definição de percent e barColor fora do bloco para uso no style da porcentagem
-                      {(() => {
-                        return null;
-                      })()}
-                      {(() => {
-                        // Definir percent e barColor para uso abaixo
-                        // ...existing code...
-                        return null;
-                      })()}
-                      {(() => {
-                        // ...existing code...
-                        return null;
-                      })()}
-                      // Cálculo da cor e percent para barra e porcentagem
-                      {(() => {
-                        const percent = ((c.leituras || 0) / (c.totalAlunos || 1)) * 100;
-                        let barColor = '#22c55e'; // verde enviado
-                        if (c.status === 'agendado') barColor = '#3b82f6'; // azul agendado
-                        if (c.status === 'rascunho') barColor = '#facc15'; // amarelo rascunho
-                        const barStyle = {
-                          height: '8px',
-                          borderRadius: '7px',
-                          width: '100%',
-                          backgroundColor: '#e9ecef',
-                          '--bs-progress-bar-bg': barColor,
-                        } as React.CSSProperties;
-                        return (
-                          <>
-                            <ProgressBar
-                              now={percent}
-                              style={barStyle}
-                              variant={undefined}
-                            />
-                            <span
-                              style={{
-                                marginLeft: 12,
-                                fontSize: '0.8rem',
-                                color: barColor,
-                                fontWeight: 600,
-                                whiteSpace: 'nowrap',
-                                display: 'flex',
-                                alignItems: 'center',
-                                height: '100%'
-                              }}
-                            >
-                              {Math.round(percent)}% leram
-                            </span>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                </div>
-                */}
                 {/* Mensagem com Expandir/Recolher com efeito suave */}
                 <div className="mb-3">
                   <div
@@ -595,10 +672,10 @@ export default function Comunicados() {
                   </div>
                   {c.mensagem.length > maxCaracteres && (
                     <div style={{ textAlign: 'left', marginTop: 4 }}>
-                      <Button 
-                        variant="link" 
-                        size="sm" 
-                        className="p-0" 
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="p-0"
                         onClick={() => toggleMessage(c.id)}
                         style={{ fontSize: '0.85rem', textDecoration: 'none', marginLeft: 0, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
                       >
@@ -687,7 +764,7 @@ export default function Comunicados() {
                       disabled={editandoId !== null}
                       style={{ fontWeight: turmasSelecionadas.includes('todas') ? 'bold' : 'normal' }}
                     />
-                    
+
                     {/* Checkboxes das turmas individuais */}
                     {[...turmasDisponiveis].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
                       <Form.Check
@@ -728,7 +805,7 @@ export default function Comunicados() {
                   <option value="rascunho">Rascunho</option>
                 </Form.Select>
               </Form.Group>
-              
+
               {/* Campo de Data de Agendamento - só aparece se status for agendado */}
               {status === 'agendado' && (
                 <Form.Group className="mb-3">
@@ -755,7 +832,7 @@ export default function Comunicados() {
                   </Form.Text>
                 </Form.Group>
               )}
-              
+
               <Form.Group className="mb-3">
                 <Form.Label>Mensagem</Form.Label>
                 <Form.Control as="textarea" rows={8} value={mensagem} onChange={e => setMensagem(e.target.value)} placeholder="Digite a mensagem do comunicado" />
@@ -784,12 +861,3 @@ export default function Comunicados() {
     </AppLayout>
   );
 }
-
-
-
-
-
-
-
-
-

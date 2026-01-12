@@ -1,5 +1,5 @@
 import { useEffect, useState, JSX, useMemo } from 'react';
-import AppLayout from '../components/AppLayout';
+import AppLayout from '../components/layout/AppLayout';
 import {
   Container, Row, Col, Card, Spinner, Form
 } from 'react-bootstrap';
@@ -7,12 +7,34 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   LineChart, Line, Cell
 } from 'recharts';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../services/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import { FaUserGraduate, FaChalkboardTeacher, FaUsers, FaClipboardList } from 'react-icons/fa';
 import { BarChart3, Filter } from 'lucide-react';
+
+// Services
+import { turmaService } from '../services/data/TurmaService';
+import { MateriaService } from '../services/data/MateriaService';
+import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
+import { AlunoService } from '../services/usuario/AlunoService';
+import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
+import { ProfessorService } from '../services/data/ProfessorService';
+import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
+import { TarefaService } from '../services/data/TarefaService';
+import { FirebaseTarefaRepository } from '../repositories/tarefa/FirebaseTarefaRepository';
+import { FirebaseEntregaRepository } from '../repositories/entrega/FirebaseEntregaRepository';
+import { FrequenciaService } from '../services/data/FrequenciaService';
+import { FirebaseFrequenciaRepository } from '../repositories/frequencia/FirebaseFrequenciaRepository';
+import { NotaService } from '../services/data/NotaService';
+import { FirebaseNotaRepository } from '../repositories/nota/FirebaseNotaRepository';
+
+// Instanciar services
+const materiaService = new MateriaService(new FirebaseMateriaRepository());
+const alunoService = new AlunoService(new FirebaseAlunoRepository());
+const professorService = new ProfessorService(new FirebaseProfessorRepository());
+const tarefaService = new TarefaService(new FirebaseTarefaRepository(), new FirebaseEntregaRepository());
+const frequenciaService = new FrequenciaService(new FirebaseFrequenciaRepository());
+const notaService = new NotaService(new FirebaseNotaRepository());
 
 interface Counts {
   alunos: number;
@@ -50,12 +72,24 @@ export default function Dashboard(): JSX.Element {
   const [loadingGraficos, setLoadingGraficos] = useState(false);
   const [grupoTurmasAutoSelecionado, setGrupoTurmasAutoSelecionado] = useState<boolean>(false);
 
-  // Divide as turmas em grupos de 5 - agora memoizado para evitar loop
+  // Divide as turmas em grupos de 5 - separa turmas que iniciam com letra das que iniciam com número
   const gruposTurmas = useMemo(() => {
+    // Separar turmas que iniciam com letra e com número
+    const turmasComLetra = turmasLista.filter(t => /^[a-zA-Z]/.test(t.nome));
+    const turmasComNumero = turmasLista.filter(t => /^[0-9]/.test(t.nome));
+    
     const grupos: { id: string; nome: string }[][] = [];
-    for (let i = 0; i < turmasLista.length; i += 5) {
-      grupos.push(turmasLista.slice(i, i + 5));
+    
+    // Adicionar grupos de turmas com letra (5 por grupo)
+    for (let i = 0; i < turmasComLetra.length; i += 5) {
+      grupos.push(turmasComLetra.slice(i, i + 5));
     }
+    
+    // Adicionar grupos de turmas com número (5 por grupo)
+    for (let i = 0; i < turmasComNumero.length; i += 5) {
+      grupos.push(turmasComNumero.slice(i, i + 5));
+    }
+    
     return grupos;
   }, [turmasLista]);
 
@@ -68,25 +102,22 @@ export default function Dashboard(): JSX.Element {
 
     async function fetchCards() {
       try {
-        const [alunosSnap, profSnap, turmasSnap, tarefasSnap] = await Promise.all([
-          getDocs(collection(db, 'alunos')),
-          getDocs(collection(db, 'professores')),
-          getDocs(query(collection(db, 'turmas'), where('anoLetivo', '==', anoLetivo.toString()))),
-          getDocs(query(collection(db, 'tarefas'), where('anoLetivo', '==', anoLetivo.toString()))),
+        const [alunos, professores, turmas, tarefas] = await Promise.all([
+          alunoService.listar(),
+          professorService.listar(),
+          turmaService.listarPorAnoLetivo(anoLetivo.toString()),
+          tarefaService.listarTarefas(),
         ]);
 
         // Processa em setTimeout para não bloquear
         setTimeout(() => {
-          const turmas = turmasSnap.docs
-            .map(doc => ({ id: doc.id, nome: (doc.data() as any).nome }))
-            .sort((a, b) => a.nome.localeCompare(b.nome));
-          setTurmasLista(turmas);
+          setTurmasLista(turmas.sort((a, b) => a.nome.localeCompare(b.nome)));
 
           setCounts({
-            alunos: alunosSnap.size,
-            professores: profSnap.size,
+            alunos: alunos.length,
+            professores: professores.length,
             turmas: turmas.length,
-            atividades: tarefasSnap.docs.filter(doc => doc.data()?.anoLetivo?.toString() === anoLetivo.toString()).length,
+            atividades: tarefas.length,
           });
 
           setLoadingCards(false);
@@ -108,58 +139,34 @@ export default function Dashboard(): JSX.Element {
 
     async function fetchGraficos() {
       try {
-        const [freqSnap, notasSnap, materiasSnap] = await Promise.all([
-          getDocs(collection(db, 'frequencias')),
-          getDocs(collection(db, 'notas')),
-          getDocs(collection(db, 'materias')),
+        const [frequencias, notas, materias] = await Promise.all([
+          frequenciaService.listar(),
+          notaService.listarTodas(),
+          materiaService.listar(),
         ]);
 
         // Processa matérias primeiro
         setTimeout(() => {
-          const materias = materiasSnap.docs
-            .map(doc => ({ id: doc.id, nome: (doc.data() as any).nome }))
-            .sort((a, b) => a.nome.localeCompare(b.nome));
           setMateriasLista(materias);
 
           // Processa frequências em outro chunk
           setTimeout(() => {
-            const freqDocs = freqSnap.docs.map(d => d.data()).filter((f: any) => turmasLista.some(t => t.id === f.turmaId));
+            const freqDocs = frequencias.filter((f: any) => turmasLista.some(t => t.id === f.turmaId));
             setFreqDataOriginal(freqDocs);
 
-            const freqResults: FreqPorTurma[] = turmasLista.map(turma => {
-              const turmaFreq = freqDocs.filter((f: any) => f.turmaId === turma.id);
-              const total = turmaFreq.length;
-              const presentes = turmaFreq.filter((f: any) => f.presenca).length;
-              const taxa = total ? (presentes / total) * 100 : 0;
-              return { turma: turma.nome, taxa: parseFloat(taxa.toFixed(2)) };
-            });
+            const freqResults = frequenciaService.calcularTaxasPorTurma(freqDocs, turmasLista);
             setFreqData(freqResults);
 
             // Processa notas em outro chunk
             setTimeout(() => {
-              const notaDocs = notasSnap.docs.map(d => d.data()).filter((n: any) => turmasLista.some(t => t.id === n.turmaId));
+              const notaDocs = notas.filter((n: any) => turmasLista.some(t => t.id === n.turmaId));
               setNotaDataOriginal(notaDocs);
 
-              const notaResults: NotaMediaPorTurma[] = turmasLista.map(turma => {
-                let notasTurma = notaDocs.filter(n => n.turmaId === turma.id);
-
-                if (disciplinaSelecionada !== 'todas') {
-                  notasTurma = notasTurma.filter(n => n.materiaId === disciplinaSelecionada);
-                }
-
-                const somaMedias = notasTurma.reduce((acc, cur) => {
-                  const parcial = typeof cur.notaParcial === 'number' ? cur.notaParcial : 0;
-                  const global = typeof cur.notaGlobal === 'number' ? cur.notaGlobal : 0;
-                  const participacao = typeof cur.notaParticipacao === 'number' ? cur.notaParticipacao : 0;
-                  const mediaFinal = ((parcial + global) / 2) + participacao;
-                  return acc + mediaFinal;
-                }, 0);
-                const media = notasTurma.length ? somaMedias / notasTurma.length : 0;
-                return {
-                  turma: turma.nome,
-                  media: parseFloat(media.toFixed(2))
-                };
-              });
+              const notaResults = notaService.calcularMediasPorTurma(
+                notaDocs,
+                turmasLista,
+                disciplinaSelecionada !== 'todas' ? { materiaId: disciplinaSelecionada } : undefined
+              );
 
               setNotaData(notaResults);
               setLoadingGraficos(false);
@@ -202,37 +209,32 @@ export default function Dashboard(): JSX.Element {
   useEffect(() => {
     if (!isAdmin || freqDataOriginal.length === 0 || turmasLista.length === 0) return;
 
-    const freqResults: FreqPorTurma[] = turmasLista.map(turma => {
-      let turmaFreq = freqDataOriginal.filter((f: any) => f.turmaId === turma.id);
+    const filtros: any = {};
 
-      // Filtrar por disciplina se selecionada
-      if (disciplinaSelecionada !== 'todas') {
-        turmaFreq = turmaFreq.filter((f: any) => f.materiaId === disciplinaSelecionada);
-      }
+    // Filtrar por disciplina
+    if (disciplinaSelecionada !== 'todas') {
+      filtros.materiaId = disciplinaSelecionada;
+    }
 
-      // Filtrar por período
-      if (tipoPeriodo === 'hoje') {
-        const hoje = new Date().toISOString().split('T')[0];
-        turmaFreq = turmaFreq.filter((f: any) => f.data === hoje);
-      } else if (tipoPeriodo === 'mes' && mesSelecionado) {
-        const anoAtual = new Date().getFullYear();
-        turmaFreq = turmaFreq.filter((f: any) => {
-          if (!f.data) return false;
-          const dataFreq = new Date(f.data);
-          return dataFreq.getFullYear() === anoAtual &&
-            (dataFreq.getMonth() + 1).toString().padStart(2, '0') === mesSelecionado;
-        });
-      } else if (tipoPeriodo === 'personalizado' && dataPersonalizada) {
-        turmaFreq = turmaFreq.filter((f: any) => f.data === dataPersonalizada);
-      }
+    // Filtrar por período
+    if (tipoPeriodo) {
+      filtros.periodo = {
+        tipo: tipoPeriodo as 'hoje' | 'mes' | 'personalizado',
+        data: dataPersonalizada,
+        mes: mesSelecionado,
+        ano: anoLetivo // Adicionar ano letivo do context
+      };
+      console.log('Filtros aplicados:', filtros);
+    }
 
-      const total = turmaFreq.length;
-      const presentes = turmaFreq.filter((f: any) => f.presenca).length;
-      const taxa = total ? (presentes / total) * 100 : 0;
-      return { turma: turma.nome, taxa: parseFloat(taxa.toFixed(2)) };
-    });
+    const freqResults = frequenciaService.calcularTaxasPorTurma(
+      freqDataOriginal,
+      turmasLista,
+      Object.keys(filtros).length > 0 ? filtros : undefined
+    );
+    console.log('Resultados de frequência:', freqResults);
     setFreqData(freqResults);
-  }, [disciplinaSelecionada, tipoPeriodo, mesSelecionado, dataPersonalizada, freqDataOriginal, turmasLista, isAdmin]);
+  }, [disciplinaSelecionada, tipoPeriodo, mesSelecionado, dataPersonalizada, freqDataOriginal, turmasLista, isAdmin, anoLetivo]);
 
   // Recalcular notas quando filtros de turma ou disciplina mudarem
   useEffect(() => {
@@ -246,27 +248,19 @@ export default function Dashboard(): JSX.Element {
       turmasParaCalcular = gruposTurmas[grupoTurmasSelecionado] || [];
     }
 
-    const notaResults: NotaMediaPorTurma[] = turmasParaCalcular.map(turma => {
-      let notasTurma = notaDataOriginal.filter(n => n.turmaId === turma.id);
+    const filtros: any = {};
+    if (grupoTurmasSelecionado !== -1) {
+      filtros.grupoTurmas = turmasParaCalcular;
+    }
+    if (disciplinaSelecionada !== 'todas') {
+      filtros.materiaId = disciplinaSelecionada;
+    }
 
-      // Filtrar por disciplina se selecionada
-      if (disciplinaSelecionada !== 'todas') {
-        notasTurma = notasTurma.filter(n => n.materiaId === disciplinaSelecionada);
-      }
-
-      const somaMedias = notasTurma.reduce((acc, cur) => {
-        const parcial = typeof cur.notaParcial === 'number' ? cur.notaParcial : 0;
-        const global = typeof cur.notaGlobal === 'number' ? cur.notaGlobal : 0;
-        const participacao = typeof cur.notaParticipacao === 'number' ? cur.notaParticipacao : 0;
-        const mediaFinal = ((parcial + global) / 2) + participacao;
-        return acc + mediaFinal;
-      }, 0);
-      const media = notasTurma.length ? somaMedias / notasTurma.length : 0;
-      return {
-        turma: turma.nome,
-        media: parseFloat(media.toFixed(2))
-      };
-    });
+    const notaResults = notaService.calcularMediasPorTurma(
+      notaDataOriginal,
+      turmasParaCalcular,
+      Object.keys(filtros).length > 0 ? filtros : undefined
+    );
 
     setNotaData(notaResults);
   }, [grupoTurmasSelecionado, disciplinaSelecionada, notaDataOriginal, turmasLista, gruposTurmas, isAdmin]);
@@ -325,161 +319,161 @@ export default function Dashboard(): JSX.Element {
               </Container>
             ) : (
               <>
-            <Card className="shadow-sm mt-3 mb-3" style={{ boxShadow: '0 0 0 2px #2563eb33' }}>
-              <Card.Body>
-                <h5 className="px-1 mb-2 d-flex align-items-center gap-2" style={{ fontWeight: 500 }}>
-                  <Filter className='text-muted' size={20} />
-                  Filtros
-                </h5>
-                <Row className="g-3">
-                  <Col md={3}>
-                    <Form.Label className="small text-muted">Turmas (5 por opção)</Form.Label>
-                    <Form.Select
-                      value={grupoTurmasSelecionado}
-                      onChange={e => {
-                        setGrupoTurmasSelecionado(Number(e.target.value));
-                        setGrupoTurmasAutoSelecionado(true);
-                      }}
-                    >
-                      <option value={-1} disabled hidden>Selecione as turmas</option>
-                      {gruposTurmas.map((grupo, idx) => {
-                        const primeiro = grupo[0]?.nome || '';
-                        const ultimo = grupo[grupo.length - 1]?.nome || '';
-                        return (
-                          <option key={idx} value={idx}>{primeiro} - {ultimo}</option>
-                        );
-                      })}
-                    </Form.Select>
-                  </Col>
-                  <Col md={3}>
-                    <Form.Label className="small text-muted">Disciplinas</Form.Label>
-                    <Form.Select
-                      value={disciplinaSelecionada}
-                      onChange={e => setDisciplinaSelecionada(e.target.value)}
-                    >
-                      <option value="todas">Todas as Disciplinas</option>
-                      {materiasLista.map(materia => (
-                        <option key={materia.id} value={materia.id}>
-                          {materia.nome}
-                        </option>
-                      ))}
-                    </Form.Select>
-                  </Col>
-                  <Col md={3}>
-                    <Form.Label className="small text-muted">Tipo de Período</Form.Label>
-                    <Form.Select value={tipoPeriodo} onChange={e => setTipoPeriodo(e.target.value)}>
-                      <option value="">Selecione o período</option>
-                      <option value="hoje">Hoje</option>
-                      <option value="mes">Mês</option>
-                      <option value="personalizado">Personalizado</option>
-                    </Form.Select>
-                  </Col>
-                  {tipoPeriodo === 'personalizado' && (
-                    <Col md={3}>
-                      <Form.Label className="small text-muted">Data Personalizada</Form.Label>
-                      <Form.Control
-                        type="date"
-                        value={dataPersonalizada}
-                        onChange={e => setDataPersonalizada(e.target.value)}
-                        placeholder="Selecione uma data"
-                      />
-                    </Col>
-                  )}
-                  {tipoPeriodo === 'mes' && (
-                    <Col md={3}>
-                      <Form.Label className="small text-muted">Selecione o Mês</Form.Label>
-                      <Form.Select
-                        value={mesSelecionado}
-                        onChange={e => setMesSelecionado(e.target.value)}
-                      >
-                        <option value="">Selecione o mês</option>
-                        <option value="01">Janeiro</option>
-                        <option value="02">Fevereiro</option>
-                        <option value="03">Março</option>
-                        <option value="04">Abril</option>
-                        <option value="05">Maio</option>
-                        <option value="06">Junho</option>
-                        <option value="07">Julho</option>
-                        <option value="08">Agosto</option>
-                        <option value="09">Setembro</option>
-                        <option value="10">Outubro</option>
-                        <option value="11">Novembro</option>
-                        <option value="12">Dezembro</option>
-                      </Form.Select>
-                    </Col>
-                  )}
-                </Row>
-              </Card.Body>
-            </Card>
-
-            <Row xs={1} lg={2} className="g-4">
-              <Col>
-                <Card className="p-1 h-100">
-                  <Card.Header className="fw-bold bg-white" style={{ borderBottom: '0' }}>Taxa de Frequência por Turmas</Card.Header>
+                <Card className="shadow-sm mt-3 mb-3" style={{ boxShadow: '0 0 0 2px #2563eb33' }}>
                   <Card.Body>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <BarChart data={dadosFreqFiltrados}>
-                        <XAxis
-                          dataKey="turma"
-                          tick={{ fontSize: 11, fontStyle: 'italic', fill: '#495057', dy: 10, dx: -10 }}
-                          angle={-20}
-                        />
-                        <YAxis
-                          domain={[0, 100]}
-                          unit="%"
-                          tick={{ fontSize: 14, fill: '#495057' }}
-                        />
-                        <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
-                        <Bar
-                          dataKey="taxa"
-                          label={{ position: 'top' }}
-                          fill="#8884d8"
-                          radius={[5, 5, 0, 0]}
+                    <h5 className="px-1 mb-2 d-flex align-items-center gap-2" style={{ fontWeight: 500 }}>
+                      <Filter className='text-muted' size={20} />
+                      Filtros
+                    </h5>
+                    <Row className="g-3">
+                      <Col md={3}>
+                        <Form.Label className="small text-muted">Turmas (5 por opção)</Form.Label>
+                        <Form.Select
+                          value={grupoTurmasSelecionado}
+                          onChange={e => {
+                            setGrupoTurmasSelecionado(Number(e.target.value));
+                            setGrupoTurmasAutoSelecionado(true);
+                          }}
                         >
-                          {dadosFreqFiltrados.map((entry, index) => {
-                            const color =
-                              entry.taxa >= 85 ? '#28a745' : entry.taxa >= 60 ? '#ffc107' : '#dc3545';
-                            return <Cell key={`cell-${index}`} fill={color} />;
+                          <option value={-1} disabled hidden>Selecione as turmas</option>
+                          {gruposTurmas.map((grupo, idx) => {
+                            const primeiro = grupo[0]?.nome || '';
+                            const ultimo = grupo[grupo.length - 1]?.nome || '';
+                            return (
+                              <option key={idx} value={idx}>{primeiro} - {ultimo}</option>
+                            );
                           })}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                        </Form.Select>
+                      </Col>
+                      <Col md={3}>
+                        <Form.Label className="small text-muted">Disciplinas</Form.Label>
+                        <Form.Select
+                          value={disciplinaSelecionada}
+                          onChange={e => setDisciplinaSelecionada(e.target.value)}
+                        >
+                          <option value="todas">Todas as Disciplinas</option>
+                          {materiasLista.map(materia => (
+                            <option key={materia.id} value={materia.id}>
+                              {materia.nome}
+                            </option>
+                          ))}
+                        </Form.Select>
+                      </Col>
+                      <Col md={3}>
+                        <Form.Label className="small text-muted">Tipo de Período</Form.Label>
+                        <Form.Select value={tipoPeriodo} onChange={e => setTipoPeriodo(e.target.value)}>
+                          <option value="">Selecione o período</option>
+                          <option value="hoje">Hoje</option>
+                          <option value="mes">Mês</option>
+                          <option value="personalizado">Personalizado</option>
+                        </Form.Select>
+                      </Col>
+                      {tipoPeriodo === 'personalizado' && (
+                        <Col md={3}>
+                          <Form.Label className="small text-muted">Data Personalizada</Form.Label>
+                          <Form.Control
+                            type="date"
+                            value={dataPersonalizada}
+                            onChange={e => setDataPersonalizada(e.target.value)}
+                            placeholder="Selecione uma data"
+                          />
+                        </Col>
+                      )}
+                      {tipoPeriodo === 'mes' && (
+                        <Col md={3}>
+                          <Form.Label className="small text-muted">Selecione o Mês</Form.Label>
+                          <Form.Select
+                            value={mesSelecionado}
+                            onChange={e => setMesSelecionado(e.target.value)}
+                          >
+                            <option value="">Selecione o mês</option>
+                            <option value="01">Janeiro</option>
+                            <option value="02">Fevereiro</option>
+                            <option value="03">Março</option>
+                            <option value="04">Abril</option>
+                            <option value="05">Maio</option>
+                            <option value="06">Junho</option>
+                            <option value="07">Julho</option>
+                            <option value="08">Agosto</option>
+                            <option value="09">Setembro</option>
+                            <option value="10">Outubro</option>
+                            <option value="11">Novembro</option>
+                            <option value="12">Dezembro</option>
+                          </Form.Select>
+                        </Col>
+                      )}
+                    </Row>
                   </Card.Body>
                 </Card>
-              </Col>
 
-              <Col>
-                <Card className="h-100 pt-1 px-1">
-                  <Card.Header className="fw-bold bg-white" style={{ borderBottom: '0' }}>Nota Média por Turma</Card.Header>
-                  <Card.Body>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <LineChart data={dadosNotaFiltrados} margin={{ left: 0, right: 20, top: 5, bottom: 6 }}>
-                        {/* <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" /> */}
-                        <XAxis
-                          dataKey="turma"
-                          tick={{ fontSize: 11, fontStyle: 'italic', fill: '#495057', dy: 10, dx: -10 }}
-                          angle={-20}
-                          interval={0}
-                        />
-                        <YAxis
-                          domain={[0, 10]}
-                          tick={{ fontSize: 14, fill: '#495057' }}
-                        />
-                        <Tooltip formatter={(value: number) => `${value.toFixed(2)} pts`} />
-                        <Line
-                          type="monotone"
-                          dataKey="media"
-                          stroke="#007bff"
-                          dot={{ stroke: '#007bff', strokeWidth: 2, fill: '#fff', r: 5 }}
-                          activeDot={{ r: 8 }}
-                        />
-                        {/* <Legend /> */}
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </Card.Body>
-                </Card>
-              </Col>
-            </Row>
+                <Row xs={1} lg={2} className="g-4">
+                  <Col>
+                    <Card className="p-1 h-100">
+                      <Card.Header className="fw-bold bg-white" style={{ borderBottom: '0' }}>Taxa de Frequência por Turmas</Card.Header>
+                      <Card.Body>
+                        <ResponsiveContainer width="100%" height={250}>
+                          <BarChart data={dadosFreqFiltrados}>
+                            <XAxis
+                              dataKey="turma"
+                              tick={{ fontSize: 11, fontStyle: 'italic', fill: '#495057', dy: 10, dx: -10 }}
+                              angle={-20}
+                            />
+                            <YAxis
+                              domain={[0, 100]}
+                              unit="%"
+                              tick={{ fontSize: 14, fill: '#495057' }}
+                            />
+                            <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
+                            <Bar
+                              dataKey="taxa"
+                              label={{ position: 'top' }}
+                              fill="#8884d8"
+                              radius={[5, 5, 0, 0]}
+                            >
+                              {dadosFreqFiltrados.map((entry, index) => {
+                                const color =
+                                  entry.taxa >= 85 ? '#28a745' : entry.taxa >= 60 ? '#ffc107' : '#dc3545';
+                                return <Cell key={`cell-${index}`} fill={color} />;
+                              })}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+
+                  <Col>
+                    <Card className="h-100 pt-1 px-1">
+                      <Card.Header className="fw-bold bg-white" style={{ borderBottom: '0' }}>Nota Média por Turma</Card.Header>
+                      <Card.Body>
+                        <ResponsiveContainer width="100%" height={250}>
+                          <LineChart data={dadosNotaFiltrados} margin={{ left: 0, right: 20, top: 5, bottom: 6 }}>
+                            {/* <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" /> */}
+                            <XAxis
+                              dataKey="turma"
+                              tick={{ fontSize: 11, fontStyle: 'italic', fill: '#495057', dy: 10, dx: -10 }}
+                              angle={-20}
+                              interval={0}
+                            />
+                            <YAxis
+                              domain={[0, 10]}
+                              tick={{ fontSize: 14, fill: '#495057' }}
+                            />
+                            <Tooltip formatter={(value: number) => `${value.toFixed(2)} pts`} />
+                            <Line
+                              type="monotone"
+                              dataKey="media"
+                              stroke="#007bff"
+                              dot={{ stroke: '#007bff', strokeWidth: 2, fill: '#fff', r: 5 }}
+                              activeDot={{ r: 8 }}
+                            />
+                            {/* <Legend /> */}
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                </Row>
               </>
             )}
           </>
@@ -510,15 +504,3 @@ function DashboardCard({ icon, title, value }: { icon: JSX.Element; title: strin
     </Col>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
