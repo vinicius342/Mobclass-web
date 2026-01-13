@@ -124,12 +124,14 @@ export class AlunoService {
 
           if (temTresNotas || temRecuperacao) {
             // Calcular média final
-            let mediaFinal: number;
-            if (temRecuperacao) {
-              mediaFinal = nota.notaRecuperacao;
-            } else {
-              mediaFinal = (nota.notaParcial + nota.notaGlobal + nota.notaParticipacao) / 3;
+            // Calcula média das três notas
+            let mediaFinal = (nota.notaParcial + nota.notaGlobal + nota.notaParticipacao) / 3;
+            
+            // Se tiver recuperação, usa o maior valor entre média e recuperação
+            if (nota.notaRecuperacao) {
+              mediaFinal = Math.max(mediaFinal, nota.notaRecuperacao);
             }
+            
             todasMediasFinais.push(mediaFinal);
           } else {
             temNotaIncompleta = true;

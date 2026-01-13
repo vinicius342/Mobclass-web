@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { collection, getDocs, query } from 'firebase/firestore';
-import { db } from '../services/firebase/firebase';
+import { db, auth } from '../services/firebase/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 interface AnoLetivoContextType {
   anoLetivo: number;
@@ -29,9 +30,27 @@ export const AnoLetivoProvider: React.FC<AnoLetivoProviderProps> = ({ children }
   const [anoLetivo, setAnoLetivoState] = useState<number>(anoAtual);
   const [anosDisponiveis, setAnosDisponiveis] = useState<number[]>([]);
   const [carregandoAnos, setCarregandoAnos] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
-  // Busca os anos letivos disponíveis nas turmas cadastradas
+  // Monitora o estado de autenticação
   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setIsAuthenticated(!!user);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Busca os anos letivos disponíveis nas turmas cadastradas APENAS quando autenticado
+  useEffect(() => {
+    // Não busca se não estiver autenticado
+    if (!isAuthenticated) {
+      setCarregandoAnos(false);
+      setAnosDisponiveis([anoAtual, anoAtual + 1]);
+      setAnoLetivoState(anoAtual);
+      return;
+    }
+
     const buscarAnosDisponiveis = async () => {
       try {
         setCarregandoAnos(true);
@@ -95,7 +114,7 @@ export const AnoLetivoProvider: React.FC<AnoLetivoProviderProps> = ({ children }
     };
 
     buscarAnosDisponiveis();
-  }, [anoAtual]);
+  }, [anoAtual, isAuthenticated]);
 
   const setAnoLetivo = (ano: number) => {
     setAnoLetivoState(ano);

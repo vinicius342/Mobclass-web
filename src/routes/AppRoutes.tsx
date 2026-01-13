@@ -19,8 +19,8 @@ import Materias from '../pages/Materias';
 import ForgotPassword from '../pages/ForgotPassword';
 import FirstChangePassword from '../pages/FirstChangePassword';
 import ResetPassword from '../pages/ResetPassword';
-import Vinculos from '../pages/Vinculos';
 import Ocorrencias from '../pages/Ocorrencias';
+// import Vinculos from '../pages/Vinculos';
 // import Register from '../pages/Register';
 
 export default function AppRoutes(): JSX.Element {
@@ -56,7 +56,7 @@ export default function AppRoutes(): JSX.Element {
           <Route path="turmas" element={<Turmas />} />
           <Route path="usuarios" element={<Usuarios />} />
           <Route path="materias" element={<Materias />} />
-          <Route path="vinculos" element={<Vinculos />} />
+          {/* <Route path="vinculos" element={<Vinculos />} /> */}
         </Route>
       </Route>
 

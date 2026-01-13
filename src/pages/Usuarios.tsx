@@ -73,6 +73,14 @@ export default function Usuarios(): JSX.Element {
   const [expandedTurmas, setExpandedTurmas] = useState<Set<string>>(new Set());
   const [showExportModal, setShowExportModal] = useState(false);
   const [turmasProximasCache, setTurmasProximasCache] = useState<TurmaModel[]>([]);
+  const [showStatusConfirmModal, setShowStatusConfirmModal] = useState(false);
+  const [statusChangeData, setStatusChangeData] = useState<{
+    tipo: 'aluno' | 'responsavel';
+    userId: string;
+    novoStatus: string;
+    relacionados: Array<{id: string; nome: string; tipo: string}>;
+    formData: FormValues;
+  } | null>(null);
 
   // Função para obter turmas (já incluem virtualizadas vindas do service)
   const getTurmasProximas = (): TurmaModel[] => {
@@ -680,6 +688,78 @@ export default function Usuarios(): JSX.Element {
 
   const handleSubmit = async (data: FormValues) => {
     try {
+      // Verificar mudança de status para Inativo
+      if (formMode === 'edit' && (data as any).status === 'Inativo') {
+        const usuarioAtual = formDefaults as any;
+        const statusAnterior = usuarioAtual.status || 'Ativo';
+        
+        // Se está mudando de Ativo para Inativo
+        if (statusAnterior === 'Ativo') {
+          // Verificar se é aluno
+          if (data.tipoUsuario === 'alunos') {
+            const alunoAtual = alunos.find(a => a.id === usuarioAtual.id);
+            if (alunoAtual) {
+              // Buscar responsável do aluno
+              const responsavel = responsaveis.find(r => r.filhos && r.filhos.includes(alunoAtual.id));
+              
+              if (responsavel) {
+                const outrosFilhos = responsavel.filhos!.filter(fid => fid !== alunoAtual.id);
+                const relacionados = outrosFilhos.map(fid => {
+                  const filho = alunos.find(a => a.id === fid);
+                  return { id: fid, nome: filho?.nome || 'Desconhecido', tipo: 'aluno' };
+                });
+                relacionados.unshift({ id: responsavel.id, nome: responsavel.nome, tipo: 'responsavel' });
+                
+                if (relacionados.length > 0) {
+                  setStatusChangeData({
+                    tipo: 'aluno',
+                    userId: usuarioAtual.id,
+                    novoStatus: 'Inativo',
+                    relacionados,
+                    formData: data
+                  });
+                  setShowStatusConfirmModal(true);
+                  return; // Aguardar confirmação
+                }
+              }
+            }
+          }
+          
+          // Verificar se é responsável
+          if (data.tipoUsuario === 'responsaveis') {
+            const responsavelAtual = responsaveis.find(r => r.id === usuarioAtual.id);
+            if (responsavelAtual && responsavelAtual.filhos && responsavelAtual.filhos.length > 0) {
+              const relacionados = responsavelAtual.filhos.map(fid => {
+                const filho = alunos.find(a => a.id === fid);
+                return { id: fid, nome: filho?.nome || 'Desconhecido', tipo: 'aluno' };
+              });
+              
+              if (relacionados.length > 0) {
+                setStatusChangeData({
+                  tipo: 'responsavel',
+                  userId: usuarioAtual.id,
+                  novoStatus: 'Inativo',
+                  relacionados,
+                  formData: data
+                });
+                setShowStatusConfirmModal(true);
+                return; // Aguardar confirmação
+              }
+            }
+          }
+        }
+      }
+
+      // Continuar com o salvamento normal
+      await salvarUsuario(data, false);
+    } catch (error: any) {
+      console.error(error);
+      setToast({ show: true, message: error.message || 'Erro ao salvar usuário.', variant: 'danger' });
+    }
+  };
+
+  const salvarUsuario = async (data: FormValues, atualizarRelacionados: boolean) => {
+    try {
       // Materializar turma virtual se necessário (para alunos)
       let turmaIdFinal = data.turmaId;
       if (data.tipoUsuario === 'alunos' && data.turmaId) {
@@ -689,12 +769,44 @@ export default function Usuarios(): JSX.Element {
         }
       }
 
+      // Materializar turmas virtuais se necessário (para professores)
+      let turmasFinal = data.turmas;
+      if (data.tipoUsuario === 'professores' && data.turmas && data.turmas.length > 0) {
+        const turmasParaMaterializar = data.turmas.map(turmaId => {
+          const turmaObj = turmas.find(t => t.id === turmaId);
+          return { turmaId, turmaObj };
+        });
+
+        turmasFinal = await Promise.all(
+          turmasParaMaterializar.map(async ({ turmaId, turmaObj }) => {
+            if (turmaObj && isTurmaVirtualizada(turmaObj)) {
+              return await materializarTurmaVirtual(turmaObj);
+            }
+            return turmaId;
+          })
+        );
+      }
+
+      // Para professores em modo de edição, mesclar turmas do ano atual com turmas de outros anos
+      if (formMode === 'edit' && data.tipoUsuario === 'professores') {
+        const turmasAtuaisDoUsuario = (formDefaults as any).turmas || [];
+        
+        // Filtrar turmas que não estão na lista de turmas do ano atual (são de outros anos)
+        const turmasIdDoAnoAtual = turmas.map((t: TurmaModel) => t.id);
+        const turmasDeOutrosAnos = turmasAtuaisDoUsuario.filter((turmaId: string) => 
+          !turmasIdDoAnoAtual.includes(turmaId)
+        );
+        
+        // Combinar turmas de outros anos com as turmas do ano atual
+        turmasFinal = [...turmasDeOutrosAnos, ...turmasFinal];
+      }
+
       const userData = {
         nome: data.nome,
         email: data.email,
         status: (data as any).status || 'Ativo',
         ...(data.tipoUsuario === 'alunos' && { turmaId: turmaIdFinal }),
-        ...(data.tipoUsuario === 'professores' && { turmas: data.turmas }),
+        ...(data.tipoUsuario === 'professores' && { turmas: turmasFinal }),
         ...(data.tipoUsuario === 'responsaveis' && { filhos: data.filhos }),
         // Adicionar dataCriacao apenas para novos usuários
         ...(formMode === 'add' && { dataCriacao: new Date() }),
@@ -714,7 +826,7 @@ export default function Usuarios(): JSX.Element {
             status: (data as any).status || 'Ativo',
             turmaId: turmaIdFinal,
             filhos: data.filhos,
-            turmas: data.turmas,
+            turmas: turmasFinal,
             dataCriacao: new Date().toISOString(),
           }),
         });
@@ -749,9 +861,35 @@ export default function Usuarios(): JSX.Element {
       }
       if (data.tipoUsuario === 'responsaveis') setResponsaveis(novosDados);
       if (data.tipoUsuario === 'administradores') setAdministradores(novosDados);
+      
+      // Atualizar status de relacionados se solicitado
+      if (atualizarRelacionados && statusChangeData) {
+        for (const relacionado of statusChangeData.relacionados) {
+          const tipoColecao = relacionado.tipo === 'aluno' ? 'alunos' : 'responsaveis';
+          const docRef = doc(db, tipoColecao, relacionado.id);
+          await updateDoc(docRef, { status: 'Inativo' });
+        }
+        
+        // Recarregar dados após atualizar relacionados
+        const [alunosAtualizados, responsaveisAtualizados] = await Promise.all([
+          getDocs(collection(db, 'alunos')),
+          getDocs(collection(db, 'responsaveis'))
+        ]);
+        
+        setAlunos(alunosAtualizados.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+        setResponsaveis(responsaveisAtualizados.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      }
     } catch (error: any) {
       console.error(error);
       setToast({ show: true, message: error.message || 'Erro ao salvar usuário.', variant: 'danger' });
+    }
+  };
+
+  const handleConfirmStatusChange = async (atualizarRelacionados: boolean) => {
+    setShowStatusConfirmModal(false);
+    if (statusChangeData) {
+      await salvarUsuario(statusChangeData.formData, atualizarRelacionados);
+      setStatusChangeData(null);
     }
   };
 
@@ -1091,7 +1229,7 @@ export default function Usuarios(): JSX.Element {
                     </Button>
                   </div>
                   <div className="usuarios-table-desktop w-100">
-                    <Table responsive hover className="w-100 text-center">
+                    <Table hover className="w-100 text-center">
                       <thead className="thead-sticky">
                         <tr>
                           <th className='text-muted text-center'>Nome</th>
@@ -1542,6 +1680,52 @@ export default function Usuarios(): JSX.Element {
               </div>
             </div>
           </Modal.Body>
+        </Modal>
+
+        {/* Modal de Confirmação de Mudança de Status */}
+        <Modal show={showStatusConfirmModal} onHide={() => setShowStatusConfirmModal(false)} centered>
+          <Modal.Header closeButton>
+            <Modal.Title>Confirmar Mudança de Status</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            {statusChangeData && (
+              <div>
+                <p className="mb-3">
+                  {statusChangeData.tipo === 'aluno' 
+                    ? 'Este aluno possui um responsável e outros alunos vinculados.'
+                    : 'Este responsável possui alunos vinculados.'
+                  }
+                </p>
+                <div className="bg-light p-3 rounded mb-3">
+                  <p className="mb-2"><strong>Relacionados:</strong></p>
+                  <ul className="mb-0">
+                    {statusChangeData.relacionados.map(rel => (
+                      <li key={rel.id}>
+                        {rel.nome} ({rel.tipo === 'aluno' ? 'Aluno' : 'Responsável'})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <p className="mb-0">
+                  Deseja alterar o status {statusChangeData.tipo === 'aluno' ? 'do responsável e dos outros alunos' : 'dos alunos'} para <strong>Inativo</strong> também?
+                </p>
+              </div>
+            )}
+          </Modal.Body>
+          <Modal.Footer>
+            <Button 
+              variant="secondary" 
+              onClick={() => handleConfirmStatusChange(false)}
+            >
+              Não, apenas este usuário
+            </Button>
+            <Button 
+              variant="primary" 
+              onClick={() => handleConfirmStatusChange(true)}
+            >
+              Sim, atualizar todos
+            </Button>
+          </Modal.Footer>
         </Modal>
 
         <ToastContainer position="bottom-end" className="p-3">

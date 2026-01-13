@@ -11,12 +11,9 @@ import { FaUserCheck, FaUsers, FaUserTimes } from 'react-icons/fa';
 import { FrequenciaService } from '../../services/data/FrequenciaService';
 import { FirebaseFrequenciaRepository } from '../../repositories/frequencia/FirebaseFrequenciaRepository';
 
-const frequenciaRepository = new FirebaseFrequenciaRepository();
-const frequenciaService = new FrequenciaService(frequenciaRepository);
 import { FirebaseAlunoRepository } from '../../repositories/aluno/FirebaseAlunoRepository';
 import { ProfessorMateriaService } from '../../services/data/ProfessorMateriaService';
 import { FirebaseProfessorMateriaRepository } from '../../repositories/professor_materia/FirebaseProfessorMateriaRepository';
-import { Frequencia } from '../../models/Frequencia';
 import { Aluno } from '../../models/Aluno';
 import { Turma } from '../../models/Turma';
 import { Materia } from '../../models/Materia';
@@ -62,7 +59,6 @@ export default function FrequenciaLancamento({
   );
 
   const [alunos, setAlunos] = useState<Aluno[]>([]);
-  const [frequenciasCarregadas, setFrequenciasCarregadas] = useState<Frequencia[]>([]);
 
   const [turmaId, setTurmaId] = useState('');
   const [materiaId, setMateriaId] = useState('');
@@ -100,7 +96,6 @@ export default function FrequenciaLancamento({
       if (!turmaId || !materiaId || !dataAula) {
         setAlunos([]);
         setAttendance({});
-        setFrequenciasCarregadas([]);
         return;
       }
       setLoading(true);
@@ -114,7 +109,6 @@ export default function FrequenciaLancamento({
 
         // Buscar frequências já lançadas
         const frequencias = await frequenciaService.listarPorTurmaMateria(turmaId, materiaId, dataAula);
-        setFrequenciasCarregadas(frequencias);
 
         // Mapear presença usando service
         const initial = frequenciaService.inicializarAttendance(
@@ -148,37 +142,17 @@ export default function FrequenciaLancamento({
 
   const marcarTodosComoPresente = () => {
     const frequenciasAtualizadas = frequenciaService.marcarTodosPresentes(
-      frequenciasCarregadas.length > 0 
-        ? frequenciasCarregadas 
-        : alunos.map(a => ({
-            id: `${turmaId}_${materiaId}_${dataAula}_${a.id}`,
-            alunoId: a.id,
-            turmaId,
-            materiaId,
-            data: dataAula,
-            presenca: null,
-            professorId: userData?.uid || ''
-          }))
+      alunos.map(a => ({ id: a.id, nome: a.nome }))
     );
-    const novos = Object.fromEntries(frequenciasAtualizadas.map(f => [f.alunoId, f.presenca]));
+    const novos = Object.fromEntries(frequenciasAtualizadas.map((f: { alunoId: string; presenca: boolean }) => [f.alunoId, f.presenca]));
     atualizarAttendance(novos);
   };
 
   const marcarTodosComoAusente = () => {
     const frequenciasAtualizadas = frequenciaService.marcarTodosAusentes(
-      frequenciasCarregadas.length > 0 
-        ? frequenciasCarregadas 
-        : alunos.map(a => ({
-            id: `${turmaId}_${materiaId}_${dataAula}_${a.id}`,
-            alunoId: a.id,
-            turmaId,
-            materiaId,
-            data: dataAula,
-            presenca: null,
-            professorId: userData?.uid || ''
-          }))
+      alunos.map(a => ({ id: a.id, nome: a.nome }))
     );
-    const novos = Object.fromEntries(frequenciasAtualizadas.map(f => [f.alunoId, f.presenca]));
+    const novos = Object.fromEntries(frequenciasAtualizadas.map((f: { alunoId: string; presenca: boolean }) => [f.alunoId, f.presenca]));
     atualizarAttendance(novos);
   };
 
@@ -260,9 +234,9 @@ export default function FrequenciaLancamento({
       alunos.map(a => ({ id: a.id, nome: a.nome })),
       alunosComFrequencias,
       buscaNome,
-      filtroTipo as 'todos' | 'presentes' | 'ausentes' | 'nao-registrado'
+      filtroTipo
     );
-  }, [alunos, filtroAlunos, attendance, buscaNome, turmaId, materiaId, dataAula, userData, frequenciaService]);
+  }, [alunos, filtroAlunos, attendance, buscaNome, turmaId, materiaId, dataAula, userData]);
 
   // Data
   function handleDateChange(date: Date | null) {
@@ -538,7 +512,7 @@ export default function FrequenciaLancamento({
             <Card.Body>
               <h3 className="mb-3 px-3">Lista de Alunos</h3>
               <div className="d-flex flex-column gap-0">
-                {alunosFiltrados.map(a => (
+                {alunosFiltrados.map((a: { id: string; nome: string }) => (
                   <Card
                     key={a.id}
                     className="w-100 custom-card-frequencia mb-0"

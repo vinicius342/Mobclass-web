@@ -72,8 +72,8 @@ export default function Notas(): JSX.Element {
 
   // Função para buscar alunos e abrir modal
   const handleBuscarAlunos = () => {
-    const encontrados = alunos.filter(a => 
-      a.nome.toLowerCase().includes(busca.toLowerCase()) && 
+    const encontrados = alunos.filter(a =>
+      a.nome.toLowerCase().includes(busca.toLowerCase()) &&
       (a as any).status !== 'Inativo'
     );
     setAlunosEncontradosBusca(encontrados);
@@ -108,8 +108,27 @@ export default function Notas(): JSX.Element {
           );
           materiaIds = Array.from(new Set(materiasList.map(m => m.id)));
         } else {
+          // Professor: buscar pelo email
+          if (!userData?.email) {
+            setLoading(false);
+            return;
+          }
+
+          // Buscar professor pelo email
+          const professorService = new (await import('../services/data/ProfessorService')).ProfessorService(
+            new (await import('../repositories/professor/FirebaseProfessorRepository')).FirebaseProfessorRepository()
+          );
+          const allProfessores = await professorService.listar();
+          const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
+
+          if (!professorAtual) {
+            console.error('Professor não encontrado com email:', userData.email);
+            setLoading(false);
+            return;
+          }
+
           // Professor: buscar vínculos do professor
-          const vinculosProfessor = await professorMateriaService.listarPorProfessor(userId!);
+          const vinculosProfessor = await professorMateriaService.listarPorProfessor(professorAtual.id);
 
           // Buscar turmas do ano letivo
           const turmaIdsVinculados = [...new Set(vinculosProfessor.map(v => v.turmaId))];
@@ -154,7 +173,6 @@ export default function Notas(): JSX.Element {
         setAlunos(alunosAtivos);
         setMaterias(materiasList as any); // Type assertion necessária para compatibilidade com estrutura legada
         setNotas(notasComNome);
-        console.log('📚 Matérias carregadas:', materiasList.length, materiasList);
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
         setToast({ show: true, message: 'Erro ao carregar dados', variant: 'danger' });
@@ -641,18 +659,18 @@ export default function Notas(): JSX.Element {
               <Row>
                 <Col md={12}>
                   <InputGroup>
-                    <FormControl 
-                      placeholder="Buscar aluno para ver boletim completo" 
-                      value={busca} 
+                    <FormControl
+                      placeholder="Buscar aluno para ver boletim completo"
+                      value={busca}
                       onChange={e => setBusca(e.target.value)}
                       onKeyPress={e => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
                           if (!busca.trim()) {
-                            setToast({ 
-                              show: true, 
-                              message: 'Digite o nome do aluno para buscar', 
-                              variant: 'danger' 
+                            setToast({
+                              show: true,
+                              message: 'Digite o nome do aluno para buscar',
+                              variant: 'danger'
                             });
                           } else {
                             handleBuscarAlunos();
@@ -660,14 +678,14 @@ export default function Notas(): JSX.Element {
                         }
                       }}
                     />
-                    <Button 
+                    <Button
                       variant="outline-secondary"
                       onClick={() => {
                         if (!busca.trim()) {
-                          setToast({ 
-                            show: true, 
-                            message: 'Digite o nome do aluno para buscar', 
-                            variant: 'danger' 
+                          setToast({
+                            show: true,
+                            message: 'Digite o nome do aluno para buscar',
+                            variant: 'danger'
                           });
                         } else {
                           handleBuscarAlunos();
@@ -730,42 +748,73 @@ export default function Notas(): JSX.Element {
           <Modal.Header closeButton>
             <Modal.Title>Alunos Encontrados</Modal.Title>
           </Modal.Header>
-          <Modal.Body>
+          <Modal.Body style={{ maxHeight: '70vh', overflowY: 'auto' }}>
             {alunosEncontradosBusca.length === 0 ? (
               <div className="text-center text-muted py-4">
                 <FontAwesomeIcon icon={faCircleExclamation} size="2x" className="mb-3" />
                 <div>Nenhum aluno encontrado com o nome "{busca}".</div>
               </div>
             ) : (
-              <Table hover responsive className="mb-0">
-                <thead>
-                  <tr>
-                    <th>Nome do Aluno</th>
-                    <th className="text-center">Ação</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <>
+                {/* Versão Desktop - Tabela */}
+                <div className="d-none d-md-block">
+                  <Table hover responsive className="mb-0">
+                    <thead>
+                      <tr>
+                        <th>Nome do Aluno</th>
+                        <th className="text-center">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {alunosEncontradosBusca.map(aluno => (
+                        <tr key={aluno.id}>
+                          <td className="align-middle">{aluno.nome}</td>
+                          <td className="text-center">
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => {
+                                setShowModalAlunos(false);
+                                handleAbrirBoletim(aluno);
+                              }}
+                              className="d-flex align-items-center gap-2 mx-auto"
+                            >
+                              <BookOpen size={16} />
+                              Ver Boletim
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </div>
+
+                {/* Versão Mobile - Cards */}
+                <div className="d-block d-md-none">
                   {alunosEncontradosBusca.map(aluno => (
-                    <tr key={aluno.id}>
-                      <td className="align-middle">{aluno.nome}</td>
-                      <td className="text-center">
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => {
-                            setShowModalAlunos(false);
-                            handleAbrirBoletim(aluno);
-                          }}
-                          className="d-flex align-items-center gap-2 mx-auto"
-                        >
-                          <BookOpen size={16} />
-                          Ver Boletim
-                        </Button>
-                      </td>
-                    </tr>
+                    <Card key={aluno.id} className="mb-2 shadow-sm">
+                      <Card.Body className="p-3">
+                        <div className="d-flex justify-content-between align-items-center">
+                          <div className="flex-grow-1">
+                            <div className="fw-medium">{aluno.nome}</div>
+                          </div>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => {
+                              setShowModalAlunos(false);
+                              handleAbrirBoletim(aluno);
+                            }}
+                            className="ms-2"
+                          >
+                            <BookOpen size={16} />
+                          </Button>
+                        </div>
+                      </Card.Body>
+                    </Card>
                   ))}
-                </tbody>
-              </Table>
+                </div>
+              </>
             )}
           </Modal.Body>
         </Modal>

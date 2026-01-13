@@ -13,6 +13,8 @@ import { FaTasks, FaCalendarAlt, FaBullhorn } from 'react-icons/fa';
 // Services
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
 import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
+import { ProfessorService } from '../services/data/ProfessorService';
+import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
 import { TarefaService } from '../services/data/TarefaService';
 import { FirebaseTarefaRepository } from '../repositories/tarefa/FirebaseTarefaRepository';
 import { FirebaseEntregaRepository } from '../repositories/entrega/FirebaseEntregaRepository';
@@ -27,6 +29,7 @@ import { FirebaseNotaRepository } from '../repositories/nota/FirebaseNotaReposit
 
 // Instanciar services
 const professorMateriaService = new ProfessorMateriaService(new FirebaseProfessorMateriaRepository());
+const professorService = new ProfessorService(new FirebaseProfessorRepository());
 const tarefaService = new TarefaService(new FirebaseTarefaRepository(), new FirebaseEntregaRepository());
 const agendaService = new AgendaService(new FirebaseAgendaRepository());
 const comunicadoService = new ComunicadoService(new FirebaseComunicadoRepository());
@@ -63,10 +66,23 @@ export default function DashboardProfessor() {
     }
 
     const fetchData = async () => {
-      const uid = userData.uid;
+      if (!userData?.email) {
+        setLoading(false);
+        return;
+      }
+      
+      // Buscar professor pelo email
+      const allProfessores = await professorService.listar();
+      const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
+      
+      if (!professorAtual) {
+        console.error('Professor não encontrado com email:', userData.email);
+        setLoading(false);
+        return;
+      }
       
       // Buscar vínculos do professor
-      const vinculos = await professorMateriaService.listarPorProfessor(uid);
+      const vinculos = await professorMateriaService.listarPorProfessor(professorAtual.id);
       const turmaIds = [...new Set(vinculos.map(v => v.turmaId))];
 
       if (turmaIds.length === 0) {
@@ -90,7 +106,7 @@ export default function DashboardProfessor() {
 
       // Filtrar frequências do professor nas turmas vinculadas
       const freqFiltradas = frequencias.filter(
-        f => turmaIds.includes(f.turmaId) && f.professorId === uid
+        f => turmaIds.includes(f.turmaId) && f.professorId === professorAtual.id
       );
 
       // Agrupar frequências por dia da semana usando service

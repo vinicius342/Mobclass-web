@@ -228,7 +228,7 @@ export default function AgendaCadastroView({
 
         {/* Versão Desktop - Tabela */}
         <div className="agenda-table-desktop">
-          <Table responsive hover>
+          <Table hover>
             <thead className="thead-sticky">
               <tr style={{ textAlign: 'center' }}>
                 <th className='text-muted nothing-in-mobile'>Turno</th>

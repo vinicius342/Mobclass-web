@@ -90,9 +90,27 @@ export default function Agenda() {
   const [currentPage, setCurrentPage] = useState(1);
   const itensPorPagina = 15;
 
+  const [turmasFiltradas, setTurmasFiltradas] = useState<Turma[]>([]);
+
   const [ordenacao, setOrdenacao] = useState<'turno' | 'dia' | 'horario' | 'materia' | 'professor' | 'turma'>('turno');
 
   const [expandedDays, setExpandedDays] = useState<Record<string, Record<string, boolean>>>({});
+
+  // useEffect para filtrar turmas quando o professor é selecionado
+  useEffect(() => {
+    if (professorId) {
+      const professor = professores.find(p => p.id === professorId);
+      if (professor && professor.turmas && professor.turmas.length > 0) {
+        const turmasProf = turmas.filter(t => professor.turmas.includes(t.id));
+        setTurmasFiltradas(turmasProf);
+      } else {
+        setTurmasFiltradas([]);
+      }
+    } else {
+      setTurmasFiltradas([]);
+      setTurmaId(''); // Limpar turma selecionada quando desselecionar professor
+    }
+  }, [professorId, professores, turmas]);
 
   useEffect(() => {
     const fetchInitial = async () => {
@@ -115,28 +133,33 @@ export default function Agenda() {
           setVinculos(vinculosFiltrados);
           setTurmas(allTurmas);
           setMaterias(allMaterias);
-        } else if (userData?.uid) {
-          const [allProfessores, professorVinculos] = await Promise.all([
+        } else if (userData?.email) {
+          // Professor: carregar TODOS os dados para visualização, mas restringir edição
+          const [allProfessores, allMaterias, allVinculos] = await Promise.all([
             professorService.listar(),
-            professorMateriaService.listarPorProfessor(userData.uid)
+            materiaService.listar(),
+            professorMateriaService.listar()
           ]);
 
-          // Extrair IDs únicos
-          const turmaIds = [...new Set(professorVinculos.map((v: ProfessorMateria) => v.turmaId))];
-          const materiaIds = [...new Set(professorVinculos.map((v: ProfessorMateria) => v.materiaId))];
+          const professorAtual = allProfessores.find((p: Professor) => p.email === userData.email);
 
-          // Buscar turmas do ano letivo do professor
+          if (!professorAtual) {
+            console.error('Professor não encontrado com email:', userData.email);
+            setLoading(false);
+            return;
+          }
+
+          // Buscar turmas do ano letivo (todas, para visualização)
           const allTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
-          const turmasProfessor = allTurmas.filter((t: Turma) => turmaIds.includes(t.id));
 
-          // Buscar matérias do professor
-          const allMaterias = await materiaService.listar();
-          const materiasProfessor = allMaterias.filter((m: Materia) => materiaIds.includes(m.id));
+          // Filtrar vínculos apenas de turmas do ano atual
+          const turmaIds = new Set(allTurmas.map((t: Turma) => t.id));
+          const vinculosFiltrados = allVinculos.filter((v: ProfessorMateria) => turmaIds.has(v.turmaId));
 
           setProfessores(allProfessores);
-          setVinculos(professorVinculos);
-          setTurmas(turmasProfessor);
-          setMaterias(materiasProfessor);
+          setVinculos(vinculosFiltrados);
+          setTurmas(allTurmas);
+          setMaterias(allMaterias);
         }
       } catch (error) {
         console.error('Erro ao carregar dados iniciais:', error);
@@ -242,8 +265,154 @@ export default function Agenda() {
 
   const handleSalvar = async () => {
     if (!turmaId || !diaSemana || !inicio || !fim || !materiaId || !turno || !professorId) return;
+
+    // Validar horários de acordo com o turno
+    const horaInicio = parseInt(inicio.split(':')[0]);
+    const horaFim = parseInt(fim.split(':')[0]);
+
+    if (turno === 'manha') {
+      if (horaInicio < 6 || horaInicio >= 12 || horaFim < 6 || horaFim > 12) {
+        alert('Para o turno da Manhã, os horários devem estar entre 06:00 e 12:00');
+        return;
+      }
+    } else if (turno === 'tarde') {
+      if (horaInicio < 12 || horaInicio >= 18 || horaFim < 12 || horaFim > 18) {
+        alert('Para o turno da Tarde, os horários devem estar entre 12:00 e 18:00');
+        return;
+      }
+    } else if (turno === 'noite') {
+      if (horaInicio < 18 || horaInicio >= 24 || horaFim < 18 || horaFim > 24) {
+        alert('Para o turno da Noite, os horários devem estar entre 18:00 e 24:00');
+        return;
+      }
+    }
+
+    // Validar se horário de fim é maior que horário de início
+    if (fim <= inicio) {
+      alert('O horário de término deve ser maior que o horário de início');
+      return;
+    }
+
+    // Verificar se a turma é virtualizada e materializá-la se necessário
+    const turmaParaSalvar = turmas.find(t => t.id === turmaId);
+    let turmaIdOriginal = turmaParaSalvar?.turmaOriginalId || turmaId;
+
+    // Se a turma é virtualizada, materializar antes de prosseguir
+    if (turmaParaSalvar?.turmaOriginalId) {
+      console.log('Turma virtualizada detectada. Materializando...');
+      try {
+        // Passar o editId para não copiar a agenda que está sendo editada
+        const agendasParaExcluir = editId ? [editId] : [];
+        turmaIdOriginal = await turmaService.materializarTurmaVirtualComDados(
+          turmaParaSalvar,
+          turmas,
+          agendasParaExcluir
+        );
+        console.log('Turma materializada com sucesso:', turmaIdOriginal);
+
+        // Atualizar lista de turmas após materialização
+        const todasTurmas = await turmaService.listarTodas();
+        const turmasDoAno = todasTurmas.filter((t: Turma) => t.anoLetivo === anoLetivo.toString());
+        setTurmas(turmasDoAno);
+
+        // Atualizar o turmaId para a turma materializada
+        setTurmaId(turmaIdOriginal);
+      } catch (error) {
+        console.error('Erro ao materializar turma:', error);
+        alert('Erro ao materializar turma virtual. Tente novamente.');
+        return;
+      }
+    }
+
+    // PRIMEIRO: Verificar e atualizar vínculo se necessário
+    const vinculoExistente = vinculos.find(
+      v => v.professorId === professorId && v.materiaId === materiaId && v.turmaId === turmaIdOriginal
+    );
+
+    // Verificar se existe vínculo com mesma matéria e turma, mas professor diferente
+    const vinculoComProfessorDiferente = vinculos.find(
+      v => v.professorId !== professorId && v.materiaId === materiaId && v.turmaId === turmaIdOriginal
+    );
+
+    if (vinculoComProfessorDiferente) {
+      // Atualizar o vínculo existente substituindo o professor antigo pelo novo
+      await professorMateriaService.atualizar(vinculoComProfessorDiferente.id, {
+        professorId,
+        materiaId,
+        turmaId: turmaIdOriginal
+      });
+
+      // Atualizar todas as agendas existentes dessa turma/matéria para o novo professor
+      const agendasParaAtualizar = Object.values(agendaPorTurma)
+        .flat()
+        .filter(aula =>
+          aula.turmaId === turmaIdOriginal &&
+          aula.materiaId === materiaId &&
+          aula.id !== editId // Não atualizar a que está sendo editada agora
+        );
+
+      for (const agenda of agendasParaAtualizar) {
+        await agendaService.atualizar(agenda.id, {
+          ...agenda,
+          professorId // Atualizar com o novo professor
+        });
+      }
+
+      // Atualizar lista de vínculos local
+      const novosVinculos = await professorMateriaService.listar();
+      const turmaIds = new Set(turmas.map((t: Turma) => t.turmaOriginalId || t.id));
+      setVinculos(novosVinculos.filter((v: ProfessorMateria) => turmaIds.has(v.turmaId)));
+    } else if (!vinculoExistente) {
+      // Criar vínculo se não existir
+      await professorMateriaService.criar({
+        professorId,
+        materiaId,
+        turmaId: turmaIdOriginal
+      });
+      // Atualizar lista de vínculos
+      const novosVinculos = await professorMateriaService.listar();
+      const turmaIds = new Set(turmas.map((t: Turma) => t.turmaOriginalId || t.id));
+      setVinculos(novosVinculos.filter((v: ProfessorMateria) => turmaIds.has(v.turmaId)));
+    }
+
+    // SEGUNDO: Verificar conflito de horários (após atualizar vínculo)
+    const aulasConflitantes = Object.values(agendaPorTurma)
+      .flat()
+      .filter(aula => {
+        // Ignora a própria aula se estiver editando
+        if (editId && aula.id === editId) return false;
+
+        // Verifica se é mesma turma e mesmo dia
+        if (aula.turmaId !== turmaIdOriginal || aula.diaSemana !== diaSemana) return false;
+
+        // Verifica sobreposição de horários
+        const [aulaInicio, aulaFim] = aula.horario.split(' - ');
+
+        // Converte horários para minutos para facilitar comparação
+        const toMinutes = (time: string) => {
+          const [h, m] = time.split(':').map(Number);
+          return h * 60 + m;
+        };
+
+        const novoInicioMin = toMinutes(inicio);
+        const novoFimMin = toMinutes(fim);
+        const aulaInicioMin = toMinutes(aulaInicio);
+        const aulaFimMin = toMinutes(aulaFim);
+
+        // Verifica se há sobreposição
+        return (novoInicioMin < aulaFimMin && novoFimMin > aulaInicioMin);
+      });
+
+    if (aulasConflitantes.length > 0) {
+      const horariosConflito = aulasConflitantes.map(a => a.horario).join(', ');
+      alert(`Conflito de horário! Já existe(m) aula(s) neste horário:\n\nDia: ${diaSemana}\nTurma: ${turmaParaSalvar?.nome}\nHorário(s) em conflito: ${horariosConflito}`);
+      return;
+    }
+
+    // TERCEIRO: Salvar a agenda
     const horario = `${inicio} - ${fim}`;
-    const payload = { turmaId, diaSemana, horario, materiaId, turno, professorId };
+    const payload = { turmaId: turmaIdOriginal, diaSemana, horario, materiaId, turno, professorId };
+
     if (editId) {
       await agendaService.atualizar(editId, payload);
     } else {
@@ -607,6 +776,30 @@ export default function Agenda() {
           </Modal.Header>
           <Modal.Body className='border-top-0 pb-0'>
             <Form>
+
+              <Form.Group className="mb-3">
+                <Form.Label>Professor *</Form.Label>
+                <Form.Select value={professorId} onChange={e => setProfessorId(e.target.value)}>
+                  <option value="">Selecione o professor</option>
+                  {[...professores].sort((a, b) => a.nome.localeCompare(b.nome)).map(p => (
+                    <option key={p.id} value={p.id}>{p.nome}</option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
+
+              <Form.Group className="mb-3">
+                <Form.Label>Turma *</Form.Label>
+                <Form.Select
+                  value={turmaId}
+                  onChange={e => setTurmaId(e.target.value)}
+                  disabled={!professorId}
+                  style={{ maxHeight: 200, overflowY: 'auto' }}
+                >
+                  <option value="">Selecione a turma</option>
+                  {[...turmasFiltradas].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+                </Form.Select>
+              </Form.Group>
+
               <Form.Group className="mb-3">
                 <Form.Label>Turno *</Form.Label>
                 <Form.Select value={turno} onChange={e => setTurno(e.target.value)}>
@@ -642,29 +835,11 @@ export default function Agenda() {
 
               <Form.Group className="mb-3">
                 <Form.Label>Disciplina *</Form.Label>
-                <Form.Select value={materiaId} onChange={e => setMateriaId(e.target.value)}>
+                <Form.Select value={materiaId} onChange={e => setMateriaId(e.target.value)} style={{ maxHeight: 200, overflowY: 'auto' }}>
                   <option value="">Selecione a disciplina</option>
                   {[...materias].sort((a, b) => a.nome.localeCompare(b.nome)).map(m => (
                     <option key={m.id} value={m.id}>{m.nome}</option>
                   ))}
-                </Form.Select>
-              </Form.Group>
-
-              <Form.Group className="mb-3">
-                <Form.Label>Professor *</Form.Label>
-                <Form.Select value={professorId} onChange={e => setProfessorId(e.target.value)}>
-                  <option value="">Selecione o professor</option>
-                  {[...professores].sort((a, b) => a.nome.localeCompare(b.nome)).map(p => (
-                    <option key={p.id} value={p.id}>{p.nome}</option>
-                  ))}
-                </Form.Select>
-              </Form.Group>
-
-              <Form.Group className="mb-3">
-                <Form.Label>Turma *</Form.Label>
-                <Form.Select value={turmaId} onChange={e => setTurmaId(e.target.value)}>
-                  <option value="">Selecione a turma</option>
-                  {[...turmas].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
                 </Form.Select>
               </Form.Group>
             </Form>

@@ -180,10 +180,17 @@ export class NotaService {
         // Calcular média final da nota
         let mediaFinal: number;
         
-        if (temRecuperacao) {
-          mediaFinal = nota.notaRecuperacao!;
-        } else {
+        // Calcula a média das três notas
+        if (temTresNotas) {
           mediaFinal = (nota.notaParcial! + nota.notaGlobal! + nota.notaParticipacao!) / 3;
+          
+          // Se tiver recuperação, usa o maior valor entre média e recuperação
+          if (temRecuperacao) {
+            mediaFinal = Math.max(mediaFinal, nota.notaRecuperacao!);
+          }
+        } else {
+          // Se só tem recuperação, usa ela
+          mediaFinal = nota.notaRecuperacao!;
         }
 
         if (!notasPorMateria[materiaId]) notasPorMateria[materiaId] = [];
@@ -290,8 +297,7 @@ export class NotaService {
     const parseOrNull = (val: string) =>
       val.trim() !== '' && !isNaN(Number(val)) ? parseFloat(val) : null;
 
-    return {
-      id: dados.id,
+    const baseData = {
       turmaId: dados.turmaId,
       alunoUid: dados.alunoUid,
       materiaId: dados.materiaId,
@@ -302,6 +308,13 @@ export class NotaService {
       notaRecuperacao: parseOrNull(dados.notaRecuperacao),
       dataLancamento: new Date(),
     };
+
+    // Só adiciona id se existir, para evitar undefined no Firestore
+    if (dados.id) {
+      return { ...baseData, id: dados.id };
+    }
+
+    return baseData;
   }
 
   /**
@@ -367,7 +380,16 @@ export class NotaService {
     const parcial = typeof nota.notaParcial === 'number' ? nota.notaParcial : 0;
     const global = typeof nota.notaGlobal === 'number' ? nota.notaGlobal : 0;
     const participacao = typeof nota.notaParticipacao === 'number' ? nota.notaParticipacao : 0;
-    const media = ((parcial + global) / 2) + participacao;
+    const recuperacao = typeof nota.notaRecuperacao === 'number' ? nota.notaRecuperacao : null;
+    
+    // Calcula média: ((parcial + global) / 2) + participação
+    let media = ((parcial + global) / 2) + participacao;
+    
+    // Se tiver recuperação, usa o maior valor entre média e recuperação
+    if (recuperacao !== null) {
+      media = Math.max(media, recuperacao);
+    }
+    
     return Math.min(parseFloat(media.toFixed(1)), 10);
   }
 
