@@ -73,9 +73,9 @@ export default function AppNavbar() {
           <Nav.Link as={Link} to="/turmas" className="text-white d-flex align-items-center gap-2" onClick={isMobile ? handleClose : undefined}>
             <FaUserGraduate /> Turmas
           </Nav.Link>
-          <Nav.Link as={Link} to="/vinculos" className="text-white d-flex align-items-center gap-2" onClick={isMobile ? handleClose : undefined}>
+          {/* <Nav.Link as={Link} to="/vinculos" className="text-white d-flex align-items-center gap-2" onClick={isMobile ? handleClose : undefined}>
             <FaLink /> Vínculos
-          </Nav.Link>
+          </Nav.Link> */}
           <Nav.Link as={Link} to="/usuarios" className="text-white d-flex align-items-center gap-2" onClick={isMobile ? handleClose : undefined}>
             <FaUsers /> Usuários
           </Nav.Link>

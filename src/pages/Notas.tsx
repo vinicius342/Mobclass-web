@@ -108,8 +108,27 @@ export default function Notas(): JSX.Element {
           );
           materiaIds = Array.from(new Set(materiasList.map(m => m.id)));
         } else {
+          // Professor: buscar pelo email
+          if (!userData?.email) {
+            setLoading(false);
+            return;
+          }
+          
+          // Buscar professor pelo email
+          const professorService = new (await import('../services/data/ProfessorService')).ProfessorService(
+            new (await import('../repositories/professor/FirebaseProfessorRepository')).FirebaseProfessorRepository()
+          );
+          const allProfessores = await professorService.listar();
+          const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
+          
+          if (!professorAtual) {
+            console.error('Professor não encontrado com email:', userData.email);
+            setLoading(false);
+            return;
+          }
+          
           // Professor: buscar vínculos do professor
-          const vinculosProfessor = await professorMateriaService.listarPorProfessor(userId!);
+          const vinculosProfessor = await professorMateriaService.listarPorProfessor(professorAtual.id);
 
           // Buscar turmas do ano letivo
           const turmaIdsVinculados = [...new Set(vinculosProfessor.map(v => v.turmaId))];

@@ -78,6 +78,7 @@ export default function Tarefas() {
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [materias, setMaterias] = useState<Materia[]>([]);
   const [vinculos, setVinculos] = useState<Vinculo[]>([]);
+  const [professorId, setProfessorId] = useState<string>('');
 
   const [filtroTurma, setFiltroTurma] = useState('');
   const [filtroMateria, setFiltroMateria] = useState('');
@@ -164,14 +165,31 @@ export default function Tarefas() {
 
       // Buscar vínculos professor-matéria usando service
       let vincList: Vinculo[];
+      let professorAtual: any = null;
+      
       if (isAdmin) {
         vincList = await professorMateriaService.listar();
       } else {
-        if (!userData) {
+        if (!userData?.email) {
           setLoading(false);
           return;
         }
-        vincList = await professorMateriaService.listarPorProfessor(userData.uid);
+        
+        // Buscar professor pelo email
+        const professorService = new (await import('../services/data/ProfessorService')).ProfessorService(
+          new (await import('../repositories/professor/FirebaseProfessorRepository')).FirebaseProfessorRepository()
+        );
+        const allProfessores = await professorService.listar();
+        professorAtual = allProfessores.find((p: any) => p.email === userData.email);
+        
+        if (!professorAtual) {
+          console.error('Professor não encontrado com email:', userData.email);
+          setLoading(false);
+          return;
+        }
+        
+        vincList = await professorMateriaService.listarPorProfessor(professorAtual.id);
+        setProfessorId(professorAtual.id);
       }
       setVinculos(vincList);
 
@@ -242,7 +260,7 @@ export default function Tarefas() {
       descricao,
       turmaId,
       dataEntrega,
-      userData.uid,
+      isAdmin ? userData.uid : professorId,
       validatedLinks,
       links.length
     );

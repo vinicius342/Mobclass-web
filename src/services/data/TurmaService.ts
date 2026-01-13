@@ -1,5 +1,5 @@
 import type { Turma } from '../../models/Turma';
-import type { ITurmaRepository } from '../../repositories/ITurmaRepository';
+import type { ITurmaRepository } from '../../repositories/turma/ITurmaRepository';
 
 import { FirebaseTurmaRepository } from '../../repositories/turma/FirebaseTurmaRepository';
 import { db } from '../firebase/firebase';
@@ -20,28 +20,28 @@ export const turmaService = {
 
   listarPorAnoLetivo: async (anoLetivo: string): Promise<Turma[]> => {
     const turmas = await turmaRepository.findAll();
-    return turmas.filter(t => t.anoLetivo === anoLetivo);
+    return turmas.filter((t: Turma) => t.anoLetivo === anoLetivo);
   },
 
   listarComVirtualizacao: async (anoLetivo: string): Promise<Turma[]> => {
     const todasTurmas = await turmaRepository.findAll();
 
-    const turmasReaisAnoAtual = todasTurmas.filter(t =>
+    const turmasReaisAnoAtual = todasTurmas.filter((t: Turma) =>
       t.anoLetivo === anoLetivo && !t.turmaOriginalId
     );
 
     const anoAnterior = (parseInt(anoLetivo) - 1).toString();
-    const turmasAnoAnterior = todasTurmas.filter(t =>
+    const turmasAnoAnterior = todasTurmas.filter((t: Turma) =>
       t.anoLetivo === anoAnterior && !t.turmaOriginalId
     );
 
     const turmasVirtualizadas = turmasAnoAnterior
-      .filter(turmaAnterior => {
+      .filter((turmaAnterior: Turma) => {
         const podeVirtualizar = turmaAnterior.isVirtual !== false;
-        const jaExisteNoAnoAtual = turmasReaisAnoAtual.some(t => t.nome === turmaAnterior.nome);
+        const jaExisteNoAnoAtual = turmasReaisAnoAtual.some((t: Turma) => t.nome === turmaAnterior.nome);
         return podeVirtualizar && !jaExisteNoAnoAtual;
       })
-      .map(turmaAnterior => ({
+      .map((turmaAnterior: Turma) => ({
         ...turmaAnterior,
         id: `virtual_${anoLetivo}_${turmaAnterior.id}`,
         anoLetivo: anoLetivo,
@@ -56,16 +56,16 @@ export const turmaService = {
     const anoProximo = (parseInt(anoAtual) + 1).toString();
 
     const turmasReaisProximoAno = todasTurmas.filter(
-      t => t.anoLetivo === anoProximo && !t.turmaOriginalId
+      (t: Turma) => t.anoLetivo === anoProximo && !t.turmaOriginalId
     );
 
     const turmasAnoAtualReais = todasTurmas.filter(
-      t => t.anoLetivo === anoAtual && !t.turmaOriginalId
+      (t: Turma) => t.anoLetivo === anoAtual && !t.turmaOriginalId
     );
 
     const turmasVirtualizadas = turmasAnoAtualReais
-      .filter(tAnt => tAnt.isVirtual !== false && !turmasReaisProximoAno.some(r => r.nome === tAnt.nome))
-      .map(tAnt => ({
+      .filter((tAnt: Turma) => tAnt.isVirtual !== false && !turmasReaisProximoAno.some((r: Turma) => r.nome === tAnt.nome))
+      .map((tAnt: Turma) => ({
         ...tAnt,
         id: `virtual_${anoProximo}_${tAnt.id}`,
         anoLetivo: anoProximo,
@@ -202,7 +202,8 @@ export const turmaService = {
    */
   materializarTurmaVirtualComDados: async (
     turmaIdOuObjeto: string | Turma,
-    turmasCache?: Turma[]
+    turmasCache?: Turma[],
+    excluirAgendasIds?: string[]
   ): Promise<string> => {
     // Resolver turma a partir do parâmetro
     let turmaVirtual: Turma | undefined;
@@ -280,6 +281,11 @@ export const turmaService = {
       const agendasOriginaisSnap = await getDocs(agendasOriginaisQuery);
 
       for (const agendaDoc of agendasOriginaisSnap.docs) {
+        // Pular agendas que estão sendo editadas para evitar duplicação
+        if (excluirAgendasIds && excluirAgendasIds.includes(agendaDoc.id)) {
+          continue;
+        }
+        
         const agendaData = agendaDoc.data();
         await addDoc(collection(db, 'agenda'), {
           ...agendaData,

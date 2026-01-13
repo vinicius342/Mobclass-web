@@ -63,10 +63,23 @@ export default function DashboardProfessor() {
     }
 
     const fetchData = async () => {
-      const uid = userData.uid;
+      if (!userData?.email) {
+        setLoading(false);
+        return;
+      }
+      
+      // Buscar professor pelo email
+      const allProfessores = await professorService.listar();
+      const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
+      
+      if (!professorAtual) {
+        console.error('Professor não encontrado com email:', userData.email);
+        setLoading(false);
+        return;
+      }
       
       // Buscar vínculos do professor
-      const vinculos = await professorMateriaService.listarPorProfessor(uid);
+      const vinculos = await professorMateriaService.listarPorProfessor(professorAtual.id);
       const turmaIds = [...new Set(vinculos.map(v => v.turmaId))];
 
       if (turmaIds.length === 0) {
@@ -90,7 +103,7 @@ export default function DashboardProfessor() {
 
       // Filtrar frequências do professor nas turmas vinculadas
       const freqFiltradas = frequencias.filter(
-        f => turmaIds.includes(f.turmaId) && f.professorId === uid
+        f => turmaIds.includes(f.turmaId) && f.professorId === professorAtual.id
       );
 
       // Agrupar frequências por dia da semana usando service
