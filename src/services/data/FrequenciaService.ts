@@ -122,5 +122,134 @@ export class FrequenciaService {
       }))
       .sort((a, b) => diasOrdem.indexOf(a.dia) - diasOrdem.indexOf(b.dia));
   }
-}
 
+  async listarPorTurmaMateria(turmaId: string, materiaId: string, data: string): Promise<Frequencia[]> {
+    const frequencias = await this.frequenciaRepository.findAll();
+    return frequencias.filter(f => 
+      f.turmaId === turmaId && 
+      f.materiaId === materiaId && 
+      f.data === data
+    );
+  }
+
+  inicializarAttendance(alunos: Array<{ id: string; nome: string }>, frequencias: Frequencia[]): Record<string, boolean | null> {
+    const initial: Record<string, boolean | null> = {};
+    alunos.forEach(aluno => {
+      const freq = frequencias.find(f => f.alunoId === aluno.id);
+      initial[aluno.id] = freq ? freq.presenca : null;
+    });
+    return initial;
+  }
+
+  mapearJustificativas(frequencias: Frequencia[]): Record<string, string> {
+    const map: Record<string, string> = {};
+    frequencias.forEach(f => {
+      if (f.observacao) {
+        map[f.alunoId] = f.observacao;
+      }
+    });
+    return map;
+  }
+
+  marcarTodosPresentes(alunos: Array<{ id: string; nome: string }>): Array<{ alunoId: string; presenca: boolean }> {
+    return alunos.map(a => ({ alunoId: a.id, presenca: true }));
+  }
+
+  marcarTodosAusentes(alunos: Array<{ id: string; nome: string }>): Array<{ alunoId: string; presenca: boolean }> {
+    return alunos.map(a => ({ alunoId: a.id, presenca: false }));
+  }
+
+  prepararFrequenciasComJustificativas(
+    alunos: Array<{ id: string; nome: string }>,
+    turmaId: string,
+    materiaId: string,
+    data: string,
+    professorId: string,
+    attendance: Record<string, boolean | null>,
+    justificativas: Record<string, string>
+  ): Omit<Frequencia, 'id'>[] {
+    return alunos
+      .filter(a => attendance[a.id] !== null)
+      .map(a => {
+        const baseData = {
+          alunoId: a.id,
+          turmaId,
+          materiaId,
+          data,
+          presenca: attendance[a.id] ?? false,
+          professorId
+        };
+        
+        // Só adiciona observacao se existir, para evitar undefined no Firestore
+        if (justificativas[a.id]) {
+          return { ...baseData, observacao: justificativas[a.id] };
+        }
+        
+        return baseData;
+      });
+  }
+
+  async salvarFrequencias(frequencias: Omit<Frequencia, 'id'>[]): Promise<void> {
+    for (const freq of frequencias) {
+      const existentes = await this.listarPorTurmaMateria(freq.turmaId, freq.materiaId, freq.data);
+      const existente = existentes.find(f => f.alunoId === freq.alunoId);
+      
+      if (existente) {
+        await this.frequenciaRepository.update(existente.id, freq);
+      } else {
+        await this.frequenciaRepository.create(freq);
+      }
+    }
+  }
+
+  calcularEstatisticas(frequencias: Array<{ presenca: boolean | null }>): {
+    totalAlunos: number;
+    totalPresentes: number;
+    totalAusentes: number;
+    percentualPresenca: number;
+    percentualAusencia: number;
+  } {
+    const totalAlunos = frequencias.length;
+    const totalPresentes = frequencias.filter(f => f.presenca === true).length;
+    const totalAusentes = frequencias.filter(f => f.presenca === false).length;
+    
+    return {
+      totalAlunos,
+      totalPresentes,
+      totalAusentes,
+      percentualPresenca: totalAlunos > 0 ? (totalPresentes / totalAlunos) * 100 : 0,
+      percentualAusencia: totalAlunos > 0 ? (totalAusentes / totalAlunos) * 100 : 0
+    };
+  }
+
+  filtrarAlunosPorNome(
+    alunos: Array<{ id: string; nome: string }>,
+    frequencias: Array<{ alunoId: string; presenca: boolean | null }>,
+    busca: string,
+    filtroTipo: 'todos' | 'presentes' | 'ausentes'
+  ): Array<{ id: string; nome: string }> {
+    let filtrados = alunos;
+
+    // Filtrar por tipo
+    if (filtroTipo === 'presentes') {
+      filtrados = filtrados.filter(a => {
+        const freq = frequencias.find(f => f.alunoId === a.id);
+        return freq?.presenca === true;
+      });
+    } else if (filtroTipo === 'ausentes') {
+      filtrados = filtrados.filter(a => {
+        const freq = frequencias.find(f => f.alunoId === a.id);
+        return freq?.presenca === false;
+      });
+    }
+
+    // Filtrar por nome
+    if (busca.trim()) {
+      filtrados = filtrados.filter(a => 
+        a.nome.toLowerCase().includes(busca.toLowerCase())
+      );
+    }
+
+    return filtrados;
+  }
+}

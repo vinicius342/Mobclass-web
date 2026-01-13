@@ -117,7 +117,27 @@ export default function Comunicados() {
     if (isAdmin) {
       listaTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
     } else {
-      const vincList = await professorMateriaService.listarPorProfessor(userData?.uid || '');
+      if (!userData?.email) {
+        setTurmas([]);
+        setComunicados([]);
+        return;
+      }
+      
+      // Buscar professor pelo email
+      const professorService = new (await import('../services/data/ProfessorService')).ProfessorService(
+        new (await import('../repositories/professor/FirebaseProfessorRepository')).FirebaseProfessorRepository()
+      );
+      const allProfessores = await professorService.listar();
+      const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
+      
+      if (!professorAtual) {
+        console.error('Professor não encontrado com email:', userData.email);
+        setTurmas([]);
+        setComunicados([]);
+        return;
+      }
+      
+      const vincList = await professorMateriaService.listarPorProfessor(professorAtual.id);
 
       const turmaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.turmaId))];
       const todasTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());

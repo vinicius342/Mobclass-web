@@ -78,6 +78,7 @@ export default function Tarefas() {
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [materias, setMaterias] = useState<Materia[]>([]);
   const [vinculos, setVinculos] = useState<Vinculo[]>([]);
+  const [professorId, setProfessorId] = useState<string>('');
 
   const [filtroTurma, setFiltroTurma] = useState('');
   const [filtroMateria, setFiltroMateria] = useState('');
@@ -164,14 +165,31 @@ export default function Tarefas() {
 
       // Buscar vínculos professor-matéria usando service
       let vincList: Vinculo[];
+      let professorAtual: any = null;
+
       if (isAdmin) {
         vincList = await professorMateriaService.listar();
       } else {
-        if (!userData) {
+        if (!userData?.email) {
           setLoading(false);
           return;
         }
-        vincList = await professorMateriaService.listarPorProfessor(userData.uid);
+
+        // Buscar professor pelo email
+        const professorService = new (await import('../services/data/ProfessorService')).ProfessorService(
+          new (await import('../repositories/professor/FirebaseProfessorRepository')).FirebaseProfessorRepository()
+        );
+        const allProfessores = await professorService.listar();
+        professorAtual = allProfessores.find((p: any) => p.email === userData.email);
+
+        if (!professorAtual) {
+          console.error('Professor não encontrado com email:', userData.email);
+          setLoading(false);
+          return;
+        }
+
+        vincList = await professorMateriaService.listarPorProfessor(professorAtual.id);
+        setProfessorId(professorAtual.id);
       }
       setVinculos(vincList);
 
@@ -242,7 +260,7 @@ export default function Tarefas() {
       descricao,
       turmaId,
       dataEntrega,
-      userData.uid,
+      isAdmin ? userData.uid : professorId,
       validatedLinks,
       links.length
     );
@@ -258,7 +276,7 @@ export default function Tarefas() {
 
   const atualizarEntrega = async (alunoId: string, status: string) => {
     if (!atividadeSelecionada) return;
-    
+
     const entregaId = await tarefaService.atualizarOuCriarEntrega(
       alunoId,
       atividadeSelecionada.id,
@@ -271,9 +289,9 @@ export default function Tarefas() {
     );
 
     if (entregaExistente) {
-      setEntregas(prev => prev.map(e => 
-        e.id === entregaExistente.id 
-          ? { ...e, status, dataConclusao: status === 'concluida' ? new Date().toISOString() : undefined } 
+      setEntregas(prev => prev.map(e =>
+        e.id === entregaExistente.id
+          ? { ...e, status, dataConclusao: status === 'concluida' ? new Date().toISOString() : undefined }
           : e
       ));
     } else {
@@ -369,14 +387,6 @@ export default function Tarefas() {
       setUrlSuccess('');
       setSecurityWarnings([]);
     }, 5000);
-
-    console.info('[URL Security] Link adicionado com sucesso:', {
-      originalUrl: novoLinkUrl.trim(),
-      sanitizedUrl: validation.sanitizedUrl,
-      score: validation.securityScore,
-      category: validation.domainCategory,
-      warnings: validation.warnings
-    });
   };
 
   const removerLink = (index: number) => {
@@ -540,10 +550,11 @@ export default function Tarefas() {
                       disabled={!turmaId}
                     >
                       <option value="">Selecione a matéria</option>
-                      {vinculos
+                      {[...new Set(vinculos
                         .filter(v => v.turmaId === turmaId)
-                        .map(v => {
-                          const materia = materias.find(m => m.id === v.materiaId);
+                        .map(v => v.materiaId))]
+                        .map(materiaId => {
+                          const materia = materias.find(m => m.id === materiaId);
                           return materia ? (
                             <option key={materia.id} value={materia.id}>{materia.nome}</option>
                           ) : null;

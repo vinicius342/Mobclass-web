@@ -102,7 +102,6 @@ export class URLSecurityService {
   constructor() {
     this.apiKey = import.meta.env.VITE_GOOGLE_SAFE_BROWSING_API_KEY || '';
     if (this.config.enableSafeBrowsing && !this.apiKey) {
-      console.warn('Google Safe Browsing API key não encontrada. Validação externa desabilitada.');
       this.config.enableSafeBrowsing = false;
     }
   }
@@ -382,9 +381,14 @@ export class URLSecurityService {
         };
       }
 
+      // Garantir que a URL está no formato correto (sem normalização extra)
+      const urlToCheck = url.startsWith('http://') || url.startsWith('https://') 
+        ? url 
+        : `https://${url}`;
+
       const requestBody = {
         client: {
-          clientId: "Mobclass-web",
+          clientId: "mobclass-web",
           clientVersion: "1.0.0"
         },
         threatInfo: {
@@ -394,9 +398,9 @@ export class URLSecurityService {
             "UNWANTED_SOFTWARE",
             "POTENTIALLY_HARMFUL_APPLICATION"
           ],
-          platformTypes: ["ALL_PLATFORMS"],
+          platformTypes: ["ANY_PLATFORM"],
           threatEntryTypes: ["URL"],
-          threatEntries: [{ url: url }]
+          threatEntries: [{ url: urlToCheck }]
         }
       };
 
@@ -412,7 +416,6 @@ export class URLSecurityService {
       );
 
       if (!response.ok) {
-        console.error('Erro na API do Safe Browsing:', response.status);
         return { isSafe: true, source: 'local' };
       }
 
@@ -434,7 +437,6 @@ export class URLSecurityService {
       };
 
     } catch (error) {
-      console.error('Erro ao consultar Google Safe Browsing:', error);
       return { isSafe: true, source: 'local' };
     }
   }
@@ -519,17 +521,7 @@ export class URLSecurityService {
 
   private logValidationAttempt(url: string, result: ValidationResult, userIp?: string): void {
     if (!this.config.logAttempts) return;
-    
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      url,
-      isValid: result.isValid,
-      securityScore: result.securityScore,
-      domainCategory: result.domainCategory,
-      userIp,
-      safeBrowsingSource: result.safeBrowsingResult?.source
-    };
-    
+
     // Adicionar às tentativas suspeitas se score muito baixo
     if (result.securityScore !== undefined && result.securityScore < 30) {
       this.suspiciousAttempts.push({
@@ -538,9 +530,7 @@ export class URLSecurityService {
         userIp
       });
     }
-    
     // Em produção, enviaria para um serviço de logging
-    console.log('URL Validation:', logEntry);
   }
 
   // Método utilitário para limpar caches antigos

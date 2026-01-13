@@ -11,8 +11,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
 import { turmaService } from '../services/data/TurmaService';
 import { MateriaService } from '../services/data/MateriaService';
+import { ProfessorService } from '../services/data/ProfessorService';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
 import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
+import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
 import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 import type { Turma } from '../models/Turma';
 import type { ProfessorMateria } from '../models/ProfessorMateria';
@@ -22,6 +24,9 @@ import FrequenciaLancamento from '../components/frequencia/FrequenciaLancamento'
 // Instanciar services
 const materiaRepository = new FirebaseMateriaRepository();
 const materiaService = new MateriaService(materiaRepository);
+
+const professorRepository = new FirebaseProfessorRepository();
+const professorService = new ProfessorService(professorRepository);
 
 const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
 const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
@@ -48,8 +53,17 @@ export default function Frequencia(): JSX.Element {
         setTurmas(turmas.sort((a, b) => a.nome.localeCompare(b.nome)));
         setMaterias(materias);
       } else {
-        if (!userData) return;
-        const vincList = await professorMateriaService.listarPorProfessor(userData.uid);
+        if (!userData?.email) return;
+        
+        const allProfessores = await professorService.listar();
+        const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
+        
+        if (!professorAtual) {
+          console.error('Professor não encontrado com email:', userData.email);
+          return;
+        }
+        
+        const vincList = await professorMateriaService.listarPorProfessor(professorAtual.id);
         setVinculos(vincList);
 
         const turmaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.turmaId))];

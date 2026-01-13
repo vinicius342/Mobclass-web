@@ -18,7 +18,7 @@ interface AgendaGradeViewProps {
   vinculos: ProfessorMateria[];
   agendaPorTurma: Record<string, Agenda[]>;
   diasSemana: string[];
-  
+
   // Filtros
   filtroVisualizacaoTurma: string;
   setFiltroVisualizacaoTurma: (value: string) => void;
@@ -26,22 +26,22 @@ interface AgendaGradeViewProps {
   setFiltroProfessorVisualizacao: (value: string) => void;
   filtroTurnoVisualizacao: string;
   setFiltroTurnoVisualizacao: (value: string) => void;
-  
+
   // Funções de filtro
   filtrarAulasPorProfessor: (aulas: Agenda[]) => Agenda[];
   filtrarAulasPorTurno: (aulas: Agenda[]) => Agenda[];
   obterDadosFiltradosParaGrade: () => Agenda[];
-  
+
   // Funções de formatação
   getTurnoFromHorario: (horario: string) => string;
   getTurnoNome: (turno: string) => string;
   getDayColor: (dia: string) => { bg: string; text: string; border: string };
   formatarNomeProfessor: (nome: string | undefined) => string;
-  
+
   // Funções de expansão de dias
   toggleDayExpansion: (turmaId: string, day: string) => void;
   isDayExpanded: (turmaId: string, day: string) => boolean;
-  
+
   // Handlers
   handleEditar: (item: Agenda) => void;
   setItemToDelete: (item: Agenda | null) => void;
@@ -49,7 +49,7 @@ interface AgendaGradeViewProps {
   setDiaSemana: (dia: string) => void;
   setTurmaId: (turmaId: string) => void;
   handleShow: () => void;
-  
+
   // Permissões
   isAdmin: boolean;
 }
@@ -341,25 +341,27 @@ export default function AgendaGradeView({
                                               <Trash2 size={14} />
                                             </Button>
                                           )}
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleEditar(a);
-                                            }}
-                                            className="p-1 border-0 bg-transparent"
-                                            style={{
-                                              minWidth: 'auto',
-                                              fontSize: '0.7rem',
-                                              lineHeight: '1',
-                                              color: dayColor.text
-                                            }}
-                                            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
-                                            onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-                                          >
-                                            <Edit size={14} />
-                                          </Button>
+                                          {isAdmin && (
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleEditar(a);
+                                              }}
+                                              className="p-1 border-0 bg-transparent"
+                                              style={{
+                                                minWidth: 'auto',
+                                                fontSize: '0.7rem',
+                                                lineHeight: '1',
+                                                color: dayColor.text
+                                              }}
+                                              onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+                                              onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                                            >
+                                              <Edit size={14} />
+                                            </Button>
+                                          )}
                                         </div>
                                       </div>
                                     </Card.Body>
@@ -367,52 +369,54 @@ export default function AgendaGradeView({
                                 )
                               })}
                             {/* Card para adicionar nova aula */}
-                            <Card
-                              className="border-2"
-                              style={{
-                                borderStyle: 'dashed',
-                                borderColor: '#d1d5db',
-                                transition: 'all 0.2s ease',
-                                cursor: 'pointer',
-                                height: '120px',
-                                minWidth: '140px',
-                                maxWidth: '100%'
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.borderColor = '#60a5fa';
-                                e.currentTarget.style.transform = 'translateY(-2px)';
-                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.borderColor = '#d1d5db';
-                                e.currentTarget.style.transform = 'translateY(0)';
-                                e.currentTarget.style.boxShadow = 'none';
-                              }}
-                              onClick={() => {
-                                setDiaSemana(dia);
-                                setTurmaId(t.id);
-                                handleShow();
-                              }}
-                            >
-                              <Card.Body className="p-2 d-flex flex-column justify-content-center align-items-center" style={{ height: '100%' }}>
-                                <div className="text-muted small text-center mb-1" style={{ fontSize: '0.65rem' }}>
-                                  Adicionar Aula
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-muted d-flex align-items-center justify-content-center border-0 bg-transparent p-0"
-                                  style={{
-                                    transition: 'color 0.2s',
-                                    fontSize: '0.8rem'
-                                  }}
-                                  onMouseEnter={(e) => e.currentTarget.style.color = '#2563eb'}
-                                  onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}
-                                >
-                                  <Plus size={14} />
-                                </Button>
-                              </Card.Body>
-                            </Card>
+                            {isAdmin && (
+                              <Card
+                                className="border-2"
+                                style={{
+                                  borderStyle: 'dashed',
+                                  borderColor: '#d1d5db',
+                                  transition: 'all 0.2s ease',
+                                  cursor: 'pointer',
+                                  height: '120px',
+                                  minWidth: '140px',
+                                  maxWidth: '100%'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.borderColor = '#60a5fa';
+                                  e.currentTarget.style.transform = 'translateY(-2px)';
+                                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.borderColor = '#d1d5db';
+                                  e.currentTarget.style.transform = 'translateY(0)';
+                                  e.currentTarget.style.boxShadow = 'none';
+                                }}
+                                onClick={() => {
+                                  setDiaSemana(dia);
+                                  setTurmaId(t.id);
+                                  handleShow();
+                                }}
+                              >
+                                <Card.Body className="p-2 d-flex flex-column justify-content-center align-items-center" style={{ height: '100%' }}>
+                                  <div className="text-muted small text-center mb-1" style={{ fontSize: '0.65rem' }}>
+                                    Adicionar Aula
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-muted d-flex align-items-center justify-content-center border-0 bg-transparent p-0"
+                                    style={{
+                                      transition: 'color 0.2s',
+                                      fontSize: '0.8rem'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.color = '#2563eb'}
+                                    onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}
+                                  >
+                                    <Plus size={14} />
+                                  </Button>
+                                </Card.Body>
+                              </Card>
+                            )}
                           </div>
                         )}
                       </Col>
@@ -489,25 +493,27 @@ export default function AgendaGradeView({
                                   <div key={idx} className="turno-aula-card">
                                     <div className="turno-aula-header">
                                       <span className="turno-aula-horario">{a.horario}</span>
-                                      <div className="turno-aula-actions">
-                                        <Button
-                                          variant="ghost"
-                                          onClick={() => handleEditar(a)}
-                                          className="turno-aula-btn edit"
-                                        >
-                                          <Edit size={16} />
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          onClick={() => {
-                                            setItemToDelete(a);
-                                            setShowDeleteModal(true);
-                                          }}
-                                          className="turno-aula-btn delete"
-                                        >
-                                          <Trash2 size={16} />
-                                        </Button>
-                                      </div>
+                                      {isAdmin && (
+                                        <div className="turno-aula-actions">
+                                          <Button
+                                            variant="ghost"
+                                            onClick={() => handleEditar(a)}
+                                            className="turno-aula-btn edit"
+                                          >
+                                            <Edit size={16} />
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            onClick={() => {
+                                              setItemToDelete(a);
+                                              setShowDeleteModal(true);
+                                            }}
+                                            className="turno-aula-btn delete"
+                                          >
+                                            <Trash2 size={16} />
+                                          </Button>
+                                        </div>
+                                      )}
                                     </div>
 
                                     <div className="turno-aula-body">
@@ -532,19 +538,21 @@ export default function AgendaGradeView({
                             )}
 
                             {/* Card de adicionar aula em mobile */}
-                            <div
-                              className="turno-add-card"
-                              onClick={() => {
-                                setDiaSemana(dia);
-                                setTurmaId(t.id);
-                                handleShow();
-                              }}
-                            >
-                              <div className="turno-add-text">Adicionar Aula</div>
-                              <div className="turno-add-icon">
-                                <Plus size={20} />
+                            {isAdmin && (
+                              <div
+                                className="turno-add-card"
+                                onClick={() => {
+                                  setDiaSemana(dia);
+                                  setTurmaId(t.id);
+                                  handleShow();
+                                }}
+                              >
+                                <div className="turno-add-text">Adicionar Aula</div>
+                                <div className="turno-add-icon">
+                                  <Plus size={20} />
+                                </div>
                               </div>
-                            </div>
+                            )}
                           </div>
                         </div>
                       );
