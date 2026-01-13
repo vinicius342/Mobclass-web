@@ -13,6 +13,8 @@ import { FaTasks, FaCalendarAlt, FaBullhorn } from 'react-icons/fa';
 // Services
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
 import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
+import { ProfessorService } from '../services/data/ProfessorService';
+import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
 import { TarefaService } from '../services/data/TarefaService';
 import { FirebaseTarefaRepository } from '../repositories/tarefa/FirebaseTarefaRepository';
 import { FirebaseEntregaRepository } from '../repositories/entrega/FirebaseEntregaRepository';
@@ -27,6 +29,7 @@ import { FirebaseNotaRepository } from '../repositories/nota/FirebaseNotaReposit
 
 // Instanciar services
 const professorMateriaService = new ProfessorMateriaService(new FirebaseProfessorMateriaRepository());
+const professorService = new ProfessorService(new FirebaseProfessorRepository());
 const tarefaService = new TarefaService(new FirebaseTarefaRepository(), new FirebaseEntregaRepository());
 const agendaService = new AgendaService(new FirebaseAgendaRepository());
 const comunicadoService = new ComunicadoService(new FirebaseComunicadoRepository());

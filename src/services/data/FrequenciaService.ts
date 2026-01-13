@@ -170,15 +170,23 @@ export class FrequenciaService {
   ): Omit<Frequencia, 'id'>[] {
     return alunos
       .filter(a => attendance[a.id] !== null)
-      .map(a => ({
-        alunoId: a.id,
-        turmaId,
-        materiaId,
-        data,
-        presenca: attendance[a.id] ?? false,
-        professorId,
-        observacao: justificativas[a.id] || undefined
-      }));
+      .map(a => {
+        const baseData = {
+          alunoId: a.id,
+          turmaId,
+          materiaId,
+          data,
+          presenca: attendance[a.id] ?? false,
+          professorId
+        };
+        
+        // Só adiciona observacao se existir, para evitar undefined no Firestore
+        if (justificativas[a.id]) {
+          return { ...baseData, observacao: justificativas[a.id] };
+        }
+        
+        return baseData;
+      });
   }
 
   async salvarFrequencias(frequencias: Omit<Frequencia, 'id'>[]): Promise<void> {

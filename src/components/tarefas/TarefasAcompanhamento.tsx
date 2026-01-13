@@ -200,7 +200,7 @@ export default function TarefasAcompanhamento({
 
                   <div>
                     {tarefasFiltradas.length > 0 ? (
-                      <Table responsive hover className="mb-0 align-middle">
+                      <Table hover className="mb-0 align-middle">
                         <thead>
                           <tr>
                             <th style={{ width: '35%' }} className='text-muted px-3'>Título</th>

@@ -134,7 +134,13 @@ export default function Agenda() {
           setTurmas(allTurmas);
           setMaterias(allMaterias);
         } else if (userData?.email) {
-          const allProfessores = await professorService.listar();
+          // Professor: carregar TODOS os dados para visualização, mas restringir edição
+          const [allProfessores, allMaterias, allVinculos] = await Promise.all([
+            professorService.listar(),
+            materiaService.listar(),
+            professorMateriaService.listar()
+          ]);
+
           const professorAtual = allProfessores.find((p: Professor) => p.email === userData.email);
 
           if (!professorAtual) {
@@ -143,24 +149,17 @@ export default function Agenda() {
             return;
           }
 
-          const professorVinculos = await professorMateriaService.listarPorProfessor(professorAtual.id);
-
-          // Extrair IDs únicos
-          const turmaIds = [...new Set(professorVinculos.map((v: ProfessorMateria) => v.turmaId))];
-          const materiaIds = [...new Set(professorVinculos.map((v: ProfessorMateria) => v.materiaId))];
-
-          // Buscar turmas do ano letivo do professor
+          // Buscar turmas do ano letivo (todas, para visualização)
           const allTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
-          const turmasProfessor = allTurmas.filter((t: Turma) => turmaIds.includes(t.id));
 
-          // Buscar matérias do professor
-          const allMaterias = await materiaService.listar();
-          const materiasProfessor = allMaterias.filter((m: Materia) => materiaIds.includes(m.id));
+          // Filtrar vínculos apenas de turmas do ano atual
+          const turmaIds = new Set(allTurmas.map((t: Turma) => t.id));
+          const vinculosFiltrados = allVinculos.filter((v: ProfessorMateria) => turmaIds.has(v.turmaId));
 
           setProfessores(allProfessores);
-          setVinculos(professorVinculos);
-          setTurmas(turmasProfessor);
-          setMaterias(materiasProfessor);
+          setVinculos(vinculosFiltrados);
+          setTurmas(allTurmas);
+          setMaterias(allMaterias);
         }
       } catch (error) {
         console.error('Erro ao carregar dados iniciais:', error);
