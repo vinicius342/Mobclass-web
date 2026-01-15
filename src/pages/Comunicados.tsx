@@ -548,8 +548,9 @@ export default function Comunicados() {
                   >
                     <option value="" disabled hidden>Filtrar por status</option>
                     <option value="">Todos</option>
-                    <option value="ativo">Ativo</option>
-                    <option value="inativo">Inativo</option>
+                    <option value="enviado">Enviado</option>
+                    <option value="agendado">Agendado</option>
+                    <option value="rascunho">Rascunho</option>
                   </Form.Select>
                 </Form.Group>
               </Col>

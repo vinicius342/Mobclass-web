@@ -20,6 +20,10 @@ export class FrequenciaService {
     return this.frequenciaRepository.findByTurmaId(turmaId);
   }
 
+  async buscarPorPeriodo(dataInicio: string, dataFim: string): Promise<Frequencia[]> {
+    return this.frequenciaRepository.findByPeriodo(dataInicio, dataFim);
+  }
+
   async copiarFrequencias(alunoId: string, turmaOrigemId: string, turmaDestinoId: string): Promise<void> {
     await this.frequenciaRepository.copiarFrequencias(alunoId, turmaOrigemId, turmaDestinoId);
   }
@@ -251,5 +255,145 @@ export class FrequenciaService {
     }
 
     return filtrados;
+  }
+
+  calcularEstatisticasGerais(frequencias: Frequencia[]): {
+    presencaPercentual: number;
+    ausenciaPercentual: number;
+    totalPresencas: number;
+    totalAusencias: number;
+    total: number;
+  } {
+    const total = frequencias.length;
+    const totalPresencas = frequencias.filter(f => f.presenca === true).length;
+    const totalAusencias = frequencias.filter(f => f.presenca === false).length;
+    
+    return {
+      presencaPercentual: total > 0 ? (totalPresencas / total) * 100 : 0,
+      ausenciaPercentual: total > 0 ? (totalAusencias / total) * 100 : 0,
+      totalPresencas,
+      totalAusencias,
+      total
+    };
+  }
+
+  calcularTopAlunosPresenca(
+    frequencias: Frequencia[],
+    alunos: Array<{ id: string; nome: string }>,
+    limite: number
+  ): Array<{ nome: string; percentual: number }> {
+    const resumosPorAluno = alunos.map(aluno => {
+      const freqAluno = frequencias.filter(f => f.alunoId === aluno.id);
+      const total = freqAluno.length;
+      const presencas = freqAluno.filter(f => f.presenca === true).length;
+      const percentual = total > 0 ? (presencas / total) * 100 : 0;
+      
+      return {
+        nome: aluno.nome,
+        percentual: parseFloat(percentual.toFixed(2))
+      };
+    });
+
+    return resumosPorAluno
+      .sort((a, b) => b.percentual - a.percentual)
+      .slice(0, limite);
+  }
+
+  calcularResumosPorAluno(
+    alunos: Array<{ id: string; nome: string; matricula?: string }>,
+    frequencias: Frequencia[]
+  ): Array<{
+    aluno: { id: string; nome: string };
+    presencas: number;
+    faltas: number;
+    percentual: number;
+  }> {
+    return alunos.map(aluno => {
+      const freqAluno = frequencias.filter(f => f.alunoId === aluno.id);
+      const presencas = freqAluno.filter(f => f.presenca === true).length;
+      const faltas = freqAluno.filter(f => f.presenca === false).length;
+      const total = freqAluno.length;
+      const percentual = total > 0 ? (presencas / total) * 100 : 0;
+
+      return {
+        aluno: { id: aluno.id, nome: aluno.nome },
+        presencas,
+        faltas,
+        percentual: parseFloat(percentual.toFixed(2))
+      };
+    });
+  }
+
+  ordenarResumos(
+    resumos: Array<{
+      aluno: { id: string; nome: string };
+      presencas: number;
+      faltas: number;
+      percentual: number;
+    }>,
+    criterio: 'nome' | 'presencas' | 'faltas' | 'percentual'
+  ): Array<{
+    aluno: { id: string; nome: string };
+    presencas: number;
+    faltas: number;
+    percentual: number;
+  }> {
+    return [...resumos].sort((a, b) => {
+      switch (criterio) {
+        case 'nome':
+          return a.aluno.nome.localeCompare(b.aluno.nome);
+        case 'presencas':
+          return b.presencas - a.presencas;
+        case 'faltas':
+          return b.faltas - a.faltas;
+        case 'percentual':
+          return b.percentual - a.percentual;
+        default:
+          return 0;
+      }
+    });
+  }
+
+  async buscarPorAlunoIdEPeriodo(alunoId: string, dataInicio: string, dataFim: string): Promise<Frequencia[]> {
+    return this.frequenciaRepository.findByAlunoIdEPeriodo(alunoId, dataInicio, dataFim);
+  }
+
+  calcularHistoricoPorBimestre(
+    frequencias: Frequencia[],
+    aluno: { id: string; nome: string },
+    anoLetivo: number
+  ): Array<{
+    bimestre: string;
+    presencas: number;
+    ausencias: number;
+    percentual: number;
+  }> {
+    const bimestres = [
+      { nome: '1º Bimestre', inicio: new Date(anoLetivo, 0, 1), fim: new Date(anoLetivo, 2, 31) },
+      { nome: '2º Bimestre', inicio: new Date(anoLetivo, 3, 1), fim: new Date(anoLetivo, 5, 30) },
+      { nome: '3º Bimestre', inicio: new Date(anoLetivo, 6, 1), fim: new Date(anoLetivo, 8, 30) },
+      { nome: '4º Bimestre', inicio: new Date(anoLetivo, 9, 1), fim: new Date(anoLetivo, 11, 31) }
+    ];
+
+    const freqAluno = frequencias.filter(f => f.alunoId === aluno.id);
+
+    return bimestres.map(bim => {
+      const freqBimestre = freqAluno.filter(f => {
+        const dataFreq = new Date(f.data);
+        return dataFreq >= bim.inicio && dataFreq <= bim.fim;
+      });
+
+      const presencas = freqBimestre.filter(f => f.presenca === true).length;
+      const ausencias = freqBimestre.filter(f => f.presenca === false).length;
+      const total = freqBimestre.length;
+      const percentual = total > 0 ? (presencas / total) * 100 : 0;
+
+      return {
+        bimestre: bim.nome,
+        presencas,
+        ausencias,
+        percentual: parseFloat(percentual.toFixed(2))
+      };
+    });
   }
 }

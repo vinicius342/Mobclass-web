@@ -173,6 +173,7 @@ export default function Frequencia(): JSX.Element {
             <FrequenciaRelatorios
               turmas={turmas}
               materias={materias}
+              anoLetivo={anoLetivo}
               onToast={(message, variant) => setToast({ show: true, message, variant })}
             />
           )}

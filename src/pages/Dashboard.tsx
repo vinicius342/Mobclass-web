@@ -77,19 +77,19 @@ export default function Dashboard(): JSX.Element {
     // Separar turmas que iniciam com letra e com número
     const turmasComLetra = turmasLista.filter(t => /^[a-zA-Z]/.test(t.nome));
     const turmasComNumero = turmasLista.filter(t => /^[0-9]/.test(t.nome));
-    
+
     const grupos: { id: string; nome: string }[][] = [];
-    
+
     // Adicionar grupos de turmas com letra (5 por grupo)
     for (let i = 0; i < turmasComLetra.length; i += 5) {
       grupos.push(turmasComLetra.slice(i, i + 5));
     }
-    
+
     // Adicionar grupos de turmas com número (5 por grupo)
     for (let i = 0; i < turmasComNumero.length; i += 5) {
       grupos.push(turmasComNumero.slice(i, i + 5));
     }
-    
+
     return grupos;
   }, [turmasLista]);
 
@@ -135,7 +135,13 @@ export default function Dashboard(): JSX.Element {
 
   // Etapa 2: Carrega gráficos de forma assíncrona (não bloqueia UI)
   useEffect(() => {
-    if (!isAdmin || !loadingGraficos || turmasLista.length === 0) return;
+    if (!isAdmin || !loadingGraficos) return;
+
+    // Se não há turmas, não há o que carregar - finaliza o loading
+    if (turmasLista.length === 0) {
+      setLoadingGraficos(false);
+      return;
+    }
 
     async function fetchGraficos() {
       try {
@@ -274,31 +280,53 @@ export default function Dashboard(): JSX.Element {
   return (
     <AppLayout>
       <Container className="my-4">
-        <div className="border-gray-200 mb-3">
+        <Row className="align-items-center">
           {/* Header */}
-          <div className="mb-4 px-1">
-            <div className="d-flex align-items-center justify-content-between mb-2">
-              <div className="d-flex align-items-center gap-2">
-                <BarChart3 size={32} color="#2563eb" style={{ minWidth: 32, minHeight: 32 }} />
-                <h1
-                  className="fw-bold mb-0"
-                  style={{
-                    fontSize: '2rem',
-                    background: 'linear-gradient(135deg, #1e293b 0%, #2563eb 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text'
-                  }}
-                >
-                  Dashboard
-                </h1>
+          <Col md={9}>
+            <div className="border-gray-200 mb-3">
+              <div className="mb-4 px-1">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <div className="d-flex align-items-center gap-2">
+                    <BarChart3 size={32} color="#2563eb" style={{ minWidth: 32, minHeight: 32 }} />
+                    <h1
+                      className="fw-bold mb-0"
+                      style={{
+                        fontSize: '2rem',
+                        background: 'linear-gradient(135deg, #1e293b 0%, #2563eb 100%)',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        backgroundClip: 'text'
+                      }}
+                    >
+                      Dashboard
+                    </h1>
+                  </div>
+                </div>
+                <p className="mb-0" style={{ color: '#3b4861', marginLeft: 44, fontSize: 16 }}>
+                  Bem-vindo(a) ao MobClassApp!
+                </p>
               </div>
             </div>
-            <p className="mb-0" style={{ color: '#3b4861', marginLeft: 44, fontSize: 16 }}>
-              Bem-vindo(a) ao MobClassApp!
-            </p>
-          </div>
-        </div>
+          </Col>
+          <Col md={3}>
+            <Card className="shadow-sm mb-3" style={{
+              boxShadow: '0 0 0 2px #2563eb33',
+            }}>
+              <Card.Body className="py-3">
+                <div className="d-flex align-items-center gap-2">
+                  <div>
+                    <h6 className="mb-0" style={{ fontWeight: 600, color: '#1e40af' }}>
+                      Ano Letivo {anoLetivo}
+                    </h6>
+                    <small className="text-muted">
+                      Sistema de Gestão Escolar
+                    </small>
+                  </div>
+                </div>
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
 
         {loadingCards ? (
           <Container className="d-flex justify-content-center align-items-center py-5">
@@ -406,74 +434,109 @@ export default function Dashboard(): JSX.Element {
                   </Card.Body>
                 </Card>
 
-                <Row xs={1} lg={2} className="g-4">
-                  <Col>
-                    <Card className="p-1 h-100">
-                      <Card.Header className="fw-bold bg-white" style={{ borderBottom: '0' }}>Taxa de Frequência por Turmas</Card.Header>
-                      <Card.Body>
-                        <ResponsiveContainer width="100%" height={250}>
-                          <BarChart data={dadosFreqFiltrados}>
-                            <XAxis
-                              dataKey="turma"
-                              tick={{ fontSize: 11, fontStyle: 'italic', fill: '#495057', dy: 10, dx: -10 }}
-                              angle={-20}
-                            />
-                            <YAxis
-                              domain={[0, 100]}
-                              unit="%"
-                              tick={{ fontSize: 14, fill: '#495057' }}
-                            />
-                            <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
-                            <Bar
-                              dataKey="taxa"
-                              label={{ position: 'top' }}
-                              fill="#8884d8"
-                              radius={[5, 5, 0, 0]}
-                            >
-                              {dadosFreqFiltrados.map((entry, index) => {
-                                const color =
-                                  entry.taxa >= 85 ? '#28a745' : entry.taxa >= 60 ? '#ffc107' : '#dc3545';
-                                return <Cell key={`cell-${index}`} fill={color} />;
-                              })}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </Card.Body>
-                    </Card>
-                  </Col>
+                {turmasLista.length === 0 ? (
+                  <Card className="shadow-sm mt-3" style={{ boxShadow: '0 0 0 2px #fbbf2433' }}>
+                    <Card.Body className="text-center py-5">
+                      <div style={{
+                        fontSize: '3rem',
+                        color: '#fbbf24',
+                        marginBottom: '1rem'
+                      }}>
+                        📊
+                      </div>
+                      <p className="text-muted mb-0">
+                        Forme as turmas para visualizar os gráficos de desempenho e frequência do ano letivo {anoLetivo}.
+                      </p>
+                    </Card.Body>
+                  </Card>
+                ) : gruposTurmas.length === 0 || grupoTurmasSelecionado === -1 ? (
+                  <Card className="shadow-sm mt-3" style={{ boxShadow: '0 0 0 2px #3b82f633' }}>
+                    <Card.Body className="text-center py-5">
+                      <div style={{
+                        fontSize: '3rem',
+                        color: '#3b82f6',
+                        marginBottom: '1rem'
+                      }}>
+                        🔍
+                      </div>
+                      <h5 className="mb-2" style={{ color: '#78716c' }}>
+                        Selecione um grupo de turmas
+                      </h5>
+                      <p className="text-muted mb-0">
+                        Utilize o filtro acima para selecionar as turmas que deseja visualizar.
+                      </p>
+                    </Card.Body>
+                  </Card>
+                ) : (
+                  <Row xs={1} lg={2} className="g-4">
+                    <Col>
+                      <Card className="p-1 h-100">
+                        <Card.Header className="fw-bold bg-white" style={{ borderBottom: '0' }}>Taxa de Frequência por Turmas</Card.Header>
+                        <Card.Body>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <BarChart data={dadosFreqFiltrados}>
+                              <XAxis
+                                dataKey="turma"
+                                tick={{ fontSize: 11, fontStyle: 'italic', fill: '#495057', dy: 10, dx: -10 }}
+                                angle={-20}
+                              />
+                              <YAxis
+                                domain={[0, 100]}
+                                unit="%"
+                                tick={{ fontSize: 14, fill: '#495057' }}
+                              />
+                              <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
+                              <Bar
+                                dataKey="taxa"
+                                label={{ position: 'top' }}
+                                fill="#8884d8"
+                                radius={[5, 5, 0, 0]}
+                              >
+                                {dadosFreqFiltrados.map((entry, index) => {
+                                  const color =
+                                    entry.taxa >= 85 ? '#28a745' : entry.taxa >= 60 ? '#ffc107' : '#dc3545';
+                                  return <Cell key={`cell-${index}`} fill={color} />;
+                                })}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </Card.Body>
+                      </Card>
+                    </Col>
 
-                  <Col>
-                    <Card className="h-100 pt-1 px-1">
-                      <Card.Header className="fw-bold bg-white" style={{ borderBottom: '0' }}>Nota Média por Turma</Card.Header>
-                      <Card.Body>
-                        <ResponsiveContainer width="100%" height={250}>
-                          <LineChart data={dadosNotaFiltrados} margin={{ left: 0, right: 20, top: 5, bottom: 6 }}>
-                            {/* <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" /> */}
-                            <XAxis
-                              dataKey="turma"
-                              tick={{ fontSize: 11, fontStyle: 'italic', fill: '#495057', dy: 10, dx: -10 }}
-                              angle={-20}
-                              interval={0}
-                            />
-                            <YAxis
-                              domain={[0, 10]}
-                              tick={{ fontSize: 14, fill: '#495057' }}
-                            />
-                            <Tooltip formatter={(value: number) => `${value.toFixed(2)} pts`} />
-                            <Line
-                              type="monotone"
-                              dataKey="media"
-                              stroke="#007bff"
-                              dot={{ stroke: '#007bff', strokeWidth: 2, fill: '#fff', r: 5 }}
-                              activeDot={{ r: 8 }}
-                            />
-                            {/* <Legend /> */}
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </Card.Body>
-                    </Card>
-                  </Col>
-                </Row>
+                    <Col>
+                      <Card className="h-100 pt-1 px-1">
+                        <Card.Header className="fw-bold bg-white" style={{ borderBottom: '0' }}>Nota Média por Turma</Card.Header>
+                        <Card.Body>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <LineChart data={dadosNotaFiltrados} margin={{ left: 0, right: 20, top: 5, bottom: 6 }}>
+                              {/* <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" /> */}
+                              <XAxis
+                                dataKey="turma"
+                                tick={{ fontSize: 11, fontStyle: 'italic', fill: '#495057', dy: 10, dx: -10 }}
+                                angle={-20}
+                                interval={0}
+                              />
+                              <YAxis
+                                domain={[0, 10]}
+                                tick={{ fontSize: 14, fill: '#495057' }}
+                              />
+                              <Tooltip formatter={(value: number) => `${value.toFixed(2)} pts`} />
+                              <Line
+                                type="monotone"
+                                dataKey="media"
+                                stroke="#007bff"
+                                dot={{ stroke: '#007bff', strokeWidth: 2, fill: '#fff', r: 5 }}
+                                activeDot={{ r: 8 }}
+                              />
+                              {/* <Legend /> */}
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                  </Row>
+                )}
               </>
             )}
           </>
