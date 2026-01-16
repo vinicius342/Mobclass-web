@@ -619,6 +619,12 @@ export default function Usuarios(): JSX.Element {
     if (turmaFiltro) {
       if (activeTab === 'alunos') {
         filtered = filtered.filter(a => (a as Aluno).turmaId === turmaFiltro);
+      } else if (activeTab === 'professores') {
+        // Filtrar professores que lecionam na turma selecionada
+        filtered = filtered.filter(p => {
+          const professor = p as unknown as Professor;
+          return professor.turmas && professor.turmas.includes(turmaFiltro);
+        });
       } else if (activeTab === 'todos') {
         // Para a aba "todos", aplicar filtro só para alunos e professores
         filtered = filtered.filter(u => {

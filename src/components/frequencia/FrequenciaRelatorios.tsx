@@ -22,10 +22,11 @@ import Paginacao from '../common/Paginacao';
 interface FrequenciaRelatoriosProps {
   turmas: Turma[];
   materias: Materia[];
+  anoLetivo: number;
   onToast: (message: string, variant: 'success' | 'danger' | 'warning') => void;
 }
 
-export default function FrequenciaRelatorios({ turmas, materias, onToast }: FrequenciaRelatoriosProps) {
+export default function FrequenciaRelatorios({ turmas, materias, anoLetivo, onToast }: FrequenciaRelatoriosProps) {
   // Inicializar services
   const frequenciaService = useMemo(
     () => new FrequenciaService(new FirebaseFrequenciaRepository()),
@@ -103,7 +104,6 @@ export default function FrequenciaRelatorios({ turmas, materias, onToast }: Freq
 
       // Buscar frequências por período
       let frequencias: Frequencia[];
-      const ano = new Date().getFullYear();
 
       if (tipoPeriodo === 'hoje') {
         const hoje = new Date().toISOString().split('T')[0];
@@ -122,8 +122,8 @@ export default function FrequenciaRelatorios({ turmas, materias, onToast }: Freq
           'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
           'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
         ].indexOf(periodoMes);
-        const inicio = new Date(ano, indexMes, 1);
-        const fim = new Date(ano, indexMes + 1, 0);
+        const inicio = new Date(anoLetivo, indexMes, 1);
+        const fim = new Date(anoLetivo, indexMes + 1, 0);
         const inicioStr = inicio.toISOString().split('T')[0];
         const fimStr = fim.toISOString().split('T')[0];
         frequencias = await frequenciaService.buscarPorPeriodo(inicioStr, fimStr);
@@ -204,9 +204,8 @@ export default function FrequenciaRelatorios({ turmas, materias, onToast }: Freq
     setLoadingHistorico(true);
 
     try {
-      const anoAtual = new Date().getFullYear();
-      const dataInicio = `${anoAtual}-01-01`;
-      const dataFim = `${anoAtual}-12-31`;
+      const dataInicio = `${anoLetivo}-01-01`;
+      const dataFim = `${anoLetivo}-12-31`;
 
       // Buscar frequências do aluno no ano usando repository
       let frequenciasAno = await frequenciaService.buscarPorAlunoIdEPeriodo(
@@ -223,7 +222,8 @@ export default function FrequenciaRelatorios({ turmas, materias, onToast }: Freq
       // Calcular histórico por bimestre usando service
       const historico = frequenciaService.calcularHistoricoPorBimestre(
         frequenciasAno,
-        anoAtual
+        aluno,
+        anoLetivo
       );
 
       setHistoricoFrequencia(historico);
