@@ -28,6 +28,8 @@ import { ResponsavelService } from '../services/usuario/ResponsavelService';
 import { FirebaseResponsavelRepository } from '../repositories/responsavel/FirebaseResponsavelRepository';
 import { AdministradorService } from '../services/usuario/AdministradorService';
 import { FirebaseAdministradorRepository } from '../repositories/administrador/FirebaseAdministradorRepository';
+import { UserService } from '../services/usuario/UserService';
+import { FirebaseUserRepository } from '../repositories/user/FirebaseUserRepository';
 import { turmaService } from '../services/data/TurmaService';
 import { isTurmaVirtualizada } from '../utils/turmasHelpers';
 
@@ -50,6 +52,7 @@ export default function Usuarios(): JSX.Element {
   const alunoService = useMemo(() => new AlunoService(new FirebaseAlunoRepository()), []);
   const responsavelService = useMemo(() => new ResponsavelService(new FirebaseResponsavelRepository()), []);
   const administradorService = useMemo(() => new AdministradorService(new FirebaseAdministradorRepository()), []);
+  const userService = useMemo(() => new UserService(new FirebaseUserRepository()), []);
   
   const [activeTab, setActiveTab] = useState<'todos' | 'professores' | 'alunos' | 'responsaveis' | 'administradores'>('todos');
   const [search, setSearch] = useState('');
@@ -821,6 +824,9 @@ export default function Usuarios(): JSX.Element {
       if (formMode === 'edit') {
         const docRef = doc(db, data.tipoUsuario, (formDefaults as any).id);
         await updateDoc(docRef, userData);
+        
+        // Atualizar status na coleção users também
+        await userService.atualizarStatus((formDefaults as any).id, userData.status as 'Ativo' | 'Inativo');
       } else {
         const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/criar-usuario", {
           method: "POST",
@@ -870,6 +876,16 @@ export default function Usuarios(): JSX.Element {
       
       // Atualizar status de relacionados se solicitado
       if (atualizarRelacionados && statusChangeData) {
+        // Preparar lista de atualizações para o UserService
+        const atualizacoes = statusChangeData.relacionados.map(relacionado => ({
+          uid: relacionado.id,
+          status: 'Inativo' as const
+        }));
+        
+        // Atualizar na coleção users em lote
+        await userService.atualizarStatusEmLote(atualizacoes);
+        
+        // Atualizar nas coleções específicas
         for (const relacionado of statusChangeData.relacionados) {
           const tipoColecao = relacionado.tipo === 'aluno' ? 'alunos' : 'responsaveis';
           const docRef = doc(db, tipoColecao, relacionado.id);
