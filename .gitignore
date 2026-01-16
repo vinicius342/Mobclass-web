@@ -35,3 +35,10 @@ scripts/backups/
 *.njsproj
 *.sln
 *.sw?
+# Firebase local cache
+.firebase/
+.firebase/*
+
+# Service Account (arquivo local)
+serviceAccountKey.json
+scripts/*.json
