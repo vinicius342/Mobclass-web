@@ -661,7 +661,7 @@ export default function Agenda() {
                   backgroundClip: 'text'
                 }}
               >
-                Gestão de Agenda Escolar
+                Gestão de Horário de Aulas
               </h1>
             </div>
             <p className="mb-0" style={{ color: '#3b4861', marginLeft: 44, fontSize: 16 }}>
@@ -670,31 +670,33 @@ export default function Agenda() {
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="container px-0">
-          <div className="d-flex py-3">
-            <div className="custom-tabs-container w-100">
-              <button
-                className={`custom-tab ${activeTab === 'cadastro' ? 'active' : ''}`}
-                onClick={() => setActiveTab('cadastro')}
-                type="button"
-                style={{ flex: 1 }}
-              >
-                Cadastro de Agendas
-              </button>
-              <button
-                className={`custom-tab ${activeTab === 'grade' ? 'active' : ''}`}
-                onClick={() => setActiveTab('grade')}
-                type="button"
-                style={{ flex: 1 }}
-              >
-                Grade por Turnos
-              </button>
+        {/* Navigation Tabs - apenas para admin */}
+        {isAdmin && (
+          <div className="container px-0">
+            <div className="d-flex py-3">
+              <div className="custom-tabs-container w-100">
+                <button
+                  className={`custom-tab ${activeTab === 'cadastro' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('cadastro')}
+                  type="button"
+                  style={{ flex: 1 }}
+                >
+                  Cadastro de Agendas
+                </button>
+                <button
+                  className={`custom-tab ${activeTab === 'grade' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('grade')}
+                  type="button"
+                  style={{ flex: 1 }}
+                >
+                  Grade por Turnos
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {activeTab === 'cadastro' && isAdmin && (
+        {isAdmin && activeTab === 'cadastro' && (
           <AgendaCadastroView
             turmas={turmas}
             materias={materias}
@@ -730,7 +732,7 @@ export default function Agenda() {
         )}
 
         {/* visualizacao de horarios */}
-        {activeTab === 'grade' && (
+        {(!isAdmin || activeTab === 'grade') && (
           <AgendaGradeView
             turmas={turmas}
             materias={materias}

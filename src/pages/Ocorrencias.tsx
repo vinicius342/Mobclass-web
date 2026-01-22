@@ -25,10 +25,15 @@ import { OcorrenciaService } from '../services/data/OcorrenciaService';
 import { FirebaseOcorrenciaRepository } from '../repositories/ocorrencia/FirebaseOcorrenciaRepository';
 import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
 import { turmaService } from '../services/data/TurmaService';
+import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
+import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
+
 
 const ocorrenciaRepository = new FirebaseOcorrenciaRepository();
 const ocorrenciaService = new OcorrenciaService(ocorrenciaRepository);
 const alunoRepository = new FirebaseAlunoRepository();
+const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
+const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
 
 export default function Ocorrencias() {
   const authContext = useAuth();
@@ -115,10 +120,36 @@ export default function Ocorrencias() {
     }
   };
 
+
   const carregarTurmas = async () => {
     try {
-      const dados = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
-      setTurmas(dados);
+      let listaTurmas: Turma[] = [];
+      if (userData?.tipo === 'administradores') {
+        listaTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+      } else if (userData?.tipo === 'professores') {
+        if (!userData?.email) {
+          setTurmas([]);
+          return;
+        }
+        // Buscar professor pelo email
+        const professorService = new (await import('../services/data/ProfessorService')).ProfessorService(
+          new (await import('../repositories/professor/FirebaseProfessorRepository')).FirebaseProfessorRepository()
+        );
+        const allProfessores = await professorService.listar();
+        const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
+        if (!professorAtual) {
+          console.error('Professor não encontrado com email:', userData.email);
+          setTurmas([]);
+          return;
+        }
+        const vincList = await professorMateriaService.listarPorProfessor(professorAtual.id);
+        const turmaIds = [...new Set(vincList.map((v: any) => v.turmaId))];
+        const todasTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+        listaTurmas = todasTurmas.filter((t: Turma) => turmaIds.includes(t.id));
+      } else {
+        listaTurmas = [];
+      }
+      setTurmas(listaTurmas.sort((a, b) => a.nome.localeCompare(b.nome)));
     } catch (error) {
       console.error('Erro ao carregar turmas:', error);
       setTurmas([]);

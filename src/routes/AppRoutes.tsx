@@ -8,7 +8,7 @@ import AdminRoute from './AdminRoute';
 import Login from '../pages/Login';
 import Dashboard from '../pages/Dashboard';
 import DashboardProfessor from '../pages/DashboardProfessor';
-import Agenda from '../pages/Agenda';
+import HorarioAulas from '../pages/Agenda';
 import Frequencia from '../pages/Frequencia';
 import Tarefas from '../pages/Tarefas';
 import Notas from '../pages/Notas';
@@ -42,7 +42,7 @@ export default function AppRoutes(): JSX.Element {
         <Route path="dashboard-professor" element={<DashboardProfessor />} />
 
         {/* Funcionalidades comuns */}
-        <Route path="agenda" element={<Agenda />} />
+        <Route path="horario-aulas" element={<HorarioAulas />} />
         <Route path="frequencia" element={<Frequencia />} />
         <Route path="tarefas" element={<Tarefas />} />
         <Route path="notas" element={<Notas />} />

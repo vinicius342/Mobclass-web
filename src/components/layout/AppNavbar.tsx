@@ -6,8 +6,6 @@ import { signOut } from 'firebase/auth';
 import { auth } from '../../services/firebase/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import logo from '../../assets/logo.png';
-import { FaLink } from 'react-icons/fa';
-
 
 import {
   FaHome, FaTasks, FaCalendarAlt, FaClipboardList, FaBook,
@@ -47,8 +45,8 @@ export default function AppNavbar() {
       <Nav.Link as={Link} to="/tarefas" className="text-white d-flex align-items-center gap-2" onClick={isMobile ? handleClose : undefined}>
         <FaTasks /> Tarefas
       </Nav.Link>
-      <Nav.Link as={Link} to="/agenda" className="text-white d-flex align-items-center gap-2" onClick={isMobile ? handleClose : undefined}>
-        <FaCalendarAlt /> Agenda
+      <Nav.Link as={Link} to="/horario-aulas" className="text-white d-flex align-items-center gap-2" onClick={isMobile ? handleClose : undefined}>
+        <FaCalendarAlt /> Horário de Aulas
       </Nav.Link>
       <Nav.Link as={Link} to="/frequencia" className="text-white d-flex align-items-center gap-2" onClick={isMobile ? handleClose : undefined}>
         <FaClipboardList /> Frequência
@@ -116,9 +114,9 @@ export default function AppNavbar() {
       </div>
 
       {/* Offcanvas Mobile Menu */}
-      <Offcanvas 
-        show={showMenu} 
-        onHide={handleClose} 
+      <Offcanvas
+        show={showMenu}
+        onHide={handleClose}
         backdrop={true}
         keyboard={true}
         className="bg-primary text-white"
