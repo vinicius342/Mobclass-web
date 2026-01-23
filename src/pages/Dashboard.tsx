@@ -238,7 +238,6 @@ export default function Dashboard(): JSX.Element {
       turmasLista,
       Object.keys(filtros).length > 0 ? filtros : undefined
     );
-    console.log('Resultados de frequência:', freqResults);
     setFreqData(freqResults);
   }, [disciplinaSelecionada, tipoPeriodo, mesSelecionado, dataPersonalizada, freqDataOriginal, turmasLista, isAdmin, anoLetivo]);
 

@@ -839,6 +839,7 @@ export default function Usuarios(): JSX.Element {
             turmaId: turmaIdFinal,
             filhos: data.filhos,
             turmas: turmasFinal,
+            modoAcesso: data.modoAcesso,
             dataCriacao: new Date().toISOString(),
           }),
         });

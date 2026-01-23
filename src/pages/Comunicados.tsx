@@ -483,7 +483,7 @@ export default function Comunicados() {
 
         {/* Botão de Novo Comunicado no canto direito - Desktop */}
         <div className="d-none d-md-flex justify-content-end mb-3">
-          {isAdmin && (
+          {(isAdmin || turmas.length > 0) && (
             <Button variant="primary" onClick={() => { limparFormulario(); setShowModal(true); }}>
               <PlusCircle className="me-2" size={18} />
               Novo Comunicado
@@ -583,7 +583,7 @@ export default function Comunicados() {
         </div>
 
         {/* Botão de Novo Comunicado - Mobile */}
-        {isAdmin && (
+        {(isAdmin || turmas.length > 0) && (
           <div className="w-100 mb-3 d-block d-md-none">
             <Row>
               <Col>
