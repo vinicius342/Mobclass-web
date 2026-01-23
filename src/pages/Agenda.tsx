@@ -299,7 +299,7 @@ export default function Agenda() {
 
     // Se a turma é virtualizada, materializar antes de prosseguir
     if (turmaParaSalvar?.turmaOriginalId) {
-      console.log('Turma virtualizada detectada. Materializando...');
+      // console.log('Turma virtualizada detectada. Materializando...');
       try {
         // Passar o editId para não copiar a agenda que está sendo editada
         const agendasParaExcluir = editId ? [editId] : [];
@@ -308,7 +308,7 @@ export default function Agenda() {
           turmas,
           agendasParaExcluir
         );
-        console.log('Turma materializada com sucesso:', turmaIdOriginal);
+        // console.log('Turma materializada com sucesso:', turmaIdOriginal);
 
         // Atualizar lista de turmas após materialização
         const todasTurmas = await turmaService.listarTodas();

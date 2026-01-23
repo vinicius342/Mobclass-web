@@ -25,6 +25,7 @@ export interface FormValues {
   turmas: string[];
   filhos: string[];
   modoAcesso: 'aluno' | 'responsavel';
+  emailParaAuth?: string;
 }
 
 interface UsuarioFormProps {
@@ -97,8 +98,13 @@ export default function UsuarioForm({
   });
 
   const tipo = watch('tipoUsuario');
+  const modoAcesso = watch('modoAcesso');
   const [status, setStatus] = useState<'Ativo' | 'Inativo'>('Ativo');
   const [buscaAluno, setBuscaAluno] = useState('');
+  
+  // Detectar se está mudando de 'responsavel' para 'aluno' em modo de edição
+  const modoAcessoInicial = defaultValues.modoAcesso;
+  const mudouParaAcessoAluno = formMode === 'edit' && modoAcessoInicial === 'responsavel' && modoAcesso === 'aluno';
 
   // Inicializar status quando defaultValues mudar
   useEffect(() => {
@@ -115,6 +121,12 @@ export default function UsuarioForm({
   const handleFormSubmit = (data: any) => {
     // Adicionar o status ao objeto de dados
     const dataWithStatus = { ...data, status };
+    
+    // Se mudou de responsavel para aluno, marcar que precisa criar auth
+    if (mudouParaAcessoAluno) {
+      dataWithStatus.mudouParaAcessoAluno = true;
+    }
+    
     onSubmit(dataWithStatus);
   };
 
@@ -277,7 +289,6 @@ export default function UsuarioForm({
                 label="O aluno terá acesso direto ao sistema"
                 value="aluno"
                 {...register('modoAcesso')}
-                defaultChecked
               />
               <Form.Check
                 type="radio"

@@ -230,7 +230,7 @@ export default function Dashboard(): JSX.Element {
         mes: mesSelecionado,
         ano: anoLetivo // Adicionar ano letivo do context
       };
-      console.log('Filtros aplicados:', filtros);
+      // console.log('Filtros aplicados:', filtros);
     }
 
     const freqResults = frequenciaService.calcularTaxasPorTurma(

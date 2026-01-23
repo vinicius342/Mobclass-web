@@ -4,6 +4,7 @@ export interface Aluno {
   email: string;
   turmaId: string;
   status: 'Ativo' | 'Inativo';
+  modoAcesso?: 'aluno' | 'responsavel';
   historicoTurmas?: { [anoLetivo: string]: string };
   historicoStatus?: {
     [anoLetivo: string]: 'promovido' | 'reprovado' | 'transferido'
