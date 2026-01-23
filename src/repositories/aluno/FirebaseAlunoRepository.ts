@@ -116,6 +116,7 @@ export class FirebaseAlunoRepository implements IAlunoRepository {
       email: data.email,
       turmaId: data.turmaId || '',
       status: data.status || 'Ativo',
+      modoAcesso: data.modoAcesso,
       dataCriacao: data.dataCriacao?.toDate(),
       ultimaAtualizacao: data.ultimaAtualizacao?.toDate(),
       historicoTurmas: data.historicoTurmas || {},

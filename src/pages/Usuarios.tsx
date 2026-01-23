@@ -46,14 +46,14 @@ interface Aluno extends UsuarioBase { turmaId?: string; responsavelId?: string; 
 
 export default function Usuarios(): JSX.Element {
   const { anoLetivo } = useAnoLetivoAtual();
-  
+
   // Instanciar services
   const professorService = useMemo(() => new ProfessorService(new FirebaseProfessorRepository()), []);
   const alunoService = useMemo(() => new AlunoService(new FirebaseAlunoRepository()), []);
   const responsavelService = useMemo(() => new ResponsavelService(new FirebaseResponsavelRepository()), []);
   const administradorService = useMemo(() => new AdministradorService(new FirebaseAdministradorRepository()), []);
   const userService = useMemo(() => new UserService(new FirebaseUserRepository()), []);
-  
+
   const [activeTab, setActiveTab] = useState<'todos' | 'professores' | 'alunos' | 'responsaveis' | 'administradores'>('todos');
   const [search, setSearch] = useState('');
   const [professores, setProfessores] = useState<Professor[]>([]);
@@ -81,7 +81,7 @@ export default function Usuarios(): JSX.Element {
     tipo: 'aluno' | 'responsavel';
     userId: string;
     novoStatus: string;
-    relacionados: Array<{id: string; nome: string; tipo: string}>;
+    relacionados: Array<{ id: string; nome: string; tipo: string }>;
     formData: FormValues;
   } | null>(null);
 
@@ -359,11 +359,9 @@ export default function Usuarios(): JSX.Element {
     if (hasUpdates) {
       try {
         await batch.commit();
-        console.log('Migração de usuários existentes concluída');
         // Recarregar dados após migração
         window.location.reload();
       } catch (error) {
-        console.error('Erro na migração:', error);
       }
     }
   };
@@ -458,7 +456,7 @@ export default function Usuarios(): JSX.Element {
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
-      
+
       // Buscar dados usando services
       const [professoresList, alunosList, responsaveisList, administradoresList, todasTurmasList] = await Promise.all([
         professorService.listar(),
@@ -475,12 +473,12 @@ export default function Usuarios(): JSX.Element {
 
       // Usar o método listarComVirtualizacao que já cria as turmas virtualizadas
       const turmasComVirtualizadas = await turmaService.listarComVirtualizacao(anoLetivo.toString());
-      
+
       // Deduplicate turmas by ID (keep first occurrence)
-      const turmasUnicas = turmasComVirtualizadas.filter((turma, index, self) => 
+      const turmasUnicas = turmasComVirtualizadas.filter((turma, index, self) =>
         self.findIndex(t => t.id === turma.id) === index
       );
-      
+
       setTurmas(turmasUnicas);
 
       // Não precisa mais do código de virtualização manual
@@ -504,7 +502,6 @@ export default function Usuarios(): JSX.Element {
       const usuariosSemData = todosUsuarios.filter(u => !u.dataCriacao);
 
       if (usuariosSemData.length > 0) {
-        console.log(`Encontrados ${usuariosSemData.length} usuários sem dataCriacao. Executando migração...`);
         await migrarUsuariosExistentes();
       }
     }
@@ -530,7 +527,7 @@ export default function Usuarios(): JSX.Element {
     if (!turmasIds || !Array.isArray(turmasIds) || turmasIds.length === 0) {
       return null;
     }
-    
+
     // Filtrar apenas turmas do ano letivo atual
     const turmasDoAnoAtual = turmasIds.filter(id => turmas.some(t => t.id === id));
     const isExpanded = expandedTurmas.has(userId);
@@ -677,11 +674,19 @@ export default function Usuarios(): JSX.Element {
 
   const openEdit = (user: UsuarioBase & any) => {
     const tipoUsuario = activeTab === 'todos' ? user.tipoUsuario : activeTab;
+
+    if (tipoUsuario === 'alunos') {
+      const aluno = alunos.find(a => a.id === user.id);
+    }
+
     const defaults: Partial<FormValues> = {
       tipoUsuario,
       nome: user.nome,
       email: user.email,
-      ...(tipoUsuario === 'alunos' && { turmaId: user.turmaId }),
+      ...(tipoUsuario === 'alunos' && {
+        turmaId: user.turmaId,
+        modoAcesso: user.modoAcesso || 'aluno'
+      }),
       ...(tipoUsuario === 'professores' && { turmas: user.turmas }),
       ...(tipoUsuario === 'responsaveis' && { filhos: user.filhos }),
       ...(user.id && { id: user.id }),
@@ -697,11 +702,54 @@ export default function Usuarios(): JSX.Element {
 
   const handleSubmit = async (data: FormValues) => {
     try {
+      // Validação especial para alunos com modoAcesso = "responsavel"
+      if (data.tipoUsuario === 'alunos' && data.modoAcesso === 'responsavel') {
+
+        // Normalizar email para minúsculas
+        const emailNormalizado = data.email.toLowerCase().trim();
+
+        // Buscar o responsável deste aluno
+        const alunoId = formMode === 'edit' ? (formDefaults as any).id : null;
+
+        const responsavel = responsaveis.find(r =>
+          r.filhos && alunoId && r.filhos.includes(alunoId)
+        );
+
+        // Buscar todos os usuários e comparar emails normalizados (case-insensitive)
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+
+        // Encontrar usuário com email igual (case-insensitive)
+        const usuarioComEmail = usersSnapshot.docs.find(doc => {
+          const docEmail = doc.data().email;
+          const docEmailNormalizado = docEmail ? docEmail.toLowerCase().trim() : '';
+          return docEmailNormalizado === emailNormalizado;
+        });
+
+        if (usuarioComEmail) {
+          // Email já está em uso
+
+          // Permitir se for:
+          // 1. O próprio aluno (quando está editando)
+          // 2. O responsável do aluno
+          const isProprioAluno = alunoId && usuarioComEmail.id === alunoId;
+          const isResponsavel = responsavel && usuarioComEmail.id === responsavel.id;
+
+          if (!isProprioAluno && !isResponsavel) {
+            setToast({
+              show: true,
+              message: 'Este e-mail já está em uso por outro usuário. Alunos com acesso via responsável só podem usar o e-mail do seu responsável ou um e-mail ainda não cadastrado.',
+              variant: 'danger'
+            });
+            return;
+          }
+        }
+      }
+
       // Verificar mudança de status para Inativo
       if (formMode === 'edit' && (data as any).status === 'Inativo') {
         const usuarioAtual = formDefaults as any;
         const statusAnterior = usuarioAtual.status || 'Ativo';
-        
+
         // Se está mudando de Ativo para Inativo
         if (statusAnterior === 'Ativo') {
           // Verificar se é aluno
@@ -710,7 +758,7 @@ export default function Usuarios(): JSX.Element {
             if (alunoAtual) {
               // Buscar responsável do aluno
               const responsavel = responsaveis.find(r => r.filhos && r.filhos.includes(alunoAtual.id));
-              
+
               if (responsavel) {
                 const outrosFilhos = responsavel.filhos!.filter(fid => fid !== alunoAtual.id);
                 const relacionados = outrosFilhos.map(fid => {
@@ -718,7 +766,7 @@ export default function Usuarios(): JSX.Element {
                   return { id: fid, nome: filho?.nome || 'Desconhecido', tipo: 'aluno' };
                 });
                 relacionados.unshift({ id: responsavel.id, nome: responsavel.nome, tipo: 'responsavel' });
-                
+
                 if (relacionados.length > 0) {
                   setStatusChangeData({
                     tipo: 'aluno',
@@ -733,7 +781,7 @@ export default function Usuarios(): JSX.Element {
               }
             }
           }
-          
+
           // Verificar se é responsável
           if (data.tipoUsuario === 'responsaveis') {
             const responsavelAtual = responsaveis.find(r => r.id === usuarioAtual.id);
@@ -742,7 +790,7 @@ export default function Usuarios(): JSX.Element {
                 const filho = alunos.find(a => a.id === fid);
                 return { id: fid, nome: filho?.nome || 'Desconhecido', tipo: 'aluno' };
               });
-              
+
               if (relacionados.length > 0) {
                 setStatusChangeData({
                   tipo: 'responsavel',
@@ -799,22 +847,28 @@ export default function Usuarios(): JSX.Element {
       // Para professores em modo de edição, mesclar turmas do ano atual com turmas de outros anos
       if (formMode === 'edit' && data.tipoUsuario === 'professores') {
         const turmasAtuaisDoUsuario = (formDefaults as any).turmas || [];
-        
+
         // Filtrar turmas que não estão na lista de turmas do ano atual (são de outros anos)
         const turmasIdDoAnoAtual = turmas.map((t: TurmaModel) => t.id);
-        const turmasDeOutrosAnos = turmasAtuaisDoUsuario.filter((turmaId: string) => 
+        const turmasDeOutrosAnos = turmasAtuaisDoUsuario.filter((turmaId: string) =>
           !turmasIdDoAnoAtual.includes(turmaId)
         );
-        
+
         // Combinar turmas de outros anos com as turmas do ano atual
         turmasFinal = [...turmasDeOutrosAnos, ...turmasFinal];
       }
 
+      // Normalizar email para lowercase antes de salvar
+      const emailNormalizado = data.email.toLowerCase().trim();
+
       const userData = {
         nome: data.nome,
-        email: data.email,
+        email: emailNormalizado,
         status: (data as any).status || 'Ativo',
-        ...(data.tipoUsuario === 'alunos' && { turmaId: turmaIdFinal }),
+        ...(data.tipoUsuario === 'alunos' && {
+          turmaId: turmaIdFinal,
+          modoAcesso: data.modoAcesso || 'aluno'
+        }),
         ...(data.tipoUsuario === 'professores' && { turmas: turmasFinal }),
         ...(data.tipoUsuario === 'responsaveis' && { filhos: data.filhos }),
         // Adicionar dataCriacao apenas para novos usuários
@@ -823,9 +877,51 @@ export default function Usuarios(): JSX.Element {
 
       if (formMode === 'edit') {
         const docRef = doc(db, data.tipoUsuario, (formDefaults as any).id);
-        await updateDoc(docRef, userData);
-        
-        // Atualizar status na coleção users também
+
+        // Se mudou de 'responsavel' para 'aluno', criar conta de autenticação
+        if (data.tipoUsuario === 'alunos' && (data as any).mudouParaAcessoAluno) {
+          try {
+            const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/criar-apenas-auth", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                uid: (formDefaults as any).id,
+                nome: data.nome,
+                email: emailNormalizado,
+                tipoUsuario: "alunos",
+              }),
+            });
+
+            if (!response.ok) {
+              const result = await response.json();
+              throw new Error(result.message || "Erro ao criar conta de autenticação");
+            }
+
+            // Atualizar o modoAcesso e email no Firestore
+            await updateDoc(docRef, {
+              ...userData,
+              modoAcesso: 'aluno',
+              email: emailNormalizado
+            });
+
+            setToast({
+              show: true,
+              message: 'Aluno atualizado e conta de acesso criada com sucesso!',
+              variant: 'success'
+            });
+          } catch (error: any) {
+            console.error('Erro ao criar conta de autenticação:', error);
+            setToast({
+              show: true,
+              message: `Erro ao criar conta: ${error.message}`,
+              variant: 'danger'
+            });
+            return; // Não prosseguir se houver erro
+          }
+        } else {
+          // Atualização normal sem mudança de modo de acesso
+          await updateDoc(docRef, userData);
+        }        // Atualizar status na coleção users também
         await userService.atualizarStatus((formDefaults as any).id, userData.status as 'Ativo' | 'Inativo');
       } else {
         const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/criar-usuario", {
@@ -833,7 +929,7 @@ export default function Usuarios(): JSX.Element {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             nome: data.nome,
-            email: data.email,
+            email: emailNormalizado,
             tipoUsuario: data.tipoUsuario,
             status: (data as any).status || 'Ativo',
             turmaId: turmaIdFinal,
@@ -874,7 +970,7 @@ export default function Usuarios(): JSX.Element {
       }
       if (data.tipoUsuario === 'responsaveis') setResponsaveis(novosDados);
       if (data.tipoUsuario === 'administradores') setAdministradores(novosDados);
-      
+
       // Atualizar status de relacionados se solicitado
       if (atualizarRelacionados && statusChangeData) {
         // Preparar lista de atualizações para o UserService
@@ -882,23 +978,23 @@ export default function Usuarios(): JSX.Element {
           uid: relacionado.id,
           status: 'Inativo' as const
         }));
-        
+
         // Atualizar na coleção users em lote
         await userService.atualizarStatusEmLote(atualizacoes);
-        
+
         // Atualizar nas coleções específicas
         for (const relacionado of statusChangeData.relacionados) {
           const tipoColecao = relacionado.tipo === 'aluno' ? 'alunos' : 'responsaveis';
           const docRef = doc(db, tipoColecao, relacionado.id);
           await updateDoc(docRef, { status: 'Inativo' });
         }
-        
+
         // Recarregar dados após atualizar relacionados
         const [alunosAtualizados, responsaveisAtualizados] = await Promise.all([
           getDocs(collection(db, 'alunos')),
           getDocs(collection(db, 'responsaveis'))
         ]);
-        
+
         setAlunos(alunosAtualizados.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
         setResponsaveis(responsaveisAtualizados.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
       }
@@ -1714,7 +1810,7 @@ export default function Usuarios(): JSX.Element {
             {statusChangeData && (
               <div>
                 <p className="mb-3">
-                  {statusChangeData.tipo === 'aluno' 
+                  {statusChangeData.tipo === 'aluno'
                     ? 'Este aluno possui um responsável e outros alunos vinculados.'
                     : 'Este responsável possui alunos vinculados.'
                   }
@@ -1736,14 +1832,14 @@ export default function Usuarios(): JSX.Element {
             )}
           </Modal.Body>
           <Modal.Footer>
-            <Button 
-              variant="secondary" 
+            <Button
+              variant="secondary"
               onClick={() => handleConfirmStatusChange(false)}
             >
               Não, apenas este usuário
             </Button>
-            <Button 
-              variant="primary" 
+            <Button
+              variant="primary"
               onClick={() => handleConfirmStatusChange(true)}
             >
               Sim, atualizar todos
