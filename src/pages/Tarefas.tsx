@@ -454,8 +454,8 @@ export default function Tarefas() {
           <div className="container py-0 px-0">
             {activeTab === 'acompanhamento' && (
               <TarefasAcompanhamento
-                turmas={turmas}
-                materias={materias}
+                turmas={[{ id: '', nome: 'Todas as turmas' }, ...turmas]}
+                materias={[{ id: '', nome: 'Todas as matérias' }, ...materias]}
                 tarefas={tarefas}
                 alunos={alunos}
                 entregas={entregas}
@@ -480,6 +480,7 @@ export default function Tarefas() {
                 onExportarExcel={exportarExcel}
                 onPaginaChange={setPaginaAtual}
                 formatarDataBR={formatarDataBR}
+                anoLetivo={anoLetivo.toString()}
               />
             )}
 

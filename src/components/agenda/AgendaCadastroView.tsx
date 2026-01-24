@@ -101,9 +101,12 @@ export default function AgendaCadastroView({
             <Col md={3}>
               <Form.Select value={filtroProfessor} onChange={e => setFiltroProfessor(e.target.value)}>
                 <option value="">Todos os Professores</option>
-                {[...professores].sort((a, b) => a.nome.localeCompare(b.nome)).map(p => (
-                  <option key={p.id} value={p.id}>{p.nome}</option>
-                ))}
+                {[...professores]
+                  .filter(p => p.status !== 'Inativo')
+                  .sort((a, b) => a.nome.localeCompare(b.nome))
+                  .map(p => (
+                    <option key={p.id} value={p.id}>{p.nome}</option>
+                  ))}
               </Form.Select>
             </Col>
             <Col md={3}>
