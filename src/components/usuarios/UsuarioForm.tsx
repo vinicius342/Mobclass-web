@@ -105,6 +105,7 @@ export default function UsuarioForm({
   // Detectar se está mudando de 'responsavel' para 'aluno' em modo de edição
   const modoAcessoInicial = defaultValues.modoAcesso;
   const mudouParaAcessoAluno = formMode === 'edit' && modoAcessoInicial === 'responsavel' && modoAcesso === 'aluno';
+  const mudouParaAcessoResponsavel = formMode === 'edit' && modoAcessoInicial === 'aluno' && modoAcesso === 'responsavel';
 
   // Inicializar status quando defaultValues mudar
   useEffect(() => {
@@ -127,6 +128,11 @@ export default function UsuarioForm({
       dataWithStatus.mudouParaAcessoAluno = true;
     }
     
+    // Se mudou de aluno para responsavel, marcar que precisa remover auth
+    if (mudouParaAcessoResponsavel) {
+      dataWithStatus.mudouParaAcessoResponsavel = true;
+    }
+    
     onSubmit(dataWithStatus);
   };
 
@@ -145,10 +151,21 @@ export default function UsuarioForm({
 
       <Form.Group controlId="usuario-email" className="mb-3">
         <Form.Label style={{ fontWeight: 'bold' }}>E‑mail</Form.Label>
-        <Form.Control type="email" placeholder="Digite o e‑mail" isInvalid={!!errors.email} {...register('email')} />
+        <Form.Control 
+          type="email" 
+          placeholder="Digite o e‑mail" 
+          isInvalid={!!errors.email} 
+          disabled={tipo === 'alunos' && modoAcesso === 'responsavel'}
+          {...register('email')} 
+        />
         <Form.Control.Feedback type="invalid">
           {errors.email?.message}
         </Form.Control.Feedback>
+        {tipo === 'alunos' && modoAcesso === 'responsavel' && (
+          <Form.Text className="text-muted">
+            Campo desabilitado: alunos com acesso via responsável não possuem email próprio.
+          </Form.Text>
+        )}
       </Form.Group>
 
       <Form.Group controlId="usuario-tipo" className="mb-3">
@@ -298,6 +315,20 @@ export default function UsuarioForm({
                 {...register('modoAcesso')}
               />
             </div>
+            
+            {/* Aviso quando muda de responsavel para aluno */}
+            {mudouParaAcessoAluno && (
+              <div className="alert alert-warning mt-2 mb-0" style={{ fontSize: '0.9rem' }}>
+                <strong>⚠️ Atenção:</strong> Ao alterar para acesso direto, uma nova conta de login será criada para o aluno com a senha padrão <strong>123456</strong>. Um e-mail com as credenciais será enviado.
+              </div>
+            )}
+            
+            {/* Aviso quando muda de aluno para responsavel */}
+            {mudouParaAcessoResponsavel && (
+              <div className="alert alert-danger mt-2 mb-0" style={{ fontSize: '0.9rem' }}>
+                <strong>⚠️ Atenção:</strong> Ao alterar para acesso via responsável, a conta de login do aluno será <strong>permanentemente removida</strong>. O acesso passará a ser feito exclusivamente pelo responsável.
+              </div>
+            )}
           </Form.Group>
         </>
       )}

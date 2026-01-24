@@ -8,7 +8,7 @@ import {
 } from 'react-bootstrap';
 import { PlusCircle, Person } from 'react-bootstrap-icons';
 import Paginacao from '../components/common/Paginacao';
-import { updateDoc, deleteDoc, doc, writeBatch, getDocs, collection } from 'firebase/firestore';
+import { updateDoc, doc, writeBatch, getDocs, collection } from 'firebase/firestore';
 import { db } from '../services/firebase/firebase';
 import UsuarioForm, { FormValues, AlunoOption } from '../components/usuarios/UsuarioForm';
 import { GraduationCap, Download, Users } from 'lucide-react';
@@ -653,23 +653,46 @@ export default function Usuarios(): JSX.Element {
   const handleExcluir = async (id: string) => {
     if (!window.confirm('Excluir este usuário?')) return;
 
-    let collectionName = activeTab;
-    if (activeTab === 'todos') {
-      // Determinar o tipo do usuário pela sua presença nas diferentes coleções
-      if (professores.find(p => p.id === id)) collectionName = 'professores';
-      else if (alunos.find(a => a.id === id)) collectionName = 'alunos';
-      else if (responsaveis.find(r => r.id === id)) collectionName = 'responsaveis';
-      else if (administradores.find(adm => adm.id === id)) collectionName = 'administradores';
+    try {
+      let collectionName = activeTab;
+      if (activeTab === 'todos') {
+        // Determinar o tipo do usuário pela sua presença nas diferentes coleções
+        if (professores.find(p => p.id === id)) collectionName = 'professores';
+        else if (alunos.find(a => a.id === id)) collectionName = 'alunos';
+        else if (responsaveis.find(r => r.id === id)) collectionName = 'responsaveis';
+        else if (administradores.find(adm => adm.id === id)) collectionName = 'administradores';
+      }
+
+      // Chamar rota backend para excluir completamente (coleção específica + users + auth)
+      const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/excluir-usuario", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uid: id,
+          tipoUsuario: collectionName,
+        }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.message || "Erro ao excluir usuário");
+      }
+
+      // Atualizar estado local
+      if (collectionName === 'professores') setProfessores(prev => prev.filter(u => u.id !== id));
+      if (collectionName === 'alunos') setAlunos(prev => prev.filter(u => u.id !== id));
+      if (collectionName === 'responsaveis') setResponsaveis(prev => prev.filter(u => u.id !== id));
+      if (collectionName === 'administradores') setAdministradores(prev => prev.filter(u => u.id !== id));
+
+      setToast({ show: true, message: 'Usuário excluído com sucesso!', variant: 'success' });
+    } catch (error: any) {
+      console.error('Erro ao excluir usuário:', error);
+      setToast({
+        show: true,
+        message: `Erro ao excluir usuário: ${error.message}`,
+        variant: 'danger'
+      });
     }
-
-    await deleteDoc(doc(db, collectionName, id));
-
-    if (collectionName === 'professores') setProfessores(prev => prev.filter(u => u.id !== id));
-    if (collectionName === 'alunos') setAlunos(prev => prev.filter(u => u.id !== id));
-    if (collectionName === 'responsaveis') setResponsaveis(prev => prev.filter(u => u.id !== id));
-    if (collectionName === 'administradores') setAdministradores(prev => prev.filter(u => u.id !== id));
-
-    setToast({ show: true, message: 'Usuário excluído!', variant: 'success' });
   };
 
   const openEdit = (user: UsuarioBase & any) => {
@@ -704,40 +727,35 @@ export default function Usuarios(): JSX.Element {
     try {
       // Validação especial para alunos com modoAcesso = "responsavel"
       if (data.tipoUsuario === 'alunos' && data.modoAcesso === 'responsavel') {
-
         // Normalizar email para minúsculas
         const emailNormalizado = data.email.toLowerCase().trim();
-
         // Buscar o responsável deste aluno
         const alunoId = formMode === 'edit' ? (formDefaults as any).id : null;
-
+        const emailAlunoAtual = formMode === 'edit' ? ((formDefaults as any).email || '').toLowerCase().trim() : null;
         const responsavel = responsaveis.find(r =>
           r.filhos && alunoId && r.filhos.includes(alunoId)
         );
-
         // Buscar todos os usuários e comparar emails normalizados (case-insensitive)
         const usersSnapshot = await getDocs(collection(db, 'users'));
-
         // Encontrar usuário com email igual (case-insensitive)
         const usuarioComEmail = usersSnapshot.docs.find(doc => {
           const docEmail = doc.data().email;
           const docEmailNormalizado = docEmail ? docEmail.toLowerCase().trim() : '';
           return docEmailNormalizado === emailNormalizado;
         });
-
         if (usuarioComEmail) {
           // Email já está em uso
-
           // Permitir se for:
           // 1. O próprio aluno (quando está editando)
           // 2. O responsável do aluno
+          // 3. O email é igual ao do aluno editado (mantendo o mesmo email)
           const isProprioAluno = alunoId && usuarioComEmail.id === alunoId;
           const isResponsavel = responsavel && usuarioComEmail.id === responsavel.id;
-
-          if (!isProprioAluno && !isResponsavel) {
+          const isMesmoEmailAluno = emailAlunoAtual && emailNormalizado === emailAlunoAtual;
+          if (!isProprioAluno && !isResponsavel && !isMesmoEmailAluno) {
             setToast({
               show: true,
-              message: 'Este e-mail já está em uso por outro usuário. Alunos com acesso via responsável só podem usar o e-mail do seu responsável ou um e-mail ainda não cadastrado.',
+              message: 'Este e-mail já está em uso por outro usuário. Alunos com acesso via responsável só podem usar o e-mail do seu responsável, manter o próprio ou um e-mail ainda não cadastrado.',
               variant: 'danger'
             });
             return;
@@ -861,9 +879,8 @@ export default function Usuarios(): JSX.Element {
       // Normalizar email para lowercase antes de salvar
       const emailNormalizado = data.email.toLowerCase().trim();
 
-      const userData = {
+      const userDataBase = {
         nome: data.nome,
-        email: emailNormalizado,
         status: (data as any).status || 'Ativo',
         ...(data.tipoUsuario === 'alunos' && {
           turmaId: turmaIdFinal,
@@ -871,12 +888,18 @@ export default function Usuarios(): JSX.Element {
         }),
         ...(data.tipoUsuario === 'professores' && { turmas: turmasFinal }),
         ...(data.tipoUsuario === 'responsaveis' && { filhos: data.filhos }),
-        // Adicionar dataCriacao apenas para novos usuários
         ...(formMode === 'add' && { dataCriacao: new Date() }),
       };
+      // Só inclui email no userData se for adição ou se backend confirmou alteração
+      let userData = { ...userDataBase };
 
       if (formMode === 'edit') {
         const docRef = doc(db, data.tipoUsuario, (formDefaults as any).id);
+
+        // Detectar alteração de e-mail
+        const emailAtual = (formDefaults as any).email?.toLowerCase().trim() || '';
+        const emailNovo = data.email.toLowerCase().trim();
+        let emailAlterado = emailAtual !== emailNovo;
 
         // Se mudou de 'responsavel' para 'aluno', criar conta de autenticação
         if (data.tipoUsuario === 'alunos' && (data as any).mudouParaAcessoAluno) {
@@ -897,9 +920,9 @@ export default function Usuarios(): JSX.Element {
               throw new Error(result.message || "Erro ao criar conta de autenticação");
             }
 
-            // Atualizar o modoAcesso e email no Firestore
+            // Atualizar o modoAcesso e email no Firestore (apenas se backend confirmou)
             await updateDoc(docRef, {
-              ...userData,
+              ...userDataBase,
               modoAcesso: 'aluno',
               email: emailNormalizado
             });
@@ -918,11 +941,76 @@ export default function Usuarios(): JSX.Element {
             });
             return; // Não prosseguir se houver erro
           }
-        } else {
+        }
+        // Se mudou de 'aluno' para 'responsavel', remover conta de autenticação
+        else if (data.tipoUsuario === 'alunos' && (data as any).mudouParaAcessoResponsavel) {
+          try {
+            const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/remover-auth", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                uid: (formDefaults as any).id,
+              }),
+            });
+
+            if (!response.ok) {
+              const result = await response.json();
+              throw new Error(result.message || "Erro ao remover conta de autenticação");
+            }
+
+            // Atualizar o modoAcesso no Firestore
+            await updateDoc(docRef, {
+              ...userDataBase,
+              modoAcesso: 'responsavel',
+            });
+
+            setToast({
+              show: true,
+              message: 'Aluno atualizado. Acesso agora será feito pelo responsável.',
+              variant: 'success'
+            });
+          } catch (error: any) {
+            console.error('Erro ao remover conta de autenticação:', error);
+            setToast({
+              show: true,
+              message: `Erro ao remover conta: ${error.message}`,
+              variant: 'danger'
+            });
+            return; // Não prosseguir se houver erro
+          }
+        }
+        else {
           // Atualização normal sem mudança de modo de acesso
-          await updateDoc(docRef, userData);
-        }        // Atualizar status na coleção users também
-        await userService.atualizarStatus((formDefaults as any).id, userData.status as 'Ativo' | 'Inativo');
+          // Se o email foi alterado, chamar API backend antes de atualizar Firestore
+          if (emailAlterado) {
+            try {
+              const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/atualizar-email-usuario", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  uid: (formDefaults as any).id,
+                  novoEmail: emailNovo,
+                  tipoUsuario: data.tipoUsuario
+                })
+              });
+              const result = await response.json();
+              if (!response.ok || result.code === 'EMAIL_EM_USO') {
+                setToast({ show: true, message: result.message || 'Erro ao atualizar e-mail.', variant: 'danger' });
+                return;
+              }
+              // Só após sucesso do backend, atualizar Firestore localmente
+              await updateDoc(docRef, { ...userDataBase, email: emailNovo });
+            } catch (error: any) {
+              setToast({ show: true, message: error.message || 'Erro ao atualizar e-mail.', variant: 'danger' });
+              return;
+            }
+          } else {
+            // Não alterou o email, update normal
+            await updateDoc(docRef, userDataBase);
+          }
+          // Atualizar status na coleção users também
+          await userService.atualizarStatus((formDefaults as any).id, userDataBase.status as 'Ativo' | 'Inativo');
+        }
       } else {
         const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/criar-usuario", {
           method: "POST",
