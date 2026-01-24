@@ -22,6 +22,7 @@ interface Tarefa {
   descricao: string;
   turmaId: string;
   dataEntrega: string;
+  anoLetivo?: string;
   excluida?: boolean;
   bloqueado?: boolean;
   links?: Array<{
@@ -52,6 +53,7 @@ interface Entrega {
 }
 
 interface TarefasAcompanhamentoProps {
+    anoLetivo: string;
   turmas: Turma[];
   materias: Materia[];
   tarefas: Tarefa[];
@@ -100,13 +102,28 @@ export default function TarefasAcompanhamento({
   onExportarPDF,
   onExportarExcel,
   onPaginaChange,
-  formatarDataBR
+  formatarDataBR,
+  anoLetivo
 }: TarefasAcompanhamentoProps) {
   const [atividadeSelecionada, setAtividadeSelecionada] = useState<Tarefa | null>(null);
 
-  const tarefasFiltradas = tarefas.filter(
-    t => t.turmaId === filtroTurma && t.materiaId === filtroMateria && !t.excluida
-  );
+  const todasTurmasSelecionada = filtroTurma === '__todas__';
+  const todasMateriasSelecionada = filtroMateria === '__todas__';
+  // Obter lista de turmas permitidas para o professor (ignorando id vazio)
+  const turmasPermitidas = turmas.filter(t => t.id).map(t => t.id);
+  const tarefasFiltradas = tarefas.filter(t => {
+    if (t.excluida) return false;
+    if (t.anoLetivo && t.anoLetivo.toString() !== anoLetivo) return false;
+    if (!turmasPermitidas.includes(t.turmaId)) return false;
+    // Se ambos estão em modo 'todas', retorna todas do ano letivo e das turmas permitidas
+    if (todasTurmasSelecionada && todasMateriasSelecionada) return true;
+    // Se só turmas está em modo 'todas', filtra só por matéria
+    if (todasTurmasSelecionada) return t.materiaId === filtroMateria;
+    // Se só matérias está em modo 'todas', filtra só por turma
+    if (todasMateriasSelecionada) return t.turmaId === filtroTurma;
+    // Ambos selecionados
+    return t.turmaId === filtroTurma && t.materiaId === filtroMateria;
+  });
 
   const alunosFiltrados = alunos.filter(a => a.turmaId === filtroTurma);
 
@@ -130,7 +147,8 @@ export default function TarefasAcompanhamento({
                 }}
               >
                 <option value="">Selecione a turma</option>
-                {[...turmas].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
+                <option value="__todas__">Todas as turmas</option>
+                {[...turmas].filter(t => t.id !== '').sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
                   <option key={t.id} value={t.id}>{t.nome}</option>
                 ))}
               </Form.Select>
@@ -145,7 +163,8 @@ export default function TarefasAcompanhamento({
                 disabled={!filtroTurma}
               >
                 <option value="">Selecione a matéria</option>
-                {materias.map(m => (
+                <option value="__todas__">Todas as matérias</option>
+                {materias.filter(m => m.id !== '').sort((a, b) => a.nome.localeCompare(b.nome)).map(m => (
                   <option key={m.id} value={m.id}>{m.nome}</option>
                 ))}
               </Form.Select>

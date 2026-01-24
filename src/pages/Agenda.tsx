@@ -783,9 +783,12 @@ export default function Agenda() {
                 <Form.Label>Professor *</Form.Label>
                 <Form.Select value={professorId} onChange={e => setProfessorId(e.target.value)}>
                   <option value="">Selecione o professor</option>
-                  {[...professores].sort((a, b) => a.nome.localeCompare(b.nome)).map(p => (
-                    <option key={p.id} value={p.id}>{p.nome}</option>
-                  ))}
+                  {[...professores]
+                    .filter(p => p.status !== 'Inativo')
+                    .sort((a, b) => a.nome.localeCompare(b.nome))
+                    .map(p => (
+                      <option key={p.id} value={p.id}>{p.nome}</option>
+                    ))}
                 </Form.Select>
               </Form.Group>
 
