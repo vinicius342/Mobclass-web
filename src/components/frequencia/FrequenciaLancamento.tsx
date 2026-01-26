@@ -105,16 +105,26 @@ export default function FrequenciaLancamento({
         const alunosAtivos = todosAlunos
           .filter((aluno: any) => aluno.status !== 'Inativo')
           .sort((a: any, b: any) => a.nome.localeCompare(b.nome));
+
         setAlunos(alunosAtivos);
 
         // Buscar frequências já lançadas
         const frequencias = await frequenciaService.listarPorTurmaMateria(turmaId, materiaId, dataAula);
 
-        // Mapear presença usando service
-        const initial = frequenciaService.inicializarAttendance(
-          alunosAtivos.map((a: any) => ({ id: a.id, nome: a.nome })),
-          frequencias
-        );
+        let initial: Record<string, boolean | null> = {};
+        if (frequencias.length === 0) {
+          // Se não há frequências lançadas, marca todos como presente
+          initial = {};
+          alunosAtivos.forEach((a: any) => {
+            initial[a.id] = true;
+          });
+        } else {
+          // Se já há frequências, inicializa normalmente
+          initial = frequenciaService.inicializarAttendance(
+            alunosAtivos.map((a: any) => ({ id: a.id, nome: a.nome })),
+            frequencias
+          );
+        }
         setAttendance(initial);
 
         // Mapear justificativas usando service
