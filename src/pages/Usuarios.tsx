@@ -8,7 +8,7 @@ import {
 } from 'react-bootstrap';
 import { PlusCircle, Person } from 'react-bootstrap-icons';
 import Paginacao from '../components/common/Paginacao';
-import { updateDoc, doc, writeBatch, getDocs, collection } from 'firebase/firestore';
+import { updateDoc, doc, writeBatch, getDocs, collection, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase/firebase';
 import UsuarioForm, { FormValues, AlunoOption } from '../components/usuarios/UsuarioForm';
 import { GraduationCap, Download, Users } from 'lucide-react';
@@ -1008,8 +1008,12 @@ export default function Usuarios(): JSX.Element {
             // Não alterou o email, update normal
             await updateDoc(docRef, userDataBase);
           }
-          // Atualizar status na coleção users também
-          await userService.atualizarStatus((formDefaults as any).id, userDataBase.status as 'Ativo' | 'Inativo');
+          // Atualizar status na coleção users também, apenas se existir
+          const userDocRef = doc(db, "users", (formDefaults as any).id);
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            await userService.atualizarStatus((formDefaults as any).id, userDataBase.status as 'Ativo' | 'Inativo');
+          }
         }
       } else {
         const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/criar-usuario", {
