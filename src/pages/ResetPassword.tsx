@@ -18,6 +18,7 @@ import {
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const tipo = searchParams.get('tipo');
   const [status, setStatus] = useState<'loading' | 'invalid' | 'ready' | 'success' | 'error'>('loading');
   const [email, setEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -61,7 +62,9 @@ export default function ResetPassword() {
       const auth = getAuth();
       await confirmPasswordReset(auth, oobCode!, newPassword);
       setStatus('success');
-      setTimeout(() => navigate('/login'), 2000);
+      if (!(tipo === 'alunos' || tipo === 'responsaveis')) {
+        setTimeout(() => navigate('/login'), 2000);
+      }
     } catch (err: any) {
       setStatus('error');
       setErrorMsg(err.code || 'Erro ao redefinir senha.');
@@ -116,7 +119,14 @@ export default function ResetPassword() {
 
         {status === 'success' && (
           <Alert variant="success" className="text-center">
-            Senha redefinida com sucesso! Redirecionando...
+            Senha redefinida com sucesso!{' '}
+            {tipo === 'alunos' || tipo === 'responsaveis' ? (
+              <>
+                Agora você pode voltar e acessar normalmente pelo aplicativo MobClassApp.
+              </>
+            ) : (
+              <>Redirecionando...</>
+            )}
           </Alert>
         )}
 

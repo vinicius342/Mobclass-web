@@ -22,6 +22,11 @@ export default function PrivateRoute() {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  // Bloquear acesso de alunos e responsáveis
+  if (userData.tipo === 'alunos' || userData.tipo === 'responsaveis') {
+    return <Navigate to="/acesso-negado" replace />;
+  }
+
   return <Outlet />;
 }
 
