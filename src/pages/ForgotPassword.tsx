@@ -1,7 +1,6 @@
 // src/pages/ForgotPassword.tsx
 import React, { useState, useEffect } from 'react';
 import { Form, Button, Alert, Spinner, Container, Card } from 'react-bootstrap';
-import { getAuth, sendPasswordResetEmail } from 'firebase/auth';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../services/firebase/firebase';
 
@@ -43,9 +42,20 @@ export default function ForgotPassword() {
 
     setStatus('sending');
     try {
-      const auth = getAuth();
-      await sendPasswordResetEmail(auth, emailTrimmed);
-      setStatus('success');
+      const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/esqueceu-senha", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ email: emailTrimmed })
+      });
+      const result = await response.json();
+      if (response.ok) {
+        setStatus('success');
+      } else {
+        setStatus('error');
+        setErrorMsg(result.message || 'Erro ao enviar e-mail. Tente novamente mais tarde.');
+      }
     } catch (err) {
       setStatus('error');
       setErrorMsg('Erro ao enviar e-mail. Tente novamente mais tarde.');
