@@ -13,6 +13,7 @@ interface Aluno {
   id: string;
   nome: string;
   turmaId: string;
+  status: 'Ativo' | 'Inativo';
 }
 
 interface Tarefa {
@@ -125,7 +126,11 @@ export default function TarefasAcompanhamento({
     return t.turmaId === filtroTurma && t.materiaId === filtroMateria;
   });
 
-  const alunosFiltrados = alunos.filter(a => a.turmaId === filtroTurma);
+  // Corrige: se filtroTurma for '__todas__' e houver atividade selecionada, mostra alunos da turma da atividade
+  const alunosFiltrados =
+    filtroTurma === '__todas__' && atividadeSelecionada
+      ? alunos.filter(a => a.turmaId === atividadeSelecionada.turmaId && a.status === 'Ativo')
+      : alunos.filter(a => a.turmaId === filtroTurma && a.status === 'Ativo');
 
   const handleSetAtividadeSelecionada = (tarefa: Tarefa | null) => {
     setAtividadeSelecionada(tarefa);
