@@ -32,6 +32,8 @@ import { UserService } from '../services/usuario/UserService';
 import { FirebaseUserRepository } from '../repositories/user/FirebaseUserRepository';
 import { turmaService } from '../services/data/TurmaService';
 import { isTurmaVirtualizada } from '../utils/turmasHelpers';
+import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
+import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 
 // PDF
 import jsPDF from 'jspdf';
@@ -49,6 +51,7 @@ export default function Usuarios(): JSX.Element {
 
   // Instanciar services
   const professorService = useMemo(() => new ProfessorService(new FirebaseProfessorRepository()), []);
+  const professorMateriaService = useMemo(() => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()), []);
   const alunoService = useMemo(() => new AlunoService(new FirebaseAlunoRepository()), []);
   const responsavelService = useMemo(() => new ResponsavelService(new FirebaseResponsavelRepository()), []);
   const administradorService = useMemo(() => new AdministradorService(new FirebaseAdministradorRepository()), []);
@@ -695,33 +698,34 @@ export default function Usuarios(): JSX.Element {
     }
   };
 
-  const openEdit = (user: UsuarioBase & any) => {
-    const tipoUsuario = activeTab === 'todos' ? user.tipoUsuario : activeTab;
+  const openEdit = async (user: UsuarioBase & any) => {
+  const tipoUsuario = activeTab === 'todos' ? user.tipoUsuario : activeTab;
 
-    if (tipoUsuario === 'alunos') {
-      const aluno = alunos.find(a => a.id === user.id);
-    }
+  let materiasVinculadas: string[] = [];
+  if (tipoUsuario === 'professores') {
+    // Buscar matérias vinculadas ao professor
+    materiasVinculadas = await professorMateriaService.listarMateriasPorProfessor(user.id);
+  }
 
-    const defaults: Partial<FormValues> = {
-      tipoUsuario,
-      nome: user.nome,
-      email: user.email,
-      ...(tipoUsuario === 'alunos' && {
-        turmaId: user.turmaId,
-        modoAcesso: user.modoAcesso || 'aluno'
-      }),
-      ...(tipoUsuario === 'professores' && { turmas: user.turmas }),
-      ...(tipoUsuario === 'responsaveis' && { filhos: user.filhos }),
-      ...(user.id && { id: user.id }),
-    };
-
-    // Adicionar o status aos defaults
-    (defaults as any).status = user.status || 'Ativo';
-
-    setFormDefaults(defaults);
-    setFormMode('edit');
-    setShowForm(true);
+  const defaults: Partial<FormValues> = {
+    tipoUsuario,
+    nome: user.nome,
+    email: user.email,
+    ...(tipoUsuario === 'alunos' && {
+      turmaId: user.turmaId,
+      modoAcesso: user.modoAcesso || 'aluno'
+    }),
+    ...(tipoUsuario === 'professores' && { turmas: user.turmas, materias: materiasVinculadas }),
+    ...(tipoUsuario === 'responsaveis' && { filhos: user.filhos }),
+    ...(user.id && { id: user.id }),
   };
+
+  (defaults as any).status = user.status || 'Ativo';
+
+  setFormDefaults(defaults);
+  setFormMode('edit');
+  setShowForm(true);
+};
 
   const handleSubmit = async (data: FormValues) => {
     try {
@@ -1000,6 +1004,7 @@ export default function Usuarios(): JSX.Element {
               }
               // Só após sucesso do backend, atualizar Firestore localmente
               await updateDoc(docRef, { ...userDataBase, email: emailNovo });
+              setToast({ show: true, message: 'Usuário atualizado com sucesso!', variant: 'success' });
             } catch (error: any) {
               setToast({ show: true, message: error.message || 'Erro ao atualizar e-mail.', variant: 'danger' });
               return;
@@ -1007,6 +1012,7 @@ export default function Usuarios(): JSX.Element {
           } else {
             // Não alterou o email, update normal
             await updateDoc(docRef, userDataBase);
+            setToast({ show: true, message: 'Usuário atualizado com sucesso!', variant: 'success' });
           }
           // Atualizar status na coleção users também, apenas se existir
           const userDocRef = doc(db, "users", (formDefaults as any).id);
@@ -1049,7 +1055,47 @@ export default function Usuarios(): JSX.Element {
       const snapshot = await getDocs(collection(db, data.tipoUsuario));
       const novosDados = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
 
-      if (data.tipoUsuario === 'professores') setProfessores(novosDados);
+      // Vinculação professor-turma-matéria
+      if (data.tipoUsuario === 'professores' && data.turmas && data.materias && (data.turmas.length > 0) && (data.materias.length > 0)) {
+        let professorId = null;
+        if (formMode === 'add') {
+          const novoProfessor = novosDados.find(p => p.email === emailNormalizado);
+          professorId = novoProfessor?.id;
+        } else {
+          professorId = (formDefaults as any).id;
+        }
+        if (professorId) {
+          // 1. Buscar todos os vínculos atuais do professor
+          const vinculosAtuais = await professorMateriaService.listarPorProfessor(professorId);
+          // 2. Gerar todas as combinações turma-matéria selecionadas
+          const combinacoesSelecionadas = new Set(
+            data.turmas.flatMap(turmaId => data.materias.map(materiaId => `${turmaId}__${materiaId}`))
+          );
+          // 3. Excluir vínculos que não estão mais selecionados
+          for (const vinculo of vinculosAtuais) {
+            const key = `${vinculo.turmaId}__${vinculo.materiaId}`;
+            if (!combinacoesSelecionadas.has(key)) {
+              await professorMateriaService.excluir(vinculo.id);
+            }
+          }
+          // 4. Criar vínculos que ainda não existem
+          for (const turmaId of data.turmas) {
+            for (const materiaId of data.materias) {
+              const jaExiste = vinculosAtuais.some(v => v.turmaId === turmaId && v.materiaId === materiaId);
+              if (!jaExiste) {
+                await professorMateriaService.criar({
+                  professorId,
+                  turmaId,
+                  materiaId
+                });
+              }
+            }
+          }
+          // 5. Atualizar lista de professores em tempo real
+          const professoresAtualizados = await professorService.listar();
+          setProfessores(professoresAtualizados);
+        }
+      }
       if (data.tipoUsuario === 'alunos') {
         setAlunos(novosDados);
         setAlunosOptions(novosDados.map(a => {

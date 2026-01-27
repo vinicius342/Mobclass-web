@@ -3,7 +3,10 @@ import { useForm, SubmitHandler } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
 import { Form, Button, Spinner } from "react-bootstrap";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { MateriaService } from '../../services/data/MateriaService';
+import { FirebaseMateriaRepository } from '../../repositories/materia/FirebaseMateriaRepository';
+import { Materia } from '../../models/Materia';
 import { Person, Shield, PeopleFill } from "react-bootstrap-icons";
 import { GraduationCap } from "lucide-react";
 import { Turma } from '../../models/Turma';
@@ -25,6 +28,7 @@ export interface FormValues {
   turmas: string[];
   filhos: string[];
   modoAcesso: 'aluno' | 'responsavel';
+  materias: string[];
   emailParaAuth?: string;
 }
 
@@ -60,6 +64,12 @@ const schema = yup.object({
     otherwise: a => a.strip()
   }),
 
+  materias: yup.array(yup.string().defined()).when('tipoUsuario', {
+    is: 'professores',
+    then: a => a.min(1, 'Selecione ao menos 1 matéria'),
+    otherwise: a => a.strip()
+  }),
+
   filhos: yup.array(yup.string().defined()).when('tipoUsuario', {
     is: 'responsaveis',
     then: a => a.optional(),
@@ -77,10 +87,16 @@ export default function UsuarioForm({
   onSubmit,
   onCancel,
 }: UsuarioFormProps) {
+  const [materias, setMaterias] = useState<Materia[]>([]);
+  const materiaService = useMemo(() => new MateriaService(new FirebaseMateriaRepository()), []);
+  useEffect(() => {
+    materiaService.listar().then(setMaterias);
+  }, [materiaService]);
   const {
     register,
     handleSubmit,
     watch,
+    reset,
     formState: { errors, isSubmitting }
   } = useForm({
     resolver: yupResolver(schema),
@@ -94,14 +110,30 @@ export default function UsuarioForm({
       turmas: defaultValues.turmas ?? [],
       filhos: defaultValues.filhos ?? [],
       modoAcesso: defaultValues.modoAcesso ?? 'aluno',
+      materias: defaultValues.materias ?? [],
     },
   });
+
+  // Reset form when defaultValues change (important for edit mode)
+  useEffect(() => {
+    reset({
+      tipoUsuario: defaultValues.tipoUsuario ?? 'professores',
+      nome: defaultValues.nome ?? '',
+      email: defaultValues.email ?? '',
+      senha: '',
+      turmaId: defaultValues.turmaId,
+      turmas: defaultValues.turmas ?? [],
+      filhos: defaultValues.filhos ?? [],
+      modoAcesso: defaultValues.modoAcesso ?? 'aluno',
+      materias: defaultValues.materias ?? [],
+    });
+  }, [defaultValues, reset]);
 
   const tipo = watch('tipoUsuario');
   const modoAcesso = watch('modoAcesso');
   const [status, setStatus] = useState<'Ativo' | 'Inativo'>('Ativo');
   const [buscaAluno, setBuscaAluno] = useState('');
-  
+
   // Detectar se está mudando de 'responsavel' para 'aluno' em modo de edição
   const modoAcessoInicial = defaultValues.modoAcesso;
   const mudouParaAcessoAluno = formMode === 'edit' && modoAcessoInicial === 'responsavel' && modoAcesso === 'aluno';
@@ -122,17 +154,17 @@ export default function UsuarioForm({
   const handleFormSubmit = (data: any) => {
     // Adicionar o status ao objeto de dados
     const dataWithStatus = { ...data, status };
-    
+
     // Se mudou de responsavel para aluno, marcar que precisa criar auth
     if (mudouParaAcessoAluno) {
       dataWithStatus.mudouParaAcessoAluno = true;
     }
-    
+
     // Se mudou de aluno para responsavel, marcar que precisa remover auth
     if (mudouParaAcessoResponsavel) {
       dataWithStatus.mudouParaAcessoResponsavel = true;
     }
-    
+
     onSubmit(dataWithStatus);
   };
 
@@ -151,12 +183,12 @@ export default function UsuarioForm({
 
       <Form.Group controlId="usuario-email" className="mb-3">
         <Form.Label style={{ fontWeight: 'bold' }}>E‑mail</Form.Label>
-        <Form.Control 
-          type="email" 
-          placeholder="Digite o e‑mail" 
-          isInvalid={!!errors.email} 
+        <Form.Control
+          type="email"
+          placeholder="Digite o e‑mail"
+          isInvalid={!!errors.email}
           disabled={tipo === 'alunos' && modoAcesso === 'responsavel'}
-          {...register('email')} 
+          {...register('email')}
         />
         <Form.Control.Feedback type="invalid">
           {errors.email?.message}
@@ -315,14 +347,14 @@ export default function UsuarioForm({
                 {...register('modoAcesso')}
               />
             </div>
-            
+
             {/* Aviso quando muda de responsavel para aluno */}
             {mudouParaAcessoAluno && (
               <div className="alert alert-warning mt-2 mb-0" style={{ fontSize: '0.9rem' }}>
                 <strong>⚠️ Atenção:</strong> Ao alterar para acesso direto, uma nova conta de login será criada para o aluno com a senha padrão <strong>123456</strong>. Um e-mail com as credenciais será enviado.
               </div>
             )}
-            
+
             {/* Aviso quando muda de aluno para responsavel */}
             {mudouParaAcessoResponsavel && (
               <div className="alert alert-danger mt-2 mb-0" style={{ fontSize: '0.9rem' }}>
@@ -334,43 +366,82 @@ export default function UsuarioForm({
       )}
 
       {tipo === 'professores' && (
-        <Form.Group controlId="usuario-turmas" className="mb-3">
-          <Form.Label style={{ fontWeight: 'bold' }}>Turmas</Form.Label>
-          <div className="p-1"
-            style={{
-              border: '1px solid #d1d5db',
-              borderRadius: 12,
-            }}
-          >
-            <div
-              className="usuarioform-turmas-checkbox"
+        <>
+          <Form.Group controlId="usuario-turmas" className="mb-3">
+            <Form.Label style={{ fontWeight: 'bold' }}>Turmas</Form.Label>
+            <div className="p-1"
               style={{
-                padding: 12,
-                maxHeight: 220,
-                overflowY: 'auto',
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: 8,
-                margin: '0 auto',
-                boxSizing: 'border-box',
+                border: '1px solid #d1d5db',
+                borderRadius: 12,
               }}
             >
-              {[...turmas].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
-                <Form.Check
-                  key={t.id}
-                  type="checkbox"
-                  id={`turma-${t.id}`}
-                  label={`${t.nome}`}
-                  value={t.id}
-                  {...register('turmas')}
-                />
-              ))}
+              <div
+                className="usuarioform-turmas-checkbox"
+                style={{
+                  padding: 12,
+                  maxHeight: 220,
+                  overflowY: 'auto',
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 8,
+                  margin: '0 auto',
+                  boxSizing: 'border-box',
+                }}
+              >
+                {[...turmas].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => (
+                  <Form.Check
+                    key={t.id}
+                    type="checkbox"
+                    id={`turma-${t.id}`}
+                    label={`${t.nome}`}
+                    value={t.id}
+                    {...register('turmas')}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-          <Form.Control.Feedback type="invalid">
-            {errors.turmas?.message as string}
-          </Form.Control.Feedback>
-        </Form.Group>
+            <Form.Control.Feedback type="invalid">
+              {errors.turmas?.message as string}
+            </Form.Control.Feedback>
+          </Form.Group>
+          <Form.Group controlId="usuario-materias" className="mb-3">
+            <Form.Label style={{ fontWeight: 'bold' }}>Matérias</Form.Label>
+            <div className="p-1"
+              style={{
+                border: '1px solid #d1d5db',
+                borderRadius: 12,
+              }}
+            >
+              <div
+                className="usuarioform-materias-checkbox"
+                style={{
+                  padding: 12,
+                  maxHeight: 220,
+                  overflowY: 'auto',
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 8,
+                  margin: '0 auto',
+                  boxSizing: 'border-box',
+                }}
+              >
+                {[...materias].sort((a, b) => a.nome.localeCompare(b.nome)).map(m => (
+                  <Form.Check
+                    key={m.id}
+                    type="checkbox"
+                    id={`materia-${m.id}`}
+                    label={`${m.nome}`}
+                    value={m.id}
+                    {...register('materias')}
+                  />
+                ))}
+              </div>
+            </div>
+            <Form.Control.Feedback type="invalid">
+              {errors["materias"]?.message as string}
+            </Form.Control.Feedback>
+          </Form.Group>
+        </>
       )}
 
       {tipo === 'responsaveis' && (

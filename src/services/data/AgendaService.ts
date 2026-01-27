@@ -52,13 +52,9 @@ export class AgendaService {
   /**
    * Filtra aulas por professor usando os vínculos
    */
-  filtrarAulasPorProfessor(aulas: Agenda[], professorId: string, vinculos: ProfessorMateria[]): Agenda[] {
+  filtrarAulasPorProfessor(aulas: Agenda[], professorId: string): Agenda[] {
     if (!professorId) return aulas;
-
-    return aulas.filter(aula => {
-      const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
-      return vinculo?.professorId === professorId;
-    });
+    return aulas.filter(aula => aula.professorId === professorId);
   }
 
   /**
