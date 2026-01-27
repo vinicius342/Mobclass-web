@@ -13,14 +13,11 @@ import AgendaCadastroView from '../components/agenda/AgendaCadastroView';
 import { turmaService } from '../services/data/TurmaService';
 import { MateriaService } from '../services/data/MateriaService';
 import { ProfessorService } from '../services/data/ProfessorService';
-import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
 import { AgendaService } from '../services/data/AgendaService';
 import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
-import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 import { FirebaseAgendaRepository } from '../repositories/agenda/FirebaseAgendaRepository';
 import type { Turma } from '../models/Turma';
-import type { ProfessorMateria } from '../models/ProfessorMateria';
 import type { Agenda } from '../models/Agenda';
 import type { Materia } from '../models/Materia';
 import type { Professor } from '../models/Professor';
@@ -43,8 +40,6 @@ const materiaService = new MateriaService(materiaRepository);
 const professorRepository = new FirebaseProfessorRepository();
 const professorService = new ProfessorService(professorRepository);
 
-const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
-const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
 
 const agendaRepository = new FirebaseAgendaRepository();
 const agendaService = new AgendaService(agendaRepository);
@@ -61,7 +56,6 @@ export default function Agenda() {
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [materias, setMaterias] = useState<Materia[]>([]);
   const [professores, setProfessores] = useState<Professor[]>([]);
-  const [vinculos, setVinculos] = useState<ProfessorMateria[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -118,46 +112,27 @@ export default function Agenda() {
         setLoading(true);
 
         if (isAdmin) {
-          const [allProfessores, allTurmas, allMaterias, allVinculos] = await Promise.all([
+          const [allProfessores, allTurmas, allMaterias] = await Promise.all([
             professorService.listar(),
             turmaService.listarComVirtualizacao(anoLetivo.toString()),
-            materiaService.listar(),
-            professorMateriaService.listar()
+            materiaService.listar()
           ]);
-
-          // Filtrar vínculos apenas de turmas do ano atual
-          const turmaIds = new Set(allTurmas.map((t: Turma) => t.id));
-          const vinculosFiltrados = allVinculos.filter((v: ProfessorMateria) => turmaIds.has(v.turmaId));
-
           setProfessores(allProfessores);
-          setVinculos(vinculosFiltrados);
           setTurmas(allTurmas);
           setMaterias(allMaterias);
         } else if (userData?.email) {
-          // Professor: carregar TODOS os dados para visualização, mas restringir edição
-          const [allProfessores, allMaterias, allVinculos] = await Promise.all([
+          const [allProfessores, allMaterias] = await Promise.all([
             professorService.listar(),
-            materiaService.listar(),
-            professorMateriaService.listar()
+            materiaService.listar()
           ]);
-
           const professorAtual = allProfessores.find((p: Professor) => p.email === userData.email);
-
           if (!professorAtual) {
             console.error('Professor não encontrado com email:', userData.email);
             setLoading(false);
             return;
           }
-
-          // Buscar turmas do ano letivo (todas, para visualização)
           const allTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
-
-          // Filtrar vínculos apenas de turmas do ano atual
-          const turmaIds = new Set(allTurmas.map((t: Turma) => t.id));
-          const vinculosFiltrados = allVinculos.filter((v: ProfessorMateria) => turmaIds.has(v.turmaId));
-
           setProfessores(allProfessores);
-          setVinculos(vinculosFiltrados);
           setTurmas(allTurmas);
           setMaterias(allMaterias);
         }
@@ -324,56 +299,6 @@ export default function Agenda() {
       }
     }
 
-    // PRIMEIRO: Verificar e atualizar vínculo se necessário
-    const vinculoExistente = vinculos.find(
-      v => v.professorId === professorId && v.materiaId === materiaId && v.turmaId === turmaIdOriginal
-    );
-
-    // Verificar se existe vínculo com mesma matéria e turma, mas professor diferente
-    const vinculoComProfessorDiferente = vinculos.find(
-      v => v.professorId !== professorId && v.materiaId === materiaId && v.turmaId === turmaIdOriginal
-    );
-
-    if (vinculoComProfessorDiferente) {
-      // Atualizar o vínculo existente substituindo o professor antigo pelo novo
-      await professorMateriaService.atualizar(vinculoComProfessorDiferente.id, {
-        professorId,
-        materiaId,
-        turmaId: turmaIdOriginal
-      });
-
-      // Atualizar todas as agendas existentes dessa turma/matéria para o novo professor
-      const agendasParaAtualizar = Object.values(agendaPorTurma)
-        .flat()
-        .filter(aula =>
-          aula.turmaId === turmaIdOriginal &&
-          aula.materiaId === materiaId &&
-          aula.id !== editId // Não atualizar a que está sendo editada agora
-        );
-
-      for (const agenda of agendasParaAtualizar) {
-        await agendaService.atualizar(agenda.id, {
-          ...agenda,
-          professorId // Atualizar com o novo professor
-        });
-      }
-
-      // Atualizar lista de vínculos local
-      const novosVinculos = await professorMateriaService.listar();
-      const turmaIds = new Set(turmas.map((t: Turma) => t.turmaOriginalId || t.id));
-      setVinculos(novosVinculos.filter((v: ProfessorMateria) => turmaIds.has(v.turmaId)));
-    } else if (!vinculoExistente) {
-      // Criar vínculo se não existir
-      await professorMateriaService.criar({
-        professorId,
-        materiaId,
-        turmaId: turmaIdOriginal
-      });
-      // Atualizar lista de vínculos
-      const novosVinculos = await professorMateriaService.listar();
-      const turmaIds = new Set(turmas.map((t: Turma) => t.turmaOriginalId || t.id));
-      setVinculos(novosVinculos.filter((v: ProfessorMateria) => turmaIds.has(v.turmaId)));
-    }
 
     // SEGUNDO: Verificar conflito de horários (após atualizar vínculo)
     const aulasConflitantes = Object.values(agendaPorTurma)
@@ -440,10 +365,7 @@ export default function Agenda() {
       setTurno('noite');
     }
 
-    const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
-    if (vinculo) {
-      setProfessorId(vinculo.professorId);
-    }
+    setProfessorId(item.professorId);
 
     setShowModal(true);
   };
@@ -473,7 +395,6 @@ export default function Agenda() {
       turmas,
       materias,
       professores,
-      vinculos,
       diasSemana
     });
   };
@@ -483,18 +404,14 @@ export default function Agenda() {
       dadosFiltrados,
       turmas,
       materias,
-      professores,
-      vinculos
+      professores
     });
   };
 
   const filtrarAulasPorProfessor = (aulas: Agenda[]) => {
-    return agendaService.filtrarAulasPorProfessor(aulas, filtroProfessorVisualizacao, vinculos);
+    return agendaService.filtrarAulasPorProfessor(aulas, filtroProfessorVisualizacao);
   };
 
-  const filtrarAulasPorTurno = (aulas: Agenda[]) => {
-    return agendaService.filtrarAulasPorTurno(aulas, filtroTurnoVisualizacao);
-  };
 
   const obterDadosFiltradosParaGrade = () => {
     if (!filtroTurnoVisualizacao) return [];
@@ -517,8 +434,7 @@ export default function Agenda() {
       }
 
       if (filtroProfessorVisualizacao) {
-        const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
-        if (vinculo?.professorId !== filtroProfessorVisualizacao) return false;
+        if (item.professorId !== filtroProfessorVisualizacao) return false;
       }
 
       return true;
@@ -557,8 +473,7 @@ export default function Agenda() {
     });
 
     const materia = materias.find(m => m.id === item.materiaId);
-    const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
-    const professor = professores.find(p => p.id === vinculo?.professorId);
+    const professor = professores.find(p => p.id === item.professorId);
 
     if (filtroBusca) {
       const termoBusca = filtroBusca.toLowerCase();
@@ -584,7 +499,7 @@ export default function Agenda() {
       }
     }
 
-    if (filtroProfessor && vinculo?.professorId !== filtroProfessor) return false;
+    if (filtroProfessor && item.professorId !== filtroProfessor) return false;
 
     if (filtroTurno) {
       const horarioInicio = item.horario.split(' - ')[0];
@@ -604,11 +519,8 @@ export default function Agenda() {
     const turmaB = turmas.find(t => t.id === b.turmaId)?.nome || '';
     const materiaA = materias.find(m => m.id === a.materiaId)?.nome || '';
     const materiaB = materias.find(m => m.id === b.materiaId)?.nome || '';
-
-    const vinculoA = vinculos.find(v => v.materiaId === a.materiaId && v.turmaId === a.turmaId);
-    const vinculoB = vinculos.find(v => v.materiaId === b.materiaId && v.turmaId === b.turmaId);
-    const professorA = vinculoA ? professores.find(p => p.id === vinculoA.professorId)?.nome || '' : '';
-    const professorB = vinculoB ? professores.find(p => p.id === vinculoB.professorId)?.nome || '' : '';
+    const professorA = professores.find(p => p.id === a.professorId)?.nome || '';
+    const professorB = professores.find(p => p.id === b.professorId)?.nome || '';
 
     switch (ordenacao) {
       case 'turno':
@@ -701,7 +613,6 @@ export default function Agenda() {
             turmas={turmas}
             materias={materias}
             professores={professores}
-            vinculos={vinculos}
             diasSemana={diasSemana}
             dadosPaginados={dadosPaginados}
             filtroBusca={filtroBusca}
@@ -737,7 +648,6 @@ export default function Agenda() {
             turmas={turmas}
             materias={materias}
             professores={professores}
-            vinculos={vinculos}
             agendaPorTurma={agendaPorTurma}
             diasSemana={diasSemana}
             filtroVisualizacaoTurma={filtroVisualizacaoTurma}
@@ -747,7 +657,6 @@ export default function Agenda() {
             filtroTurnoVisualizacao={filtroTurnoVisualizacao}
             setFiltroTurnoVisualizacao={setFiltroTurnoVisualizacao}
             filtrarAulasPorProfessor={filtrarAulasPorProfessor}
-            filtrarAulasPorTurno={filtrarAulasPorTurno}
             obterDadosFiltradosParaGrade={obterDadosFiltradosParaGrade}
             getTurnoFromHorario={getTurnoFromHorarioWrapper}
             getTurnoNome={getTurnoNome}
@@ -867,7 +776,7 @@ export default function Agenda() {
                 </p>
                 <div className="bg-light p-3 rounded mb-3">
                   <p className="mb-2">
-                    <strong>Professor:</strong> {professores.find(p => p.id === vinculos.find(v => v.materiaId === itemToDelete.materiaId && v.turmaId === itemToDelete.turmaId)?.professorId)?.nome || '---'}
+                    <strong>Professor:</strong> {professores.find(p => p.id === itemToDelete.professorId)?.nome || '---'}
                   </p>
                   <p className="mb-2">
                     <strong>Disciplina:</strong> {materias.find(m => m.id === itemToDelete.materiaId)?.nome || '-'}

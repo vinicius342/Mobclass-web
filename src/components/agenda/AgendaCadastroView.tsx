@@ -6,14 +6,12 @@ import type { Agenda } from '../../models/Agenda';
 import type { Turma } from '../../models/Turma';
 import type { Materia } from '../../models/Materia';
 import type { Professor } from '../../models/Professor';
-import type { ProfessorMateria } from '../../models/ProfessorMateria';
 
 interface AgendaCadastroViewProps {
   // Dados
   turmas: Turma[];
   materias: Materia[];
   professores: Professor[];
-  vinculos: ProfessorMateria[];
   diasSemana: string[];
   dadosPaginados: Agenda[];
   
@@ -56,7 +54,6 @@ export default function AgendaCadastroView({
   turmas,
   materias,
   professores,
-  vinculos,
   diasSemana,
   dadosPaginados,
   filtroBusca,
@@ -258,8 +255,7 @@ export default function AgendaCadastroView({
                 }
 
                 const materia = materias.find(m => m.id === item.materiaId);
-                const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
-                const professor = professores.find(p => p.id === vinculo?.professorId);
+                const professor = professores.find(p => p.id === item.professorId);
                 const turnoStyle = getShiftColor(turno);
 
                 // Buscar turma pelo id exato, se não encontrar, buscar virtualizada pelo turmaOriginalId
@@ -354,8 +350,7 @@ export default function AgendaCadastroView({
               }
 
               const materia = materias.find(m => m.id === item.materiaId);
-              const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
-              const professor = professores.find(p => p.id === vinculo?.professorId);
+              const professor = professores.find(p => p.id === item.professorId);
               const turma = turmas.find(t => t.id === item.turmaId);
 
               return (

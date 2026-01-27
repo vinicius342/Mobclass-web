@@ -29,19 +29,11 @@ interface Professor {
   nome: string;
 }
 
-interface Vinculo {
-  id: string;
-  professorId: string;
-  materiaId: string;
-  turmaId: string;
-}
-
 interface ExportPDFParams {
   dadosFiltrados: AgendaItem[];
   turmas: Turma[];
   materias: Materia[];
   professores: Professor[];
-  vinculos: Vinculo[];
   diasSemana: string[];
 }
 
@@ -50,7 +42,6 @@ interface ExportExcelParams {
   turmas: Turma[];
   materias: Materia[];
   professores: Professor[];
-  vinculos: Vinculo[];
 }
 
 /**
@@ -62,7 +53,6 @@ export const exportarAgendaPDF = ({
   turmas,
   materias,
   professores,
-  vinculos,
   diasSemana
 }: ExportPDFParams): void => {
   const doc = new jsPDF('landscape', 'mm', 'a4');
@@ -113,8 +103,7 @@ export const exportarAgendaPDF = ({
       }
 
       const materia = materias.find(m => m.id === aula.materiaId);
-      const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
-      const professor = professores.find(p => p.id === vinculo?.professorId);
+      const professor = professores.find(p => p.id === (aula as any).professorId);
 
       gradeHorarios[aula.diaSemana][aula.horario] = {
         materia: materia?.nome || '-',
@@ -195,8 +184,7 @@ export const exportarAgendaPDF = ({
     const professoresDaTurma = new Map<string, string[]>();
     aulasDaTurma.forEach(aula => {
       const materia = materias.find(m => m.id === aula.materiaId);
-      const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
-      const professor = professores.find(p => p.id === vinculo?.professorId);
+      const professor = professores.find(p => p.id === (aula as any).professorId);
       if (professor && materia) {
         if (!professoresDaTurma.has(professor.nome)) {
           professoresDaTurma.set(professor.nome, []);
@@ -274,15 +262,13 @@ export const exportarAgendaExcel = ({
   dadosFiltrados,
   turmas,
   materias,
-  professores,
-  vinculos
+  professores
 }: ExportExcelParams): void => {
   // Preparar dados para Excel
   const dadosParaExcel = dadosFiltrados.map(item => {
     const turma = turmas.find(t => t.id === item.turmaId);
     const materia = materias.find(m => m.id === item.materiaId);
-    const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
-    const professor = professores.find(p => p.id === vinculo?.professorId);
+    const professor = professores.find(p => p.id === (item as any).professorId);
 
     const horarioInicio = item.horario.split(' - ')[0];
     const hora = parseInt(horarioInicio.split(':')[0]);
@@ -335,7 +321,6 @@ export const exportarGradeTurnoPDF = ({
   turmas,
   materias,
   professores,
-  vinculos,
   diasSemana,
   turnoFiltro
 }: ExportPDFParams & { turnoFiltro: string }): void => {
@@ -379,8 +364,7 @@ export const exportarGradeTurnoPDF = ({
     aulasDaTurma.forEach(aula => {
       if (!gradeHorarios[aula.diaSemana]) gradeHorarios[aula.diaSemana] = {};
       const materia = materias.find(m => m.id === aula.materiaId);
-      const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
-      const professor = professores.find(p => p.id === vinculo?.professorId);
+      const professor = professores.find(p => p.id === (aula as any).professorId);
       gradeHorarios[aula.diaSemana][aula.horario] = {
         materia: materia?.nome || '-',
         professor: professor?.nome || '---'
@@ -443,8 +427,7 @@ export const exportarGradeTurnoPDF = ({
     const professoresDaTurma = new Map<string, string[]>();
     aulasDaTurma.forEach(aula => {
       const materia = materias.find(m => m.id === aula.materiaId);
-      const vinculo = vinculos.find(v => v.materiaId === aula.materiaId && v.turmaId === aula.turmaId);
-      const professor = professores.find(p => p.id === vinculo?.professorId);
+      const professor = professores.find(p => p.id === (aula as any).professorId);
       if (professor && materia) {
         if (!professoresDaTurma.has(professor.nome)) {
           professoresDaTurma.set(professor.nome, []);
@@ -517,14 +500,12 @@ export const exportarGradeTurnoExcel = ({
   turmas,
   materias,
   professores,
-  vinculos,
   turnoNome
 }: Omit<ExportExcelParams, 'dadosFiltrados'> & { dadosFiltrados: AgendaItem[]; turnoNome: string }): void => {
   const dadosGrade = dadosFiltrados.map(item => {
     const turma = turmas.find(t => t.id === item.turmaId);
     const materia = materias.find(m => m.id === item.materiaId);
-    const vinculo = vinculos.find(v => v.materiaId === item.materiaId && v.turmaId === item.turmaId);
-    const professor = professores.find(p => p.id === vinculo?.professorId);
+    const professor = professores.find(p => p.id === (item as any).professorId);
 
     return {
       'Turma': turma?.nome || '-',

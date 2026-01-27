@@ -8,14 +8,12 @@ import type { Agenda } from '../../models/Agenda';
 import type { Turma } from '../../models/Turma';
 import type { Materia } from '../../models/Materia';
 import type { Professor } from '../../models/Professor';
-import type { ProfessorMateria } from '../../models/ProfessorMateria';
 
 interface AgendaGradeViewProps {
   // Dados
   turmas: Turma[];
   materias: Materia[];
   professores: Professor[];
-  vinculos: ProfessorMateria[];
   agendaPorTurma: Record<string, Agenda[]>;
   diasSemana: string[];
 
@@ -29,7 +27,6 @@ interface AgendaGradeViewProps {
 
   // Funções de filtro
   filtrarAulasPorProfessor: (aulas: Agenda[]) => Agenda[];
-  filtrarAulasPorTurno: (aulas: Agenda[]) => Agenda[];
   obterDadosFiltradosParaGrade: () => Agenda[];
 
   // Funções de formatação
@@ -58,7 +55,6 @@ export default function AgendaGradeView({
   turmas,
   materias,
   professores,
-  vinculos,
   agendaPorTurma,
   diasSemana,
   filtroVisualizacaoTurma,
@@ -68,7 +64,6 @@ export default function AgendaGradeView({
   filtroTurnoVisualizacao,
   setFiltroTurnoVisualizacao,
   filtrarAulasPorProfessor,
-  filtrarAulasPorTurno,
   obterDadosFiltradosParaGrade,
   getTurnoFromHorario,
   getTurnoNome,
@@ -164,7 +159,6 @@ export default function AgendaGradeView({
                   turmas,
                   materias,
                   professores,
-                  vinculos,
                   diasSemana,
                   turnoFiltro: filtroTurnoVisualizacao
                 });
@@ -177,7 +171,6 @@ export default function AgendaGradeView({
                   turmas,
                   materias,
                   professores,
-                  vinculos,
                   turnoNome: getTurnoNome(filtroTurnoVisualizacao)
                 });
               }}>
@@ -207,7 +200,6 @@ export default function AgendaGradeView({
           .filter(t => {
             let aulasDaTurma = agendaPorTurma[t.id] || [];
             aulasDaTurma = filtrarAulasPorProfessor(aulasDaTurma);
-            aulasDaTurma = filtrarAulasPorTurno(aulasDaTurma);
             return aulasDaTurma.length > 0;
           })
           .sort((a, b) => a.nome.localeCompare(b.nome));
@@ -228,7 +220,6 @@ export default function AgendaGradeView({
         return turmasComAulas.map(t => {
           let aulasDaTurma = agendaPorTurma[t.id] || [];
           aulasDaTurma = filtrarAulasPorProfessor(aulasDaTurma);
-          aulasDaTurma = filtrarAulasPorTurno(aulasDaTurma);
 
           return (
             <Card key={t.id} className="mb-4 shadow-sm">
@@ -299,7 +290,7 @@ export default function AgendaGradeView({
                                         </div>
                                         <div className="mb-2" style={{ color: 'black', fontSize: '0.7rem', opacity: 0.8 }}>
                                           {(() => {
-                                            const professor = professores.find(p => p.id === vinculos.find(v => v.materiaId === a.materiaId && v.turmaId === a.turmaId)?.professorId);
+                                            const professor = professores.find(p => p.id === a.professorId);
                                             return formatarNomeProfessor(professor?.nome);
                                           })()}
                                         </div>
@@ -486,8 +477,7 @@ export default function AgendaGradeView({
                                 else turnoClass = 'noite';
 
                                 const materia = materias.find(m => m.id === a.materiaId);
-                                const vinculo = vinculos.find(v => v.materiaId === a.materiaId && v.turmaId === a.turmaId);
-                                const professor = professores.find(p => p.id === vinculo?.professorId);
+                                const professor = professores.find(p => p.id === a.professorId);
 
                                 return (
                                   <div key={idx} className="turno-aula-card">

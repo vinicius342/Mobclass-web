@@ -1,3 +1,7 @@
+  /**
+   * Retorna um array de IDs de matérias vinculadas a um professor (sem duplicidade)
+   */
+  
 import { IProfessorMateriaRepository } from '../../repositories/professor_materia/IProfessorMateriaRepository';
 import { ProfessorMateria } from '../../models/ProfessorMateria';
 
@@ -91,6 +95,13 @@ export class ProfessorMateriaService {
     return vinculos
       .filter(v => v.materiaId === materiaId && v.turmaId === turmaId)
       .map(v => v.professorId);
+  }
+
+  async listarMateriasPorProfessor(professorId: string): Promise<string[]> {
+    const vinculos = await this.listarPorProfessor(professorId);
+    // Extrai apenas os materiaId únicos
+    const materiaIds = Array.from(new Set(vinculos.map(v => v.materiaId)));
+    return materiaIds;
   }
 
   /**
