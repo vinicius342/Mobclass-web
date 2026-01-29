@@ -43,7 +43,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 interface UsuarioBase { id: string; nome: string; email: string; status: string; dataCriacao?: any; }
-interface Professor extends UsuarioBase { turmas: string[]; }
+interface Professor extends UsuarioBase { turmas: string[]; polivalente?: boolean; }
 interface Aluno extends UsuarioBase { turmaId?: string; responsavelId?: string; modoAcesso?: string; }
 
 export default function Usuarios(): JSX.Element {
@@ -56,7 +56,6 @@ export default function Usuarios(): JSX.Element {
   const responsavelService = useMemo(() => new ResponsavelService(new FirebaseResponsavelRepository()), []);
   const administradorService = useMemo(() => new AdministradorService(new FirebaseAdministradorRepository()), []);
   const userService = useMemo(() => new UserService(new FirebaseUserRepository()), []);
-
   const [activeTab, setActiveTab] = useState<'todos' | 'professores' | 'alunos' | 'responsaveis' | 'administradores'>('todos');
   const [search, setSearch] = useState('');
   const [professores, setProfessores] = useState<Professor[]>([]);
@@ -715,7 +714,7 @@ export default function Usuarios(): JSX.Element {
       turmaId: user.turmaId,
       modoAcesso: user.modoAcesso || 'aluno'
     }),
-    ...(tipoUsuario === 'professores' && { turmas: user.turmas, materias: materiasVinculadas }),
+    ...(tipoUsuario === 'professores' && { turmas: user.turmas, materias: materiasVinculadas, polivalente: user.polivalente ?? false }),
     ...(tipoUsuario === 'responsaveis' && { filhos: user.filhos }),
     ...(user.id && { id: user.id }),
   };
@@ -883,6 +882,7 @@ export default function Usuarios(): JSX.Element {
       // Normalizar email para lowercase antes de salvar
       const emailNormalizado = data.email.toLowerCase().trim();
 
+      console.log('Salvando usuário com dados:', data);
       const userDataBase = {
         nome: data.nome,
         status: (data as any).status || 'Ativo',
@@ -890,7 +890,7 @@ export default function Usuarios(): JSX.Element {
           turmaId: turmaIdFinal,
           modoAcesso: data.modoAcesso || 'aluno'
         }),
-        ...(data.tipoUsuario === 'professores' && { turmas: turmasFinal }),
+        ...(data.tipoUsuario === 'professores' && { turmas: turmasFinal, polivalente: !!data.polivalente }),
         ...(data.tipoUsuario === 'responsaveis' && { filhos: data.filhos }),
         ...(formMode === 'add' && { dataCriacao: new Date() }),
       };

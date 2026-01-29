@@ -78,7 +78,14 @@ export class TarefaService {
     if (status === 'concluida') {
       updateData.dataConclusao = new Date().toISOString();
     } else {
-      updateData.dataConclusao = undefined;
+      // Remover o campo dataConclusao do objeto para não enviar undefined
+      // Se já existe, será removido do documento
+      // Firebase não aceita undefined, mas aceita omissão do campo
+      // updateData.dataConclusao = undefined;
+      // Alternativa: usar deleteField do Firestore
+      if ('dataConclusao' in updateData) {
+        delete updateData.dataConclusao;
+      }
     }
 
     if (entregaExistente) {
@@ -426,6 +433,15 @@ export class TarefaService {
    */
   formatarDataBR(data: string): string {
     if (!data) return '-';
+    // Detecta formato YYYY-MM-DD
+    const match = /^\d{4}-\d{2}-\d{2}$/.exec(data);
+    if (match) {
+      const [year, month, day] = data.split('-');
+      // Cria Date no fuso local
+      const d = new Date(Number(year), Number(month) - 1, Number(day));
+      return d.toLocaleDateString('pt-BR');
+    }
+    // Fallback para outros formatos
     const d = new Date(data);
     if (isNaN(d.getTime())) return data;
     return d.toLocaleDateString('pt-BR');

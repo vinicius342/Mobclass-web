@@ -1,3 +1,5 @@
+import { FirebaseAgendaRepository } from '../repositories/agenda/FirebaseAgendaRepository';
+import { AgendaService } from '../services/data/AgendaService';
 // src/pages/Frequencia.tsx - Corrigido para usar professores_materias
 import { JSX, useEffect, useState } from 'react';
 import {
@@ -33,6 +35,8 @@ const professorMateriaService = new ProfessorMateriaService(professorMateriaRepo
 import FrequenciaRelatorios from '../components/frequencia/FrequenciaRelatorios';
 
 export default function Frequencia(): JSX.Element {
+  // Instanciar agendaService
+  const agendaService = new AgendaService(new FirebaseAgendaRepository());
   const { userData } = useAuth()!;
   const { anoLetivo } = useAnoLetivoAtual();
   const isAdmin = userData?.tipo === 'administradores';
@@ -40,8 +44,28 @@ export default function Frequencia(): JSX.Element {
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [materias, setMaterias] = useState<Materia[]>([]);
   const [vinculos, setVinculos] = useState<ProfessorMateria[]>([]);
+  const [isPolivalente, setIsPolivalente] = useState<boolean>(false);
+  const [turmaSelecionada, setTurmaSelecionada] = useState<string>('');
+  const [dataSelecionada, setDataSelecionada] = useState<string>('');
+  const [materiasDoDia, setMateriasDoDia] = useState<Materia[]>([]);
+  const handleTurmaSelecionada = (id: string) => setTurmaSelecionada(id);
+  const handleDataSelecionada = (data: string) => setDataSelecionada(data);
 
   const [toast, setToast] = useState<{ show: boolean; message: string; variant: 'success' | 'danger' | 'warning' }>({ show: false, message: '', variant: 'success' });
+
+  // Verificar se o professor logado é polivalente
+  useEffect(() => {
+    async function checkPolivalente() {
+      if (userData?.tipo === 'professores' && userData?.email) {
+        const professores = await professorService.listar();
+        const prof = professores.find((p: any) => p.email === userData.email);
+        setIsPolivalente(!!prof?.polivalente);
+      } else {
+        setIsPolivalente(false);
+      }
+    }
+    checkPolivalente();
+  }, [userData]);
 
   useEffect(() => {
     async function fetchData() {
@@ -54,23 +78,18 @@ export default function Frequencia(): JSX.Element {
         setMaterias(materias);
       } else {
         if (!userData?.email) return;
-        
         const allProfessores = await professorService.listar();
         const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
-        
         if (!professorAtual) {
           console.error('Professor não encontrado com email:', userData.email);
           return;
         }
-        
         const vincList = await professorMateriaService.listarPorProfessor(professorAtual.id);
         setVinculos(vincList);
-
         const turmaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.turmaId))];
         const todasTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
         const turmasFiltradas = todasTurmas.filter((t: Turma) => turmaIds.includes(t.id));
         setTurmas(turmasFiltradas.sort((a, b) => a.nome.localeCompare(b.nome)));
-
         const materiaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.materiaId))];
         const todasMaterias = await materiaService.listar();
         const materiasFiltradas = todasMaterias.filter((m: Materia) => materiaIds.includes(m.id));
@@ -79,6 +98,44 @@ export default function Frequencia(): JSX.Element {
     }
     fetchData();
   }, [userData, anoLetivo, isAdmin]);
+
+  // Efeito para checar agenda se professor é polivalente e turma/data selecionados
+  useEffect(() => {
+    async function checkAgendaPolivalente() {
+      if (isPolivalente && turmaSelecionada && dataSelecionada && userData?.uid) {
+        console.log('Verificando agenda para professor polivalente...', { isPolivalente, turmaSelecionada, dataSelecionada, userData });
+        // Converter dataSelecionada para nome do dia da semana
+        const diasSemana = [
+          'Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira',
+          'Quinta-feira', 'Sexta-feira', 'Sábado'
+        ];
+        const [ano, mes, dia] = dataSelecionada.split('-').map(Number);
+        const dataObj = new Date(ano, mes - 1, dia); // mês começa do zero!
+        const nomeDiaSemana = diasSemana[dataObj.getDay()];
+
+        // Buscar agendas da turma selecionada
+        const agendas = await agendaService.listarPorTurma(turmaSelecionada);
+
+        // Filtrar agendas do professor no dia da semana selecionado
+        const atividadesNoDia = agendas.filter(
+          a => a.professorId === userData.uid && a.diaSemana === nomeDiaSemana
+        );
+
+        const materiasIdsNoDia = [...new Set(atividadesNoDia.map(a => a.materiaId))];
+
+        const materiasFiltradas = materias.filter(m => materiasIdsNoDia.includes(m.id));
+        setMateriasDoDia(materiasFiltradas);
+
+        if (atividadesNoDia.length > 0) {
+          console.log('Atividades do professor polivalente no dia:', atividadesNoDia);
+        } else {
+          console.log({ return: 'Nenhuma atividade encontrada para o professor polivalente neste dia.' });
+          setMateriasDoDia(materias);
+        }
+      }
+    }
+    checkAgendaPolivalente();
+  }, [isPolivalente, turmaSelecionada, dataSelecionada, userData, materias]);
 
   // Tabs
   const [activeTab, setActiveTab] = useState<'lancamento-frequencia' | 'relatorios-frequencia'>('lancamento-frequencia');
@@ -164,10 +221,13 @@ export default function Frequencia(): JSX.Element {
           {activeTab === 'lancamento-frequencia' ? (
             <FrequenciaLancamento
               turmas={turmas}
-              materias={materias}
+              materias={isPolivalente ? materiasDoDia : materias}
               vinculos={vinculos}
+              isPolivalente={isPolivalente}
               isAdmin={isAdmin}
               userData={userData}
+              onTurmaSelecionada={handleTurmaSelecionada}
+              onDataSelecionada={handleDataSelecionada}
             />
           ) : (
             <FrequenciaRelatorios

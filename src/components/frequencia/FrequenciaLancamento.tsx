@@ -34,7 +34,10 @@ interface FrequenciaLancamentoProps {
   materias: Materia[];
   vinculos: ProfessorMateria[];
   isAdmin: boolean;
+  isPolivalente?: boolean;
   userData: any;
+  onTurmaSelecionada: (id: string) => void;
+  onDataSelecionada: (data: string) => void;
 }
 
 export default function FrequenciaLancamento({
@@ -42,7 +45,10 @@ export default function FrequenciaLancamento({
   materias,
   vinculos,
   isAdmin,
-  userData
+  userData,
+  isPolivalente = false,
+  onTurmaSelecionada,
+  onDataSelecionada
 }: FrequenciaLancamentoProps): JSX.Element {
   // Inicializar services
   const frequenciaService = useMemo(
@@ -179,27 +185,44 @@ export default function FrequenciaLancamento({
 
   const handleSalvar = async () => {
     if (!turmaId || !materiaId || !dataAula || !alunos.length || Object.keys(attendance).length === 0) return;
-    
-    setSaving(true);
-    
-    try {
-      const frequenciasParaSalvar = frequenciaService.prepararFrequenciasComJustificativas(
-        alunos.map(a => ({ id: a.id, nome: a.nome })),
-        turmaId,
-        materiaId,
-        dataAula,
-        userData?.uid || '',
-        attendance,
-        justificativas
-      );
 
-      await frequenciaService.salvarFrequencias(frequenciasParaSalvar);
-      setToast({ show: true, message: 'Frequência salva com sucesso!', variant: 'success' });
+    setSaving(true);
+
+    try {
+      if (materiaId === "todas" && isPolivalente) {
+        // Salva frequência para todas as matérias do dia
+        for (const materia of materias) {
+          const frequenciasParaSalvar = frequenciaService.prepararFrequenciasComJustificativas(
+            alunos.map(a => ({ id: a.id, nome: a.nome })),
+            turmaId,
+            materia.id,
+            dataAula,
+            userData?.uid || '',
+            attendance,
+            justificativas
+          );
+          await frequenciaService.salvarFrequencias(frequenciasParaSalvar);
+        }
+        setToast({ show: true, message: 'Frequência salva para todas as matérias do dia!', variant: 'success' });
+      } else {
+        // Fluxo normal
+        const frequenciasParaSalvar = frequenciaService.prepararFrequenciasComJustificativas(
+          alunos.map(a => ({ id: a.id, nome: a.nome })),
+          turmaId,
+          materiaId,
+          dataAula,
+          userData?.uid || '',
+          attendance,
+          justificativas
+        );
+        await frequenciaService.salvarFrequencias(frequenciasParaSalvar);
+        setToast({ show: true, message: 'Frequência salva com sucesso!', variant: 'success' });
+      }
     } catch (err) {
       console.error('Erro ao salvar frequência:', err);
       setToast({ show: true, message: 'Falha ao salvar frequência.', variant: 'danger' });
     }
-    
+
     setSaving(false);
   };
 
@@ -235,10 +258,10 @@ export default function FrequenciaLancamento({
       professorId: userData?.uid || ''
     }));
 
-    const filtroTipo = filtroAlunos === 'todos' ? 'todos' 
-      : filtroAlunos === 'presentes' ? 'presentes' 
-      : filtroAlunos === 'ausentes' ? 'ausentes'
-      : 'todos';
+    const filtroTipo = filtroAlunos === 'todos' ? 'todos'
+      : filtroAlunos === 'presentes' ? 'presentes'
+        : filtroAlunos === 'ausentes' ? 'ausentes'
+          : 'todos';
 
     return frequenciaService.filtrarAlunosPorNome(
       alunos.map(a => ({ id: a.id, nome: a.nome })),
@@ -252,6 +275,9 @@ export default function FrequenciaLancamento({
   function handleDateChange(date: Date | null) {
     if (!date) {
       setDataAula("");
+      if (typeof onDataSelecionada === 'function') {
+        onDataSelecionada("");
+      }
       return;
     }
 
@@ -262,6 +288,9 @@ export default function FrequenciaLancamento({
     }
 
     setDataAula(selectedDateISO);
+    if (typeof onDataSelecionada === 'function') {
+      onDataSelecionada(selectedDateISO);
+    }
   }
 
   type CustomDateInputProps = {
@@ -317,6 +346,9 @@ export default function FrequenciaLancamento({
               onChange={e => {
                 setTurmaId(e.target.value);
                 setMateriaId('');
+                if (typeof onTurmaSelecionada === 'function') {
+                  onTurmaSelecionada(e.target.value);
+                }
               }}
             >
               <option value="">Selecione a Turma</option>
@@ -325,34 +357,6 @@ export default function FrequenciaLancamento({
                   {t.nome}
                 </option>
               ))}
-            </Form.Select>
-          </Col>
-
-          <Col md={4}>
-            <Form.Select
-              value={materiaId}
-              onChange={e => setMateriaId(e.target.value)}
-              disabled={!turmaId}
-            >
-              <option value="">Selecione a Matéria</option>
-              {isAdmin
-                ? materias
-                  .filter(m => m && m.nome)
-                  .map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.nome}
-                    </option>
-                  ))
-                : (() => {
-                    const materiaIds = professorMateriaService.obterMateriaIdsDaTurma(vinculos, turmaId);
-                    return materias
-                      .filter(m => materiaIds.includes(m.id))
-                      .map(m => (
-                        <option key={m.id} value={m.id}>
-                          {m.nome}
-                        </option>
-                      ));
-                  })()}
             </Form.Select>
           </Col>
 
@@ -368,6 +372,37 @@ export default function FrequenciaLancamento({
               autoComplete="off"
               wrapperClassName="w-100"
             />
+          </Col>
+
+          <Col md={4}>
+            <Form.Select
+              value={materiaId}
+              onChange={e => setMateriaId(e.target.value)}
+              disabled={!turmaId || !dataAula}
+            >
+              <option value="">Selecione a Matéria</option>
+              {isPolivalente && materias.length > 0 && (
+                <option value="todas">Todas as Matérias do Dia</option>
+              )}
+              {isAdmin
+                ? materias
+                  .filter(m => m && m.nome)
+                  .map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.nome}
+                    </option>
+                  ))
+                : (() => {
+                  const materiaIds = professorMateriaService.obterMateriaIdsDaTurma(vinculos, turmaId);
+                  return materias
+                    .filter(m => materiaIds.includes(m.id))
+                    .map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.nome}
+                      </option>
+                    ));
+                })()}
+            </Form.Select>
           </Col>
         </Row>
         <Row className="mb-2 justify-content-end d-none d-md-flex">
