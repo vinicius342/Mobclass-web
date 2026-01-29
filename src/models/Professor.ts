@@ -4,5 +4,6 @@ export interface Professor {
   email: string;
   status: string;
   turmas: string[];
+  polivalente: boolean;
   dataCriacao?: Date;
 }

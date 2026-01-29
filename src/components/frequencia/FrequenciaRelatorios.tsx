@@ -152,11 +152,20 @@ export default function FrequenciaRelatorios({ turmas, materias, anoLetivo, onTo
       });
 
       // Calcular top 5 alunos usando service
-      const topAlunos = frequenciaService.calcularTopAlunosPresenca(
+      const topAlunosRaw = frequenciaService.calcularTopAlunosPresenca(
         registrosFiltrados,
         listaAlunos.map(a => ({ id: a.id, nome: a.nome })),
         5
       );
+      // Garantir que cada item tenha id, nome e percentual
+      const topAlunos = topAlunosRaw.map(a => {
+        const aluno = listaAlunos.find(al => al.nome === a.nome);
+        return {
+          id: aluno ? aluno.id : '',
+          nome: a.nome,
+          percentual: a.percentual
+        };
+      });
       setMelhoresAlunosGrafico(topAlunos);
 
     } catch (error) {

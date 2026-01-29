@@ -34,6 +34,7 @@ export class FirebaseProfessorRepository implements IProfessorRepository {
   async create(professor: Omit<Professor, 'id'>): Promise<string> {
     const docRef = await addDoc(collection(db, this.collectionName), {
       ...professor,
+      polivalente: !!professor.polivalente,
       dataCriacao: professor.dataCriacao ? Timestamp.fromDate(professor.dataCriacao) : Timestamp.now()
     });
     return docRef.id;
@@ -42,11 +43,12 @@ export class FirebaseProfessorRepository implements IProfessorRepository {
   async update(id: string, professor: Partial<Omit<Professor, 'id'>>): Promise<void> {
     const docRef = doc(db, this.collectionName, id);
     const updateData: any = { ...professor };
-    
+    if (typeof professor.polivalente !== 'undefined') {
+      updateData.polivalente = !!professor.polivalente;
+    }
     if (professor.dataCriacao) {
       updateData.dataCriacao = Timestamp.fromDate(professor.dataCriacao);
     }
-    
     await updateDoc(docRef, updateData);
   }
 
@@ -63,6 +65,7 @@ export class FirebaseProfessorRepository implements IProfessorRepository {
       email: data.email,
       status: data.status,
       turmas: data.turmas || [],
+      polivalente: !!data.polivalente,
       dataCriacao: data.dataCriacao?.toDate() || new Date()
     };
   }

@@ -670,7 +670,9 @@ export default function TarefasAcompanhamento({
                                     background: '#22c55e',
                                     color: '#fff',
                                     fontWeight: 600,
-                                    border: '2px solid #22c55e'
+                                    borderTop: '2px solid #22c55e',
+                                    borderBottom: '2px solid #22c55e',
+                                    borderLeft: '2px solid #22c55e'
                                   }
                                   : {
                                     flex: 1,
@@ -695,7 +697,9 @@ export default function TarefasAcompanhamento({
                                     background: '#dc3545',
                                     color: '#fff',
                                     fontWeight: 600,
-                                    border: '2px solid #dc3545'
+                                    borderTop: '2px solid #dc3545',
+                                    borderBottom: '2px solid #dc3545',
+                                    borderRight: '2px solid #dc3545'
                                   }
                                   : {
                                     flex: 1,

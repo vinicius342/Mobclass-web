@@ -29,6 +29,7 @@ export interface FormValues {
   filhos: string[];
   modoAcesso: 'aluno' | 'responsavel';
   materias: string[];
+  polivalente?: boolean;
   emailParaAuth?: string;
 }
 
@@ -69,6 +70,7 @@ const schema = yup.object({
     then: a => a.min(1, 'Selecione ao menos 1 matéria'),
     otherwise: a => a.strip()
   }),
+  polivalente: yup.boolean().optional(),
 
   filhos: yup.array(yup.string().defined()).when('tipoUsuario', {
     is: 'responsaveis',
@@ -111,6 +113,7 @@ export default function UsuarioForm({
       filhos: defaultValues.filhos ?? [],
       modoAcesso: defaultValues.modoAcesso ?? 'aluno',
       materias: defaultValues.materias ?? [],
+      polivalente: defaultValues.polivalente ?? false,
     },
   });
 
@@ -126,6 +129,7 @@ export default function UsuarioForm({
       filhos: defaultValues.filhos ?? [],
       modoAcesso: defaultValues.modoAcesso ?? 'aluno',
       materias: defaultValues.materias ?? [],
+      polivalente: defaultValues.polivalente ?? false,
     });
   }, [defaultValues, reset]);
 
@@ -292,23 +296,39 @@ export default function UsuarioForm({
       </Form.Group>
 
       <Form.Group controlId="usuario-status" className="mb-3">
-        {/* Status - Switch Button */}
-        <div className="d-flex align-items-center mb-3 p-3 border rounded">
-          <span className="me-2" style={{ fontWeight: 'bold' }}>Status:</span>
-          <Form.Check
-            type="switch"
-            id="status-switch"
-            checked={status === 'Ativo'}
-            onChange={(e) => {
-              const newStatus = e.target.checked ? 'Ativo' : 'Inativo';
-              setStatus(newStatus);
-            }}
-            className="mx-2"
-            style={{ transform: 'scale(1.4)' }}
-          />
-          <span className={status === 'Ativo' ? 'text-success fw-bold' : 'text-danger fw-bold'}>
-            {status}
-          </span>
+        {/* Status e Polivalente juntos */}
+        <div className="d-flex align-items-center mb-3 p-3 border rounded" style={{ gap: 24 }}>
+          <div className="d-flex" style={{ gap: 24, borderRight: '1px solid #ccc' }}>
+            <span className="me-1" style={{ fontWeight: 'bold' }}>Status:</span>
+            <Form.Check
+              type="switch"
+              id="status-switch"
+              checked={status === 'Ativo'}
+              onChange={(e) => {
+                const newStatus = e.target.checked ? 'Ativo' : 'Inativo';
+                setStatus(newStatus);
+              }}
+              className="mx-1"
+              style={{ transform: 'scale(1.4)' }}
+            />
+            <span className={status === 'Ativo' ? 'text-success fw-bold' : 'text-danger fw-bold'} style={{ marginRight: 24 }}>
+              {status}
+            </span>
+          </div>
+          {/* Checkbox Polivalente só para professores */}
+          {tipo === 'professores' && (
+            <>
+              <span className="me-1" style={{ fontWeight: 'bold' }}>Polivalente:</span>
+              <Form.Check
+                type="switch"
+                id="usuario-polivalente"
+                {...register('polivalente')}
+                defaultChecked={!!defaultValues.polivalente}
+                className="ms-1"
+                style={{ transform: 'scale(1.4)' }}
+              />
+            </>
+          )}
         </div>
       </Form.Group>
 
