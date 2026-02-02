@@ -1,8 +1,7 @@
 import { JSX, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, collection, addDoc } from 'firebase/firestore';
-import { auth, db } from '../services/firebase/firebase';
+import { UserService } from '../services/usuario/UserService';
+import { FirebaseUserRepository } from '../repositories/user/FirebaseUserRepository';
 import logo from '../assets/logo.png';
 import {
   Container,
@@ -14,6 +13,8 @@ import {
   Row,
   Col
 } from 'react-bootstrap';
+
+const userService = new UserService(new FirebaseUserRepository());
 
 export default function Register(): JSX.Element {
   const [email, setEmail] = useState('');
@@ -52,31 +53,17 @@ export default function Register(): JSX.Element {
     }
 
     try {
-      // Criar usuário no Firebase Auth
-      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), senha);
-      const user = userCredential.user;
-
-      // Criar documento na coleção users
-      await setDoc(doc(db, 'users', user.uid), {
-        uid: user.uid,
-        email: email.trim(),
-        nome: nome.trim(),
-        tipo: tipo,
-        firstAcesso: true,
-        criadoEm: new Date(),
-        status: 'Ativo'
-      });
-
-      // Criar documento na coleção específica do tipo (mesmos campos da Cloud Function)
-      await addDoc(collection(db, tipo), {
+      await userService.criarUsuario({
         nome: nome.trim(),
         email: email.trim(),
+        tipoUsuario: tipo,
         status: 'Ativo',
-        dataCriacao: new Date(),
-        // Campos específicos por tipo
-        ...(tipo === 'alunos' && { turmaId: '' }),
-        ...(tipo === 'professores' && { turmas: [] }),
-        ...(tipo === 'responsaveis' && { filhos: [] })
+        turmaId: tipo === 'alunos' ? '' : null,
+        filhos: tipo === 'responsaveis' ? [] : [],
+        turmas: tipo === 'professores' ? [] : [],
+        polivalente: false,
+        modoAcesso: 'portal',
+        dataCriacao: new Date().toISOString(),
       });
 
       setSucesso('Usuário criado com sucesso! Redirecionando para login...');
@@ -88,20 +75,7 @@ export default function Register(): JSX.Element {
 
     } catch (error: any) {
       console.error('Erro ao criar usuário:', error);
-      
-      switch (error.code) {
-        case 'auth/email-already-in-use':
-          setErro('Este email já está em uso.');
-          break;
-        case 'auth/invalid-email':
-          setErro('Email inválido.');
-          break;
-        case 'auth/weak-password':
-          setErro('Senha muito fraca.');
-          break;
-        default:
-          setErro('Erro ao criar usuário. Tente novamente.');
-      }
+      setErro(error?.message || 'Erro ao criar usuário. Tente novamente.');
     }
     
     setCarregando(false);

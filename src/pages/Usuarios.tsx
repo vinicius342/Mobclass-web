@@ -8,8 +8,7 @@ import {
 } from 'react-bootstrap';
 import { PlusCircle, Person } from 'react-bootstrap-icons';
 import Paginacao from '../components/common/Paginacao';
-import { updateDoc, doc, writeBatch, getDocs, collection, getDoc } from 'firebase/firestore';
-import { db } from '../services/firebase/firebase';
+// Firestore é acessado apenas através dos serviços/repositórios
 import UsuarioForm, { FormValues, AlunoOption } from '../components/usuarios/UsuarioForm';
 import { GraduationCap, Download, Users } from 'lucide-react';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
@@ -28,7 +27,7 @@ import { ResponsavelService } from '../services/usuario/ResponsavelService';
 import { FirebaseResponsavelRepository } from '../repositories/responsavel/FirebaseResponsavelRepository';
 import { AdministradorService } from '../services/usuario/AdministradorService';
 import { FirebaseAdministradorRepository } from '../repositories/administrador/FirebaseAdministradorRepository';
-import { UserService } from '../services/usuario/UserService';
+import { UserService, UsuariosService, type AbaUsuarios, type ContextoUsuarios, type FiltrosUsuarios } from '../services/usuario/UserService';
 import { FirebaseUserRepository } from '../repositories/user/FirebaseUserRepository';
 import { turmaService } from '../services/data/TurmaService';
 import { isTurmaVirtualizada } from '../utils/turmasHelpers';
@@ -56,7 +55,7 @@ export default function Usuarios(): JSX.Element {
   const responsavelService = useMemo(() => new ResponsavelService(new FirebaseResponsavelRepository()), []);
   const administradorService = useMemo(() => new AdministradorService(new FirebaseAdministradorRepository()), []);
   const userService = useMemo(() => new UserService(new FirebaseUserRepository()), []);
-  const [activeTab, setActiveTab] = useState<'todos' | 'professores' | 'alunos' | 'responsaveis' | 'administradores'>('todos');
+  const [activeTab, setActiveTab] = useState<AbaUsuarios>('todos');
   const [search, setSearch] = useState('');
   const [professores, setProfessores] = useState<Professor[]>([]);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
@@ -101,77 +100,22 @@ export default function Usuarios(): JSX.Element {
   // Funções de exportação
   // Retorna a lista filtrada completa, sem paginação
   const getFilteredUsersList = () => {
-    let list: any[] = [];
-    if (activeTab === 'todos') {
-      list = [
-        ...professores.map(p => ({ ...p, tipoUsuario: 'professores' })),
-        ...alunos.map(a => ({ ...a, tipoUsuario: 'alunos' })),
-        ...responsaveis.map(r => ({ ...r, tipoUsuario: 'responsaveis' })),
-        ...administradores.map(adm => ({ ...adm, tipoUsuario: 'administradores' }))
-      ];
-    } else {
-      list = activeTab === 'professores'
-        ? professores
-        : activeTab === 'alunos'
-          ? alunos
-          : activeTab === 'responsaveis'
-            ? responsaveis
-            : administradores;
-    }
-    // Aplicar filtros (igual ao getCurrentUsersList, mas sem slice)
-    list = list.filter(u => {
-      const searchLower = search.toLowerCase();
-      const nameMatch = u.nome.toLowerCase().includes(searchLower);
-      const emailMatch = u.email.toLowerCase().includes(searchLower);
-      let infoMatch = false;
-      if (u.tipoUsuario === 'responsaveis' || (activeTab === 'responsaveis')) {
-        const responsavel = u as any;
-        if (responsavel.filhos && responsavel.filhos.length > 0) {
-          infoMatch = responsavel.filhos.some((filhoId: string) => {
-            const aluno = alunos.find(a => a.id === filhoId);
-            return aluno && aluno.nome.toLowerCase().includes(searchLower);
-          });
-        }
-      } else if ((u.tipoUsuario === 'alunos' || activeTab === 'alunos') && (u as any).turmaId) {
-        const turma = turmas.find(t => t.id === (u as any).turmaId);
-        infoMatch = !!(turma && turma.nome.toLowerCase().includes(searchLower));
-      } else if (u.tipoUsuario === 'professores' || activeTab === 'professores') {
-        const professor = u as any;
-        if (professor.turmas && professor.turmas.length > 0) {
-          infoMatch = professor.turmas.some((turmaId: string) => {
-            const turma = turmas.find(t => t.id === turmaId);
-            return turma && turma.nome.toLowerCase().includes(searchLower);
-          });
-        }
-      }
-      return nameMatch || emailMatch || infoMatch;
-    });
+    const contexto: ContextoUsuarios = {
+      professores,
+      alunos,
+      responsaveis,
+      administradores,
+      turmas,
+    };
 
-    // Filtro por status
-    if (statusFiltro) {
-      list = list.filter(u => (u.status || 'Ativo') === statusFiltro);
-    }
+    const filtros: FiltrosUsuarios = {
+      activeTab,
+      search,
+      statusFiltro,
+      turmaFiltro,
+    };
 
-    // Filtro por turma
-    if (turmaFiltro) {
-      if (activeTab === 'alunos') {
-        list = list.filter(a => (a as Aluno).turmaId === turmaFiltro);
-      } else if (activeTab === 'todos') {
-        list = list.filter(u => {
-          if (u.tipoUsuario === 'alunos') {
-            return (u as Aluno).turmaId === turmaFiltro;
-          }
-          // Para professores, verificar se lecionam na turma
-          if (u.tipoUsuario === 'professores') {
-            const professor = u as Professor;
-            return professor.turmas && professor.turmas.includes(turmaFiltro);
-          }
-          // Para outros tipos, não mostrar quando há filtro de turma
-          return false;
-        });
-      }
-    }
-    return list.sort((a, b) => a.nome.localeCompare(b.nome));
+    return UsuariosService.obterListaFiltradaCompleta(contexto, filtros);
   };
 
   const downloadPDF = () => {
@@ -183,50 +127,25 @@ export default function Usuarios(): JSX.Element {
     const doc = new jsPDF();
     doc.text(`Relatório de Usuários - ${tipoFiltro}`, 14, 15);
 
-    // Usar lista filtrada completa
+    const contexto: ContextoUsuarios = {
+      professores,
+      alunos,
+      responsaveis,
+      administradores,
+      turmas,
+    };
+
     const todosUsuarios = getFilteredUsersList();
-    const dadosParaTabela = todosUsuarios.map(usuario => {
-      let tipo = '';
-      let info = '';
-
-      if (activeTab === 'todos') {
-        tipo = usuario.tipoUsuario === 'professores' ? 'Professor' :
-          usuario.tipoUsuario === 'alunos' ? 'Aluno' :
-            usuario.tipoUsuario === 'responsaveis' ? 'Responsável' : 'Administrador';
-
-        if (usuario.tipoUsuario === 'professores' && usuario.turmas) {
-          info = usuario.turmas.map((id: string) => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ');
-        } else if (usuario.tipoUsuario === 'alunos' && usuario.turmaId) {
-          info = turmas.find(t => t.id === usuario.turmaId)?.nome || '';
-        } else if (usuario.tipoUsuario === 'responsaveis' && usuario.filhos) {
-          info = usuario.filhos.map((filhoId: string) => alunos.find(a => a.id === filhoId)?.nome || 'Desconhecido').join(', ');
-        }
-      } else {
-        if (activeTab === 'professores' && (usuario as Professor).turmas) {
-          info = (usuario as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ');
-        } else if (activeTab === 'alunos' && (usuario as Aluno).turmaId) {
-          info = turmas.find(t => t.id === (usuario as Aluno).turmaId)?.nome || '';
-        } else if (activeTab === 'responsaveis' && (usuario as Responsavel).filhos) {
-          info = (usuario as Responsavel).filhos!.map(filhoId => {
-            const aluno = alunos.find(a => a.id === filhoId);
-            return aluno?.nome || 'Desconhecido';
-          }).join(', ');
-        }
-      }
-
-      return activeTab === 'todos'
-        ? [usuario.nome, usuario.email, usuario.status || 'Ativo', tipo, info]
-        : [usuario.nome, usuario.email, usuario.status || 'Ativo', info];
-    });
-
-    const headers = activeTab === 'todos'
-      ? [['Nome', 'E-mail', 'Status', 'Tipo', 'Info']]
-      : [['Nome', 'E-mail', 'Status', activeTab === 'professores' ? 'Turmas' : activeTab === 'alunos' ? 'Turma' : activeTab === 'responsaveis' ? 'Filhos' : 'Info']];
+    const { headers, body } = UsuariosService.montarDadosTabelaExportacao(
+      todosUsuarios,
+      contexto,
+      activeTab,
+    );
 
     autoTable(doc, {
       startY: 25,
       head: headers,
-      body: dadosParaTabela,
+      body,
       styles: { fontSize: 8 },
       headStyles: { fillColor: [41, 128, 185] },
       columnStyles: activeTab === 'todos' ? {
@@ -252,52 +171,20 @@ export default function Usuarios(): JSX.Element {
         activeTab === 'alunos' ? 'Alunos' :
           activeTab === 'responsaveis' ? 'Responsáveis' : 'Administradores';
 
-    // Usar lista filtrada completa
+    const contexto: ContextoUsuarios = {
+      professores,
+      alunos,
+      responsaveis,
+      administradores,
+      turmas,
+    };
+
     const todosUsuarios = getFilteredUsersList();
-    const dadosParaExcel = todosUsuarios.map(usuario => {
-      let tipo = '';
-      let info = '';
-
-      if (activeTab === 'todos') {
-        tipo = usuario.tipoUsuario === 'professores' ? 'Professor' :
-          usuario.tipoUsuario === 'alunos' ? 'Aluno' :
-            usuario.tipoUsuario === 'responsaveis' ? 'Responsável' : 'Administrador';
-
-        if (usuario.tipoUsuario === 'professores' && usuario.turmas) {
-          info = usuario.turmas.map((id: string) => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ');
-        } else if (usuario.tipoUsuario === 'alunos' && usuario.turmaId) {
-          info = turmas.find(t => t.id === usuario.turmaId)?.nome || '';
-        } else if (usuario.tipoUsuario === 'responsaveis' && usuario.filhos) {
-          info = usuario.filhos.map((filhoId: string) => alunos.find(a => a.id === filhoId)?.nome || 'Desconhecido').join(', ');
-        }
-      } else {
-        if (activeTab === 'professores' && (usuario as Professor).turmas) {
-          info = (usuario as Professor).turmas.map(id => turmas.find(t => t.id === id)?.nome).filter(Boolean).join(', ');
-        } else if (activeTab === 'alunos' && (usuario as Aluno).turmaId) {
-          info = turmas.find(t => t.id === (usuario as Aluno).turmaId)?.nome || '';
-        } else if (activeTab === 'responsaveis' && (usuario as Responsavel).filhos) {
-          info = (usuario as Responsavel).filhos!.map(filhoId => {
-            const aluno = alunos.find(a => a.id === filhoId);
-            return aluno?.nome || 'Desconhecido';
-          }).join(', ');
-        }
-      }
-
-      return activeTab === 'todos'
-        ? {
-          'Nome': usuario.nome,
-          'E-mail': usuario.email,
-          'Status': usuario.status || 'Ativo',
-          'Tipo': tipo,
-          'Info': info
-        }
-        : {
-          'Nome': usuario.nome,
-          'E-mail': usuario.email,
-          'Status': usuario.status || 'Ativo',
-          [activeTab === 'professores' ? 'Turmas' : activeTab === 'alunos' ? 'Turma' : activeTab === 'responsaveis' ? 'Filhos' : 'Info']: info
-        };
-    });
+    const dadosParaExcel = UsuariosService.montarDadosExcel(
+      todosUsuarios,
+      contexto,
+      activeTab,
+    );
 
     // Cria a planilha
     const worksheet = XLSX.utils.json_to_sheet(dadosParaExcel);
@@ -334,125 +221,67 @@ export default function Usuarios(): JSX.Element {
   };
   // Função para migrar usuários existentes sem dataCriacao
   const migrarUsuariosExistentes = async () => {
-    const batch = writeBatch(db);
-    let hasUpdates = false;
-
-    const collections = [
-      { name: 'professores', data: professores },
-      { name: 'alunos', data: alunos },
-      { name: 'responsaveis', data: responsaveis },
-      { name: 'administradores', data: administradores }
-    ];
-
     // Data padrão para usuários existentes (1 mês atrás para não influenciar estatísticas atuais)
     const dataDefault = new Date();
     dataDefault.setMonth(dataDefault.getMonth() - 1);
 
-    for (const col of collections) {
-      for (const usuario of col.data) {
-        if (!usuario.dataCriacao) {
-          const docRef = doc(db, col.name, usuario.id);
-          batch.update(docRef, { dataCriacao: dataDefault });
-          hasUpdates = true;
-        }
-      }
-    }
+    try {
+      // Professores
+      await Promise.all(
+        professores
+          .filter(p => !p.dataCriacao)
+          .map(p => professorService.atualizar(p.id, { dataCriacao: dataDefault }))
+      );
 
-    if (hasUpdates) {
-      try {
-        await batch.commit();
-        // Recarregar dados após migração
-        window.location.reload();
-      } catch (error) {
-      }
+      // Alunos
+      await Promise.all(
+        alunos
+          .filter(a => !a.dataCriacao)
+          .map(a => alunoService.atualizar(a.id, { dataCriacao: dataDefault }))
+      );
+
+      // Responsáveis
+      await Promise.all(
+        responsaveis
+          .filter(r => !r.dataCriacao)
+          .map(r => responsavelService.atualizar(r.id, { dataCriacao: dataDefault } as any))
+      );
+
+      // Administradores
+      await Promise.all(
+        administradores
+          .filter(a => !a.dataCriacao)
+          .map(a => administradorService.atualizar(a.id, { dataCriacao: dataDefault } as any))
+      );
+
+      // Recarregar dados após migração
+      window.location.reload();
+    } catch (error) {
     }
   };
 
   const getCurrentUsersList = () => {
-    let list: any[] = [];
+    const contexto: ContextoUsuarios = {
+      professores,
+      alunos,
+      responsaveis,
+      administradores,
+      turmas,
+    };
 
-    if (activeTab === 'todos') {
-      list = [
-        ...professores.map(p => ({ ...p, tipoUsuario: 'professores' })),
-        ...alunos.map(a => ({ ...a, tipoUsuario: 'alunos' })),
-        ...responsaveis.map(r => ({ ...r, tipoUsuario: 'responsaveis' })),
-        ...administradores.map(adm => ({ ...adm, tipoUsuario: 'administradores' }))
-      ];
-    } else {
-      list = activeTab === 'professores'
-        ? professores
-        : activeTab === 'alunos'
-          ? alunos
-          : activeTab === 'responsaveis'
-            ? responsaveis
-            : administradores;
-    }
+    const filtros: FiltrosUsuarios = {
+      activeTab,
+      search,
+      statusFiltro,
+      turmaFiltro,
+    };
 
-    // Aplicar filtros
-    list = list.filter(u => {
-      const searchLower = search.toLowerCase();
-      const nameMatch = u.nome.toLowerCase().includes(searchLower);
-      const emailMatch = u.email.toLowerCase().includes(searchLower);
-
-      // Buscar também na coluna info
-      let infoMatch = false;
-
-      if (u.tipoUsuario === 'responsaveis' || (activeTab === 'responsaveis')) {
-        // Para responsáveis, buscar pelo nome dos filhos (alunos)
-        const responsavel = u as any;
-        if (responsavel.filhos && responsavel.filhos.length > 0) {
-          infoMatch = responsavel.filhos.some((filhoId: string) => {
-            const aluno = alunos.find(a => a.id === filhoId);
-            return aluno && aluno.nome.toLowerCase().includes(searchLower);
-          });
-        }
-      } else if ((u.tipoUsuario === 'alunos' || activeTab === 'alunos') && (u as any).turmaId) {
-        // Para alunos, buscar pelo nome da turma
-        const turma = turmas.find(t => t.id === (u as any).turmaId);
-        infoMatch = !!(turma && turma.nome.toLowerCase().includes(searchLower));
-      } else if (u.tipoUsuario === 'professores' || activeTab === 'professores') {
-        // Para professores, buscar pelo nome das turmas
-        const professor = u as any;
-        if (professor.turmas && professor.turmas.length > 0) {
-          infoMatch = professor.turmas.some((turmaId: string) => {
-            const turma = turmas.find(t => t.id === turmaId);
-            return turma && turma.nome.toLowerCase().includes(searchLower);
-          });
-        }
-      }
-
-      return nameMatch || emailMatch || infoMatch;
-    });
-
-    // Filtro por status
-    if (statusFiltro) {
-      list = list.filter(u => (u.status || 'Ativo') === statusFiltro);
-    }
-
-    // Filtro por turma
-    if (turmaFiltro) {
-      if (activeTab === 'alunos') {
-        list = list.filter(a => (a as Aluno).turmaId === turmaFiltro);
-      } else if (activeTab === 'todos') {
-        list = list.filter(u => {
-          if (u.tipoUsuario === 'alunos') {
-            return (u as Aluno).turmaId === turmaFiltro;
-          }
-          // Para professores, verificar se lecionam na turma
-          if (u.tipoUsuario === 'professores') {
-            const professor = u as any;
-            return professor.turmas && professor.turmas.includes(turmaFiltro);
-          }
-          // Para outros tipos, não mostrar quando há filtro de turma
-          return false;
-        });
-      }
-    }
-
-    list = list.sort((a, b) => a.nome.localeCompare(b.nome));
-
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return list.slice(startIndex, startIndex + itemsPerPage);
+    return UsuariosService.obterListaPaginada(
+      contexto,
+      filtros,
+      currentPage,
+      itemsPerPage,
+    );
   };
 
   useEffect(() => {
@@ -665,20 +494,8 @@ export default function Usuarios(): JSX.Element {
         else if (administradores.find(adm => adm.id === id)) collectionName = 'administradores';
       }
 
-      // Chamar rota backend para excluir completamente (coleção específica + users + auth)
-      const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/excluir-usuario", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          uid: id,
-          tipoUsuario: collectionName,
-        }),
-      });
-
-      if (!response.ok) {
-        const result = await response.json();
-        throw new Error(result.message || "Erro ao excluir usuário");
-      }
+      // Chamar service para excluir completamente (coleção específica + users + auth)
+      await userService.excluirUsuario(id, collectionName);
 
       // Atualizar estado local
       if (collectionName === 'professores') setProfessores(prev => prev.filter(u => u.id !== id));
@@ -698,33 +515,33 @@ export default function Usuarios(): JSX.Element {
   };
 
   const openEdit = async (user: UsuarioBase & any) => {
-  const tipoUsuario = activeTab === 'todos' ? user.tipoUsuario : activeTab;
+    const tipoUsuario = activeTab === 'todos' ? user.tipoUsuario : activeTab;
 
-  let materiasVinculadas: string[] = [];
-  if (tipoUsuario === 'professores') {
-    // Buscar matérias vinculadas ao professor
-    materiasVinculadas = await professorMateriaService.listarMateriasPorProfessor(user.id);
-  }
+    let materiasVinculadas: string[] = [];
+    if (tipoUsuario === 'professores') {
+      // Buscar matérias vinculadas ao professor
+      materiasVinculadas = await professorMateriaService.listarMateriasPorProfessor(user.id);
+    }
 
-  const defaults: Partial<FormValues> = {
-    tipoUsuario,
-    nome: user.nome,
-    email: user.email,
-    ...(tipoUsuario === 'alunos' && {
-      turmaId: user.turmaId,
-      modoAcesso: user.modoAcesso || 'aluno'
-    }),
-    ...(tipoUsuario === 'professores' && { turmas: user.turmas, materias: materiasVinculadas, polivalente: user.polivalente ?? false }),
-    ...(tipoUsuario === 'responsaveis' && { filhos: user.filhos }),
-    ...(user.id && { id: user.id }),
+    const defaults: Partial<FormValues> = {
+      tipoUsuario,
+      nome: user.nome,
+      email: user.email,
+      ...(tipoUsuario === 'alunos' && {
+        turmaId: user.turmaId,
+        modoAcesso: user.modoAcesso || 'aluno'
+      }),
+      ...(tipoUsuario === 'professores' && { turmas: user.turmas, materias: materiasVinculadas, polivalente: user.polivalente ?? false }),
+      ...(tipoUsuario === 'responsaveis' && { filhos: user.filhos }),
+      ...(user.id && { id: user.id }),
+    };
+
+    (defaults as any).status = user.status || 'Ativo';
+
+    setFormDefaults(defaults);
+    setFormMode('edit');
+    setShowForm(true);
   };
-
-  (defaults as any).status = user.status || 'Ativo';
-
-  setFormDefaults(defaults);
-  setFormMode('edit');
-  setShowForm(true);
-};
 
   const handleSubmit = async (data: FormValues) => {
     try {
@@ -738,14 +555,9 @@ export default function Usuarios(): JSX.Element {
         const responsavel = responsaveis.find(r =>
           r.filhos && alunoId && r.filhos.includes(alunoId)
         );
-        // Buscar todos os usuários e comparar emails normalizados (case-insensitive)
-        const usersSnapshot = await getDocs(collection(db, 'users'));
-        // Encontrar usuário com email igual (case-insensitive)
-        const usuarioComEmail = usersSnapshot.docs.find(doc => {
-          const docEmail = doc.data().email;
-          const docEmailNormalizado = docEmail ? docEmail.toLowerCase().trim() : '';
-          return docEmailNormalizado === emailNormalizado;
-        });
+
+        // Buscar usuário na coleção users por e-mail (case-insensitive)
+        const usuarioComEmail = await userService.buscarPorEmailCaseInsensitive(emailNormalizado);
         if (usuarioComEmail) {
           // Email já está em uso
           // Permitir se for:
@@ -894,12 +706,7 @@ export default function Usuarios(): JSX.Element {
         ...(data.tipoUsuario === 'responsaveis' && { filhos: data.filhos }),
         ...(formMode === 'add' && { dataCriacao: new Date() }),
       };
-      // Só inclui email no userData se for adição ou se backend confirmou alteração
-      let userData = { ...userDataBase };
-
       if (formMode === 'edit') {
-        const docRef = doc(db, data.tipoUsuario, (formDefaults as any).id);
-
         // Detectar alteração de e-mail
         const emailAtual = (formDefaults as any).email?.toLowerCase().trim() || '';
         const emailNovo = data.email.toLowerCase().trim();
@@ -908,28 +715,19 @@ export default function Usuarios(): JSX.Element {
         // Se mudou de 'responsavel' para 'aluno', criar conta de autenticação
         if (data.tipoUsuario === 'alunos' && (data as any).mudouParaAcessoAluno) {
           try {
-            const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/criar-apenas-auth", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                uid: (formDefaults as any).id,
-                nome: data.nome,
-                email: emailNormalizado,
-                tipoUsuario: "alunos",
-              }),
+            await userService.criarApenasAuth({
+              uid: (formDefaults as any).id,
+              nome: data.nome,
+              email: emailNormalizado,
+              tipoUsuario: 'alunos',
             });
 
-            if (!response.ok) {
-              const result = await response.json();
-              throw new Error(result.message || "Erro ao criar conta de autenticação");
-            }
-
-            // Atualizar o modoAcesso e email no Firestore (apenas se backend confirmou)
-            await updateDoc(docRef, {
+            // Atualizar o modoAcesso e email na coleção específica (apenas se backend confirmou)
+            await alunoService.atualizar((formDefaults as any).id, {
               ...userDataBase,
               modoAcesso: 'aluno',
               email: emailNormalizado
-            });
+            } as any);
 
             setToast({
               show: true,
@@ -949,24 +747,13 @@ export default function Usuarios(): JSX.Element {
         // Se mudou de 'aluno' para 'responsavel', remover conta de autenticação
         else if (data.tipoUsuario === 'alunos' && (data as any).mudouParaAcessoResponsavel) {
           try {
-            const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/remover-auth", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                uid: (formDefaults as any).id,
-              }),
-            });
+            await userService.removerAuth((formDefaults as any).id);
 
-            if (!response.ok) {
-              const result = await response.json();
-              throw new Error(result.message || "Erro ao remover conta de autenticação");
-            }
-
-            // Atualizar o modoAcesso no Firestore
-            await updateDoc(docRef, {
+            // Atualizar o modoAcesso na coleção específica
+            await alunoService.atualizar((formDefaults as any).id, {
               ...userDataBase,
               modoAcesso: 'responsavel',
-            });
+            } as any);
 
             setToast({
               show: true,
@@ -988,59 +775,58 @@ export default function Usuarios(): JSX.Element {
           // Se o email foi alterado, chamar API backend antes de atualizar Firestore
           if (emailAlterado) {
             try {
-              const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/atualizar-email-usuario", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  uid: (formDefaults as any).id,
-                  novoEmail: emailNovo,
-                  tipoUsuario: data.tipoUsuario
-                })
+              await userService.atualizarEmailUsuario({
+                uid: (formDefaults as any).id,
+                novoEmail: emailNovo,
+                tipoUsuario: data.tipoUsuario,
               });
-              const result = await response.json();
-              if (!response.ok || result.code === 'EMAIL_EM_USO') {
-                setToast({ show: true, message: result.message || 'Erro ao atualizar e-mail.', variant: 'danger' });
-                return;
+              // Só após sucesso do backend, atualizar registro na coleção específica
+              if (data.tipoUsuario === 'professores') {
+                await professorService.atualizar((formDefaults as any).id, { ...userDataBase, email: emailNovo } as any);
+              } else if (data.tipoUsuario === 'alunos') {
+                await alunoService.atualizar((formDefaults as any).id, { ...userDataBase, email: emailNovo } as any);
+              } else if (data.tipoUsuario === 'responsaveis') {
+                await responsavelService.atualizar((formDefaults as any).id, { ...userDataBase, email: emailNovo } as any);
+              } else if (data.tipoUsuario === 'administradores') {
+                await administradorService.atualizar((formDefaults as any).id, { ...userDataBase, email: emailNovo } as any);
               }
-              // Só após sucesso do backend, atualizar Firestore localmente
-              await updateDoc(docRef, { ...userDataBase, email: emailNovo });
               setToast({ show: true, message: 'Usuário atualizado com sucesso!', variant: 'success' });
             } catch (error: any) {
               setToast({ show: true, message: error.message || 'Erro ao atualizar e-mail.', variant: 'danger' });
               return;
             }
           } else {
-            // Não alterou o email, update normal
-            await updateDoc(docRef, userDataBase);
+            // Não alterou o email, update normal via services
+            if (data.tipoUsuario === 'professores') {
+              await professorService.atualizar((formDefaults as any).id, userDataBase as any);
+            } else if (data.tipoUsuario === 'alunos') {
+              await alunoService.atualizar((formDefaults as any).id, userDataBase as any);
+            } else if (data.tipoUsuario === 'responsaveis') {
+              await responsavelService.atualizar((formDefaults as any).id, userDataBase as any);
+            } else if (data.tipoUsuario === 'administradores') {
+              await administradorService.atualizar((formDefaults as any).id, userDataBase as any);
+            }
             setToast({ show: true, message: 'Usuário atualizado com sucesso!', variant: 'success' });
           }
           // Atualizar status na coleção users também, apenas se existir
-          const userDocRef = doc(db, "users", (formDefaults as any).id);
-          const userDocSnap = await getDoc(userDocRef);
-          if (userDocSnap.exists()) {
-            await userService.atualizarStatus((formDefaults as any).id, userDataBase.status as 'Ativo' | 'Inativo');
-          }
+          await userService.atualizarStatusSeExistir(
+            (formDefaults as any).id,
+            userDataBase.status as 'Ativo' | 'Inativo'
+          );
         }
       } else {
-        const response = await fetch("https://us-central1-agenda-digital-e481b.cloudfunctions.net/api/criar-usuario", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            nome: data.nome,
-            email: emailNormalizado,
-            tipoUsuario: data.tipoUsuario,
-            status: (data as any).status || 'Ativo',
-            turmaId: turmaIdFinal,
-            filhos: data.filhos,
-            turmas: turmasFinal,
-            modoAcesso: data.modoAcesso,
-            dataCriacao: new Date().toISOString(),
-          }),
+        const result = await userService.criarUsuario({
+          nome: data.nome,
+          email: emailNormalizado,
+          tipoUsuario: data.tipoUsuario,
+          status: (data as any).status || 'Ativo',
+          turmaId: turmaIdFinal,
+          filhos: data.filhos,
+          turmas: turmasFinal,
+          polivalente: data.tipoUsuario === 'professores' ? !!data.polivalente : undefined,
+          modoAcesso: data.modoAcesso,
+          dataCriacao: new Date().toISOString(),
         });
-
-        const result = await response.json();
-
-        if (!response.ok) throw new Error(result.message || "Erro ao criar usuário");
 
         let mensagem = "Usuário salvo com sucesso!";
         if (data.tipoUsuario === "alunos" && result.modoAcesso === "responsavel") {
@@ -1051,9 +837,16 @@ export default function Usuarios(): JSX.Element {
       }
 
       setShowForm(false);
-
-      const snapshot = await getDocs(collection(db, data.tipoUsuario));
-      const novosDados = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      let novosDados: any[] = [];
+      if (data.tipoUsuario === 'professores') {
+        novosDados = await professorService.listar();
+      } else if (data.tipoUsuario === 'alunos') {
+        novosDados = await alunoService.listar();
+      } else if (data.tipoUsuario === 'responsaveis') {
+        novosDados = await responsavelService.listar();
+      } else if (data.tipoUsuario === 'administradores') {
+        novosDados = await administradorService.listar();
+      }
 
       // Vinculação professor-turma-matéria
       if (data.tipoUsuario === 'professores' && data.turmas && data.materias && (data.turmas.length > 0) && (data.materias.length > 0)) {
@@ -1111,30 +904,30 @@ export default function Usuarios(): JSX.Element {
 
       // Atualizar status de relacionados se solicitado
       if (atualizarRelacionados && statusChangeData) {
-        // Preparar lista de atualizações para o UserService
-        const atualizacoes = statusChangeData.relacionados.map(relacionado => ({
-          uid: relacionado.id,
-          status: 'Inativo' as const
-        }));
-
-        // Atualizar na coleção users em lote
-        await userService.atualizarStatusEmLote(atualizacoes);
+        // Atualizar status na coleção users APENAS para quem tiver documento lá
+        await Promise.all(
+          statusChangeData.relacionados.map(relacionado =>
+            userService.atualizarStatusSeExistir(relacionado.id, 'Inativo')
+          )
+        );
 
         // Atualizar nas coleções específicas
         for (const relacionado of statusChangeData.relacionados) {
-          const tipoColecao = relacionado.tipo === 'aluno' ? 'alunos' : 'responsaveis';
-          const docRef = doc(db, tipoColecao, relacionado.id);
-          await updateDoc(docRef, { status: 'Inativo' });
+          if (relacionado.tipo === 'aluno') {
+            await alunoService.atualizar(relacionado.id, { status: 'Inativo' } as any);
+          } else {
+            await responsavelService.atualizar(relacionado.id, { status: 'Inativo' } as any);
+          }
         }
 
         // Recarregar dados após atualizar relacionados
         const [alunosAtualizados, responsaveisAtualizados] = await Promise.all([
-          getDocs(collection(db, 'alunos')),
-          getDocs(collection(db, 'responsaveis'))
+          alunoService.listar(),
+          responsavelService.listar()
         ]);
 
-        setAlunos(alunosAtualizados.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-        setResponsaveis(responsaveisAtualizados.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+        setAlunos(alunosAtualizados as any);
+        setResponsaveis(responsaveisAtualizados as any);
       }
     } catch (error: any) {
       console.error(error);
