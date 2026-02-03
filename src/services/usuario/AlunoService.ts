@@ -34,6 +34,10 @@ export class AlunoService {
     return this.alunoRepository.findByTurmaEAnoLetivo(turmaId, anoLetivo);
   }
 
+  async atualizar(id: string, aluno: Partial<Omit<Aluno, 'id'>>): Promise<void> {
+    await this.alunoRepository.update(id, aluno);
+  }
+
   async updateHistorico(
     id: string,
     anoAtual: string,

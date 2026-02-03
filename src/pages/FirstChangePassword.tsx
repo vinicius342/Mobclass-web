@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
-import { auth, db } from "../services/firebase/firebase";
-import { doc, updateDoc } from "firebase/firestore";
+import { auth } from "../services/firebase/firebase";
+import { UserService } from "../services/usuario/UserService";
+import { FirebaseUserRepository } from "../repositories/user/FirebaseUserRepository";
 import {
   Container,
   Card,
@@ -12,6 +13,8 @@ import {
   Spinner,
 } from "react-bootstrap";
 import logo from "../assets/logo.png";
+
+const userService = new UserService(new FirebaseUserRepository());
 
 export default function FirstChangePassword() {
   const [senhaAtual, setSenhaAtual] = useState("");
@@ -52,8 +55,7 @@ export default function FirstChangePassword() {
       await reauthenticateWithCredential(user, cred);
       await updatePassword(user, novaSenha);
 
-      const userRef = doc(db, "users", user.uid);
-      await updateDoc(userRef, { firstAcesso: false });
+      await userService.marcarPrimeiroAcessoConcluido(user.uid);
 
       setSucesso("Senha alterada com sucesso!");
       navigate("/dashboard");
