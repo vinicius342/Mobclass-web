@@ -466,6 +466,7 @@ describe('TarefaService', () => {
         'Titulo',
         'Descricao',
         'T1',
+        '2024',
         '2024-01-01',
         'P1',
         validatedLinks,

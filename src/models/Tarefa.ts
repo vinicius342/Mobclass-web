@@ -4,6 +4,7 @@ export interface Tarefa {
   titulo?: string;
   descricao: string;
   turmaId: string;
+  anoLetivo?: string;
   dataEntrega: string;
   professorId?: string;
   excluida?: boolean;

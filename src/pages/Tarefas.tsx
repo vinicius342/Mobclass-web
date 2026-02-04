@@ -259,6 +259,7 @@ export default function Tarefas() {
       titulo,
       descricao,
       turmaId,
+      anoLetivo.toString(),
       dataEntrega,
       isAdmin ? userData.uid : professorId,
       validatedLinks,

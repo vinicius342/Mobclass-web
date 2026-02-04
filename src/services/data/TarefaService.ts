@@ -227,6 +227,7 @@ export class TarefaService {
     titulo: string,
     descricao: string,
     turmaId: string,
+    anoLetivo: string,
     dataEntrega: string,
     professorId: string,
     validatedLinks: Array<{ url: string; titulo: string }>,
@@ -237,6 +238,7 @@ export class TarefaService {
       titulo,
       descricao,
       turmaId,
+      anoLetivo,
       dataEntrega,
       professorId,
       links: validatedLinks
