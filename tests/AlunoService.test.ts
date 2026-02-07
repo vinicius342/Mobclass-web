@@ -1,97 +1,5 @@
 import { AlunoService } from '../src/services/usuario/AlunoService';
 import { Aluno } from '../src/models/Aluno';
-import { IAlunoRepository } from '../src/repositories/aluno/IAlunoRepository';
-import { INotaRepository } from '../src/repositories/nota/INotaRepository';
-import { IFrequenciaRepository } from '../src/repositories/frequencia/IFrequenciaRepository';
-
-class FakeAlunoRepository implements IAlunoRepository {
-  public alunos: Aluno[];
-
-  constructor(initialAlunos: Aluno[] = []) {
-    this.alunos = [...initialAlunos];
-  }
-
-  async findAll(): Promise<Aluno[]> {
-    return this.alunos;
-  }
-
-  async findById(id: string): Promise<Aluno | null> {
-    return this.alunos.find(a => a.id === id) ?? null;
-  }
-
-  async create(aluno: Omit<Aluno, 'id'>): Promise<string> {
-    const id = `id-${this.alunos.length + 1}`;
-    this.alunos.push({ id, ...aluno });
-    return id;
-  }
-
-  async update(id: string, aluno: Partial<Omit<Aluno, 'id'>>): Promise<void> {
-    this.alunos = this.alunos.map(a => (a.id === id ? { ...a, ...aluno } : a));
-  }
-
-  async delete(id: string): Promise<void> {
-    this.alunos = this.alunos.filter(a => a.id !== id);
-  }
-
-  async findByTurmaEAnoLetivo(turmaId: string, anoLetivo: string): Promise<Aluno[]> {
-    return this.alunos.filter(a => a.turmaId === turmaId && a.historicoTurmas?.[anoLetivo] !== undefined);
-  }
-
-  async updateHistorico(
-    alunoId: string,
-    anoAtual: string,
-    anoDestino: string,
-    turmaId: string,
-    status: 'promovido' | 'reprovado' | 'transferido',
-  ): Promise<void> {
-    this.alunos = this.alunos.map(aluno => {
-      if (aluno.id !== alunoId) return aluno;
-      const historicoTurmas = { ...(aluno.historicoTurmas || {}) };
-      const historicoStatus = { ...(aluno.historicoStatus || {}) };
-      historicoTurmas[anoDestino] = turmaId;
-      historicoStatus[anoDestino] = status;
-      return { ...aluno, historicoTurmas, historicoStatus };
-    });
-  }
-}
-
-class FakeNotaRepository implements INotaRepository {
-  constructor(public notas: any[] = [], public copiarNotasCalled: any[] = []) {}
-
-  async findAll() { return this.notas as any; }
-  async findById() { return null as any; }
-  async create() { return 'id-1'; }
-  async update() { }
-  async delete() { }
-  async findByAlunoUid() { return this.notas as any; }
-  async findByAlunoUidETurma(alunoUid: string, turmaId: string) {
-    return this.notas.filter(n => n.alunoUid === alunoUid && n.turmaId === turmaId) as any;
-  }
-  async findByTurmaId() { return [] as any; }
-  async copiarNotas(alunoUid: string, turmaOrigemId: string, turmaDestinoId: string): Promise<void> {
-    this.copiarNotasCalled.push({ alunoUid, turmaOrigemId, turmaDestinoId });
-  }
-}
-
-class FakeFrequenciaRepository implements IFrequenciaRepository {
-  constructor(public copiarFrequenciasCalled: any[] = []) {}
-
-  async findAll() { return [] as any; }
-  async findById() { return null as any; }
-  async create() { return 'id-1'; }
-  async update() { }
-  async delete() { }
-  async findByAlunoId() { return [] as any; }
-  async findByAlunoIdETurma() { return [] as any; }
-  async findByTurmaId() { return [] as any; }
-  async findByTurmaMateria() { return [] as any; }
-  async findByAlunoIdEPeriodo() { return [] as any; }
-  async findByPeriodo() { return [] as any; }
-  async salvarEmLote() { }
-  async copiarFrequencias(alunoId: string, turmaOrigemId: string, turmaDestinoId: string): Promise<void> {
-    this.copiarFrequenciasCalled.push({ alunoId, turmaOrigemId, turmaDestinoId });
-  }
-}
 
 const makeAluno = (overrides: Partial<Aluno> = {}): Aluno => ({
   id: overrides.id ?? 'a1',
@@ -106,98 +14,150 @@ const makeAluno = (overrides: Partial<Aluno> = {}): Aluno => ({
   ultimaAtualizacao: overrides.ultimaAtualizacao,
 });
 
-describe('AlunoService - operações básicas e histórico', () => {
-  it('listar deve delegar para o repositório', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1' }),
-      makeAluno({ id: 'a2' }),
-    ]);
-    const service = new AlunoService(repo);
+describe('AlunoService (Cloud Function) - integração HTTP', () => {
+  beforeEach(() => {
+    global.fetch = jest.fn();
+  });
 
+  it('listar deve chamar a Cloud Function com action "listar" e retornar alunos', async () => {
+    const alunosMock = [makeAluno({ id: 'a1' }), makeAluno({ id: 'a2' })];
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => alunosMock,
+    });
+
+    const service = new AlunoService();
     const result = await service.listar();
 
-    expect(result).toHaveLength(2);
-    expect(result[0].id).toBe('a1');
-    expect(result[1].id).toBe('a2');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ action: 'listar' }),
+      }),
+    );
+    expect(result).toEqual(alunosMock);
   });
 
-  it('buscarPorId deve retornar aluno correto ou null', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1' }),
-      makeAluno({ id: 'a2' }),
-    ]);
-    const service = new AlunoService(repo);
+  it('buscarPorId deve enviar id e retornar aluno ou null', async () => {
+    const alunoMock = makeAluno({ id: 'a1' });
 
-    const found = await service.buscarPorId('a2');
-    const notFound = await service.buscarPorId('a3');
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => alunoMock,
+    });
 
-    expect(found?.id).toBe('a2');
-    expect(notFound).toBeNull();
+    const service = new AlunoService();
+    const result = await service.buscarPorId('a1');
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ action: 'buscarPorId', id: 'a1' }),
+      }),
+    );
+    expect(result).toEqual(alunoMock);
   });
 
-  it('promoverAluno, reprovarAluno e transferirAluno devem delegar para updateHistorico com status correto', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1' }),
-    ]);
-    const service = new AlunoService(repo);
+  it('promoverAluno, reprovarAluno e transferirAluno devem enviar dados corretos', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    });
+
+    const service = new AlunoService();
 
     await service.promoverAluno('a1', '2023', '2024', 'turma-2');
     await service.reprovarAluno('a1', '2024', '2024', 'turma-3');
     await service.transferirAluno('a1', '2024', '2024', 'turma-4');
 
-    const aluno = await service.buscarPorId('a1');
-    expect(aluno?.historicoTurmas).toEqual({
-      '2024': 'turma-4',
-    });
-    expect(aluno?.historicoStatus).toEqual({
-      '2024': 'transferido',
-    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({ action: 'promoverAluno', id: 'a1', anoAtual: '2023', anoDestino: '2024', turmaId: 'turma-2' }),
+      }),
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({ action: 'reprovarAluno', id: 'a1', anoAtual: '2024', anoDestino: '2024', turmaId: 'turma-3' }),
+      }),
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({ action: 'transferirAluno', id: 'a1', anoAtual: '2024', anoDestino: '2024', turmaId: 'turma-4' }),
+      }),
+    );
   });
 
-  it('listarPorTurmaEAnoLetivo deve delegar para o repositório', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1', turmaId: 't1', historicoTurmas: { '2024': 't1' } }),
-      makeAluno({ id: 'a2', turmaId: 't2', historicoTurmas: { '2024': 't2' } }),
-    ]);
-    const service = new AlunoService(repo);
+  it('listarPorTurmaEAnoLetivo deve enviar turmaId e anoLetivo', async () => {
+    const alunosMock = [makeAluno({ id: 'a1', turmaId: 't1' })];
 
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => alunosMock,
+    });
+
+    const service = new AlunoService();
     const result = await service.listarPorTurmaEAnoLetivo('t1', '2024');
 
-    expect(result.map(a => a.id)).toEqual(['a1']);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({ action: 'listarPorTurmaEAnoLetivo', turmaId: 't1', anoLetivo: '2024' }),
+      }),
+    );
+    expect(result).toEqual(alunosMock);
   });
 
-  it('atualizar deve manter campos não atualizados', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1', nome: 'Original', email: 'orig@escola.com', status: 'Ativo' }),
-    ]);
-    const service = new AlunoService(repo);
+  it('atualizar deve enviar id e dados parciais do aluno', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({}),
+    });
 
+    const service = new AlunoService();
     await service.atualizar('a1', { nome: 'Atualizado' });
 
-    const aluno = await service.buscarPorId('a1');
-    expect(aluno?.nome).toBe('Atualizado');
-    expect(aluno?.email).toBe('orig@escola.com');
-    expect(aluno?.status).toBe('Ativo');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({ action: 'atualizar', id: 'a1', aluno: { nome: 'Atualizado' } }),
+      }),
+    );
   });
 
-  it('updateHistorico deve delegar corretamente para o repositório', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1' }),
-    ]);
-    const service = new AlunoService(repo);
+  it('updateHistorico deve enviar payload completo com status', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({}),
+    });
 
+    const service = new AlunoService();
     await service.updateHistorico('a1', '2023', '2024', 'turma-2', 'promovido');
 
-    const aluno = await service.buscarPorId('a1');
-    expect(aluno?.historicoTurmas).toEqual({ '2024': 'turma-2' });
-    expect(aluno?.historicoStatus).toEqual({ '2024': 'promovido' });
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({
+          action: 'updateHistorico',
+          id: 'a1',
+          anoAtual: '2023',
+          anoDestino: '2024',
+          turmaId: 'turma-2',
+          status: 'promovido',
+        }),
+      }),
+    );
   });
 });
 
 describe('AlunoService - obterTurmaDoAno', () => {
   it('deve retornar turma do histórico quando existir para o ano', () => {
-    const repo = new FakeAlunoRepository();
-    const service = new AlunoService(repo);
+    const service = new AlunoService();
 
     const aluno = makeAluno({ turmaId: 'turma-atual', historicoTurmas: { '2024': 'turma-historico' } });
 
@@ -206,8 +166,7 @@ describe('AlunoService - obterTurmaDoAno', () => {
   });
 
   it('deve retornar turmaId atual quando não houver histórico para o ano', () => {
-    const repo = new FakeAlunoRepository();
-    const service = new AlunoService(repo);
+    const service = new AlunoService();
 
     const aluno = makeAluno({ turmaId: 'turma-atual', historicoTurmas: { '2023': 'outra-turma' } });
 
@@ -216,270 +175,108 @@ describe('AlunoService - obterTurmaDoAno', () => {
   });
 });
 
-describe('AlunoService - calcularStatusAluno', () => {
-  it('deve lançar erro se notaRepository não for injetado', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1' }),
-    ]);
-    const service = new AlunoService(repo);
+describe('AlunoService - calcularStatusAluno (via Cloud Function)', () => {
+  beforeEach(() => {
+    global.fetch = jest.fn();
+  });
 
-    await expect(service.calcularStatusAluno(makeAluno({ id: 'a1' }), 2024)).rejects.toThrow(
-      'NotaRepository não foi injetado no AlunoService',
+  it('deve enviar alunoId, turmaId e anoLetivo e retornar status da resposta', async () => {
+    const aluno = makeAluno({ id: 'a1', turmaId: 't1', historicoTurmas: { '2024': 't1' } });
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ status: 'Aprovado' }),
+    });
+
+    const service = new AlunoService();
+    const status = await service.calcularStatusAluno(aluno, 2024);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({
+          action: 'calcularStatusAluno',
+          alunoId: 'a1',
+          turmaId: 't1',
+          anoLetivo: 2024,
+        }),
+      }),
     );
-  });
-
-  it('deve retornar "Em Andamento" quando não há notas', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1' }),
-    ]);
-    const notaRepo = new FakeNotaRepository([]);
-    const service = new AlunoService(repo, notaRepo);
-
-    const status = await service.calcularStatusAluno(makeAluno({ id: 'a1' }), 2024);
-    expect(status).toBe('Em Andamento');
-  });
-
-  it('deve retornar "Em Andamento" quando não há notas dos 4 bimestres', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1', turmaId: 't1' }),
-    ]);
-    const notaRepo = new FakeNotaRepository([
-      { id: 'n1', alunoUid: 'a1', turmaId: 't1', materiaId: 'm1', bimestre: '1º' },
-    ]);
-    const service = new AlunoService(repo, notaRepo);
-
-    const status = await service.calcularStatusAluno(makeAluno({ id: 'a1', turmaId: 't1' }), 2024);
-    expect(status).toBe('Em Andamento');
-  });
-
-  it('deve retornar "Em Andamento" quando há notas incompletas', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1', turmaId: 't1' }),
-    ]);
-    const notasIncompletas = [
-      { id: 'n1', alunoUid: 'a1', turmaId: 't1', materiaId: 'm1', bimestre: '1º', notaParcial: 7 },
-    ];
-    const notaRepo = new FakeNotaRepository(notasIncompletas);
-    const service = new AlunoService(repo, notaRepo);
-
-    const status = await service.calcularStatusAluno(makeAluno({ id: 'a1', turmaId: 't1' }), 2024);
-    expect(status).toBe('Em Andamento');
-  });
-
-  it('deve retornar "Aprovado" quando média geral >= 6', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1', turmaId: 't1' }),
-    ]);
-    const notas = [
-      {
-        id: 'n1',
-        alunoUid: 'a1',
-        turmaId: 't1',
-        materiaId: 'm1',
-        bimestre: '1º',
-        notaParcial: 7,
-        notaGlobal: 7,
-        notaParticipacao: 7,
-      },
-      {
-        id: 'n2',
-        alunoUid: 'a1',
-        turmaId: 't1',
-        materiaId: 'm1',
-        bimestre: '2º',
-        notaParcial: 7,
-        notaGlobal: 7,
-        notaParticipacao: 7,
-      },
-      {
-        id: 'n3',
-        alunoUid: 'a1',
-        turmaId: 't1',
-        materiaId: 'm1',
-        bimestre: '3º',
-        notaParcial: 7,
-        notaGlobal: 7,
-        notaParticipacao: 7,
-      },
-      {
-        id: 'n4',
-        alunoUid: 'a1',
-        turmaId: 't1',
-        materiaId: 'm1',
-        bimestre: '4º',
-        notaParcial: 7,
-        notaGlobal: 7,
-        notaParticipacao: 7,
-      },
-    ];
-    const notaRepo = new FakeNotaRepository(notas);
-    const service = new AlunoService(repo, notaRepo);
-
-    const status = await service.calcularStatusAluno(makeAluno({ id: 'a1', turmaId: 't1' }), 2024);
     expect(status).toBe('Aprovado');
   });
 
-  it('deve considerar nota de recuperação se existir', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1', turmaId: 't1' }),
-    ]);
-    const notas = [
-      {
-        id: 'n1',
-        alunoUid: 'a1',
-        turmaId: 't1',
-        materiaId: 'm1',
-        bimestre: '1º',
-        notaParcial: 4,
-        notaGlobal: 4,
-        notaParticipacao: 4,
-        notaRecuperacao: 8,
-      },
-      {
-        id: 'n2',
-        alunoUid: 'a1',
-        turmaId: 't1',
-        materiaId: 'm1',
-        bimestre: '2º',
-        notaParcial: 7,
-        notaGlobal: 7,
-        notaParticipacao: 7,
-      },
-      {
-        id: 'n3',
-        alunoUid: 'a1',
-        turmaId: 't1',
-        materiaId: 'm1',
-        bimestre: '3º',
-        notaParcial: 7,
-        notaGlobal: 7,
-        notaParticipacao: 7,
-      },
-      {
-        id: 'n4',
-        alunoUid: 'a1',
-        turmaId: 't1',
-        materiaId: 'm1',
-        bimestre: '4º',
-        notaParcial: 7,
-        notaGlobal: 7,
-        notaParticipacao: 7,
-      },
-    ];
-    const notaRepo = new FakeNotaRepository(notas);
-    const service = new AlunoService(repo, notaRepo);
+  it('deve retornar "Em Andamento" se a Cloud Function lançar erro', async () => {
+    const aluno = makeAluno({ id: 'a1', turmaId: 't1' });
 
-    const status = await service.calcularStatusAluno(makeAluno({ id: 'a1', turmaId: 't1' }), 2024);
-    expect(status).toBe('Aprovado');
-  });
+    (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('falha inesperada'));
 
-  it('deve retornar "Reprovado" quando média geral < 6', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1', turmaId: 't1' }),
-    ]);
-    const notas = [
-      {
-        id: 'n1',
-        alunoUid: 'a1',
-        turmaId: 't1',
-        materiaId: 'm1',
-        bimestre: '1º',
-        notaParcial: 4,
-        notaGlobal: 4,
-        notaParticipacao: 4,
-      },
-      {
-        id: 'n2',
-        alunoUid: 'a1',
-        turmaId: 't1',
-        materiaId: 'm1',
-        bimestre: '2º',
-        notaParcial: 4,
-        notaGlobal: 4,
-        notaParticipacao: 4,
-      },
-      {
-        id: 'n3',
-        alunoUid: 'a1',
-        turmaId: 't1',
-        materiaId: 'm1',
-        bimestre: '3º',
-        notaParcial: 4,
-        notaGlobal: 4,
-        notaParticipacao: 4,
-      },
-      {
-        id: 'n4',
-        alunoUid: 'a1',
-        turmaId: 't1',
-        materiaId: 'm1',
-        bimestre: '4º',
-        notaParcial: 4,
-        notaGlobal: 4,
-        notaParticipacao: 4,
-      },
-    ];
-    const notaRepo = new FakeNotaRepository(notas);
-    const service = new AlunoService(repo, notaRepo);
+    const service = new AlunoService();
+    const status = await service.calcularStatusAluno(aluno, 2024);
 
-    const status = await service.calcularStatusAluno(makeAluno({ id: 'a1', turmaId: 't1' }), 2024);
-    expect(status).toBe('Reprovado');
-  });
-
-  it('deve retornar "Em Andamento" se ocorrer erro inesperado', async () => {
-    const repo = new FakeAlunoRepository([
-      makeAluno({ id: 'a1', turmaId: 't1' }),
-    ]);
-    const notaRepo = new FakeNotaRepository();
-    jest.spyOn(notaRepo, 'findByAlunoUidETurma').mockRejectedValueOnce(new Error('falha inesperada'));
-
-    const service = new AlunoService(repo, notaRepo);
-
-    const status = await service.calcularStatusAluno(makeAluno({ id: 'a1', turmaId: 't1' }), 2024);
     expect(status).toBe('Em Andamento');
   });
 });
 
-describe('AlunoService - copiarDadosAcademicos', () => {
-  it('deve chamar copiarNotas e copiarFrequencias quando repositórios estiverem disponíveis', async () => {
-    const repo = new FakeAlunoRepository();
-    const notaRepo = new FakeNotaRepository();
-    const freqRepo = new FakeFrequenciaRepository();
+describe('AlunoService - calcularStatusAlunosEmLote (via Cloud Function)', () => {
+  beforeEach(() => {
+    global.fetch = jest.fn();
+  });
 
-    const service = new AlunoService(repo, notaRepo, freqRepo);
+  it('deve enviar lista de itens e retornar mapa alunoId -> status', async () => {
+    const alunos = [
+      makeAluno({ id: 'a1', turmaId: 't1', historicoTurmas: { '2024': 't1' } }),
+      makeAluno({ id: 'a2', turmaId: 't2', historicoTurmas: { '2024': 't2' } }),
+    ];
 
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ resultados: { a1: 'Aprovado', a2: 'Reprovado' } }),
+    });
+
+    const service = new AlunoService();
+    const resultados = await service.calcularStatusAlunosEmLote(alunos, 2024);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({
+          action: 'calcularStatusAlunosEmLote',
+          itens: [
+            { alunoId: 'a1', turmaId: 't1', anoLetivo: 2024 },
+            { alunoId: 'a2', turmaId: 't2', anoLetivo: 2024 },
+          ],
+        }),
+      }),
+    );
+
+    expect(resultados).toEqual({ a1: 'Aprovado', a2: 'Reprovado' });
+  });
+});
+
+describe('AlunoService - copiarDadosAcademicos (via Cloud Function)', () => {
+  beforeEach(() => {
+    global.fetch = jest.fn();
+  });
+
+  it('deve enviar alunoId, turmaOrigemId e turmaDestinoId', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({}),
+    });
+
+    const service = new AlunoService();
     await service.copiarDadosAcademicos('a1', 't-origem', 't-destino');
 
-    expect(notaRepo.copiarNotasCalled).toEqual([
-      { alunoUid: 'a1', turmaOrigemId: 't-origem', turmaDestinoId: 't-destino' },
-    ]);
-    expect(freqRepo.copiarFrequenciasCalled).toEqual([
-      { alunoId: 'a1', turmaOrigemId: 't-origem', turmaDestinoId: 't-destino' },
-    ]);
-  });
-
-  it('não deve falhar quando repositórios opcionais não são injetados', async () => {
-    const repo = new FakeAlunoRepository();
-    const service = new AlunoService(repo);
-
-    await expect(
-      service.copiarDadosAcademicos('a1', 't-origem', 't-destino'),
-    ).resolves.toBeUndefined();
-  });
-
-  it('deve propagar erro se copiarNotas/copiarFrequencias falhar', async () => {
-    const repo = new FakeAlunoRepository();
-    const notaRepo = new FakeNotaRepository();
-    const freqRepo = new FakeFrequenciaRepository();
-
-    jest
-      .spyOn(notaRepo, 'copiarNotas')
-      .mockRejectedValueOnce(new Error('erro na cópia de notas'));
-
-    const service = new AlunoService(repo, notaRepo, freqRepo);
-
-    await expect(
-      service.copiarDadosAcademicos('a1', 't-origem', 't-destino'),
-    ).rejects.toThrow('erro na cópia de notas');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({
+          action: 'copiarDadosAcademicos',
+          alunoId: 'a1',
+          turmaOrigemId: 't-origem',
+          turmaDestinoId: 't-destino',
+        }),
+      }),
+    );
   });
 });

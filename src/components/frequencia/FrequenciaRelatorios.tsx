@@ -7,10 +7,7 @@ import { Materia } from '../../models/Materia';
 import { Frequencia } from '../../models/Frequencia';
 import { FrequenciaService } from '../../services/data/FrequenciaService';
 import { FirebaseFrequenciaRepository } from '../../repositories/frequencia/FirebaseFrequenciaRepository';
-
-const frequenciaRepository = new FirebaseFrequenciaRepository();
-const frequenciaService = new FrequenciaService(frequenciaRepository);
-import { FirebaseAlunoRepository } from '../../repositories/aluno/FirebaseAlunoRepository';
+import { AlunoService } from '../../services/usuario/AlunoService';
 import { calcularStatusFrequencia } from '../../utils/frequenciaUtils';
 import DatePicker from "react-datepicker";
 import { CheckCircle, XCircle } from 'react-bootstrap-icons';
@@ -32,8 +29,8 @@ export default function FrequenciaRelatorios({ turmas, materias, anoLetivo, onTo
     () => new FrequenciaService(new FirebaseFrequenciaRepository()),
     []
   );
-  const alunoRepository = useMemo(
-    () => new FirebaseAlunoRepository(),
+  const alunoService = useMemo(
+    () => new AlunoService(),
     []
   );
   // Estados de filtros
@@ -90,9 +87,14 @@ export default function FrequenciaRelatorios({ turmas, materias, anoLetivo, onTo
       // Buscar alunos usando repository
       let listaAlunos: Aluno[];
       if (turmaId) {
-        listaAlunos = await alunoRepository.findByTurmaId(turmaId);
+        // Buscar alunos da turma no ano letivo informado
+        listaAlunos = await alunoService.listarPorTurmaEAnoLetivo(
+          turmaId,
+          anoLetivo.toString(),
+        );
       } else {
-        listaAlunos = await alunoRepository.findAll();
+        // Buscar todos os alunos
+        listaAlunos = await alunoService.listar();
       }
 
       // Filtrar ativos e ordenar

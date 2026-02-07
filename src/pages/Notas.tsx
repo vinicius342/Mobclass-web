@@ -13,7 +13,6 @@ import { NotaService } from '../services/data/NotaService';
 import { FirebaseNotaRepository } from '../repositories/nota/FirebaseNotaRepository';
 import { turmaService } from '../services/data/TurmaService';
 import { AlunoService } from '../services/usuario/AlunoService';
-import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
 import { MateriaService, MateriaComTurma } from '../services/data/MateriaService';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
 import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
@@ -29,7 +28,6 @@ import HistoricoNotasModal from '../components/turmas/HistoricoNotasModal';
 export default function Notas(): JSX.Element {
   const { userData } = useAuth()!;
   const isAdmin = userData?.tipo === 'administradores';
-  const userId = userData?.uid;
   const { anoLetivo } = useAnoLetivo();
 
   // Inicializar services
@@ -38,7 +36,7 @@ export default function Notas(): JSX.Element {
     []
   );
   const alunoService = useMemo(
-    () => new AlunoService(new FirebaseAlunoRepository()),
+    () => new AlunoService(),
     []
   );
   const materiaService = useMemo(
@@ -151,8 +149,8 @@ export default function Notas(): JSX.Element {
           materiaIds = Array.from(new Set(materiasList.map(m => m.id)));
         }
 
-        // Buscar todos os alunos ativos
-        const todosAlunos = await alunoService['alunoRepository'].findAll();
+        // Buscar todos os alunos ativos via service
+        const todosAlunos = await alunoService.listar();
         const alunosAtivos = todosAlunos
           .filter((a: Aluno) => a.status !== 'Inativo')
           .sort((a: Aluno, b: Aluno) => a.nome.localeCompare(b.nome));

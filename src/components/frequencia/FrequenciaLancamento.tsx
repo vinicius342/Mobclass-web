@@ -10,8 +10,7 @@ import { CalendarIcon, Check, Info, Save, Undo, User, UserCheck, UserX, X } from
 import { FaUserCheck, FaUsers, FaUserTimes } from 'react-icons/fa';
 import { FrequenciaService } from '../../services/data/FrequenciaService';
 import { FirebaseFrequenciaRepository } from '../../repositories/frequencia/FirebaseFrequenciaRepository';
-
-import { FirebaseAlunoRepository } from '../../repositories/aluno/FirebaseAlunoRepository';
+import { AlunoService } from '../../services/usuario/AlunoService';
 import { ProfessorMateriaService } from '../../services/data/ProfessorMateriaService';
 import { FirebaseProfessorMateriaRepository } from '../../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 import { Aluno } from '../../models/Aluno';
@@ -55,8 +54,8 @@ export default function FrequenciaLancamento({
     () => new FrequenciaService(new FirebaseFrequenciaRepository()),
     []
   );
-  const alunoRepository = useMemo(
-    () => new FirebaseAlunoRepository(),
+  const alunoService = useMemo(
+    () => new AlunoService(),
     []
   );
   const professorMateriaService = useMemo(
@@ -106,8 +105,21 @@ export default function FrequenciaLancamento({
       }
       setLoading(true);
       try {
-        // Buscar alunos pela turma (excluindo inativos)
-        const todosAlunos = await alunoRepository.findByTurmaId(turmaId);
+        // Buscar turma selecionada para obter o ano letivo correto
+        const turmaSelecionada = turmas.find(t => t.id === turmaId);
+
+        if (!turmaSelecionada) {
+          setAlunos([]);
+          setAttendance({});
+          setLoading(false);
+          return;
+        }
+
+        // Buscar alunos pela turma e ano letivo (excluindo inativos)
+        const todosAlunos = await alunoService.listarPorTurmaEAnoLetivo(
+          turmaId,
+          turmaSelecionada.anoLetivo,
+        );
         const alunosAtivos = todosAlunos
           .filter((aluno: any) => aluno.status !== 'Inativo')
           .sort((a: any, b: any) => a.nome.localeCompare(b.nome));
@@ -144,7 +156,7 @@ export default function FrequenciaLancamento({
       setLoading(false);
     }
     fetchAlunos();
-  }, [turmaId, materiaId, dataAula, alunoRepository, frequenciaService]);
+  }, [turmaId, materiaId, dataAula, turmas, alunoService, frequenciaService]);
 
   const atualizarAttendance = (novoAttendance: Record<string, boolean | null>) => {
     setHistory(prev => [...prev, attendance]); // salva estado atual no histórico

@@ -42,3 +42,7 @@ scripts/backups/
 # Service Account (arquivo local)
 serviceAccountKey.json
 scripts/*.json
+
+# Personalized
+*functions/
+*firebase-functions-mobclass

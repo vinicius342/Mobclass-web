@@ -17,7 +17,6 @@ import { turmaService } from '../services/data/TurmaService';
 import { MateriaService } from '../services/data/MateriaService';
 import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 import { AlunoService } from '../services/usuario/AlunoService';
-import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
 import { ProfessorService } from '../services/data/ProfessorService';
 import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
 import { TarefaService } from '../services/data/TarefaService';
@@ -30,7 +29,7 @@ import { FirebaseNotaRepository } from '../repositories/nota/FirebaseNotaReposit
 
 // Instanciar services
 const materiaService = new MateriaService(new FirebaseMateriaRepository());
-const alunoService = new AlunoService(new FirebaseAlunoRepository());
+const alunoService = new AlunoService();
 const professorService = new ProfessorService(new FirebaseProfessorRepository());
 const tarefaService = new TarefaService(new FirebaseTarefaRepository(), new FirebaseEntregaRepository());
 const frequenciaService = new FrequenciaService(new FirebaseFrequenciaRepository());

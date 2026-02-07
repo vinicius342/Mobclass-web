@@ -32,7 +32,6 @@ import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMater
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
 import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 import { AlunoService } from '../services/usuario/AlunoService';
-import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
 
 export default function Tarefas() {
   const { userData } = useAuth()!;
@@ -52,7 +51,7 @@ export default function Tarefas() {
 
   const materiaService = useMemo(() => new MateriaService(new FirebaseMateriaRepository()), []);
   const professorMateriaService = useMemo(() => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()), []);
-  const alunoService = useMemo(() => new AlunoService(new FirebaseAlunoRepository()), []);
+  const alunoService = useMemo(() => new AlunoService(), []);
 
   // Função auxiliar para verificar se um link é seguro (async)
   const isSafeLink = async (url: string): Promise<boolean> => {

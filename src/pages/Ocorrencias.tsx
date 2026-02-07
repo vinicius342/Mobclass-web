@@ -23,7 +23,7 @@ import { Aluno } from '../models/Aluno';
 import { Turma } from '../models/Turma';
 import { OcorrenciaService } from '../services/data/OcorrenciaService';
 import { FirebaseOcorrenciaRepository } from '../repositories/ocorrencia/FirebaseOcorrenciaRepository';
-import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
+import { AlunoService } from '../services/usuario/AlunoService';
 import { turmaService } from '../services/data/TurmaService';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
 import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
@@ -31,7 +31,7 @@ import { FirebaseProfessorMateriaRepository } from '../repositories/professor_ma
 
 const ocorrenciaRepository = new FirebaseOcorrenciaRepository();
 const ocorrenciaService = new OcorrenciaService(ocorrenciaRepository);
-const alunoRepository = new FirebaseAlunoRepository();
+const alunoService = new AlunoService();
 const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
 const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
 
@@ -112,7 +112,7 @@ export default function Ocorrencias() {
 
   const carregarAlunos = async () => {
     try {
-      const dados = await alunoRepository.findAll();
+      const dados = await alunoService.listar();
       setAlunos(dados);
     } catch (error) {
       console.error('Erro ao carregar alunos:', error);

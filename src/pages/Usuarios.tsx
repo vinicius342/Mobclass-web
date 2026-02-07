@@ -22,7 +22,6 @@ import { Turma as TurmaModel } from '../models/Turma';
 import { ProfessorService } from '../services/data/ProfessorService';
 import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
 import { AlunoService } from '../services/usuario/AlunoService';
-import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
 import { ResponsavelService } from '../services/usuario/ResponsavelService';
 import { FirebaseResponsavelRepository } from '../repositories/responsavel/FirebaseResponsavelRepository';
 import { AdministradorService } from '../services/usuario/AdministradorService';
@@ -51,7 +50,7 @@ export default function Usuarios(): JSX.Element {
   // Instanciar services
   const professorService = useMemo(() => new ProfessorService(new FirebaseProfessorRepository()), []);
   const professorMateriaService = useMemo(() => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()), []);
-  const alunoService = useMemo(() => new AlunoService(new FirebaseAlunoRepository()), []);
+  const alunoService = useMemo(() => new AlunoService(), []);
   const responsavelService = useMemo(() => new ResponsavelService(new FirebaseResponsavelRepository()), []);
   const administradorService = useMemo(() => new AdministradorService(new FirebaseAdministradorRepository()), []);
   const userService = useMemo(() => new UserService(new FirebaseUserRepository()), []);
