@@ -23,9 +23,7 @@ import { FirebaseAgendaRepository } from '../repositories/agenda/FirebaseAgendaR
 import { ComunicadoService } from '../services/data/ComunicadoService';
 import { FirebaseComunicadoRepository } from '../repositories/comunicado/FirebaseComunicadoRepository';
 import { FrequenciaService } from '../services/data/FrequenciaService';
-import { FirebaseFrequenciaRepository } from '../repositories/frequencia/FirebaseFrequenciaRepository';
 import { NotaService } from '../services/data/NotaService';
-import { FirebaseNotaRepository } from '../repositories/nota/FirebaseNotaRepository';
 
 // Instanciar services
 const professorMateriaService = new ProfessorMateriaService(new FirebaseProfessorMateriaRepository());
@@ -33,8 +31,8 @@ const professorService = new ProfessorService(new FirebaseProfessorRepository())
 const tarefaService = new TarefaService(new FirebaseTarefaRepository(), new FirebaseEntregaRepository());
 const agendaService = new AgendaService(new FirebaseAgendaRepository());
 const comunicadoService = new ComunicadoService(new FirebaseComunicadoRepository());
-const frequenciaService = new FrequenciaService(new FirebaseFrequenciaRepository());
-const notaService = new NotaService(new FirebaseNotaRepository());
+const frequenciaService = new FrequenciaService();
+const notaService = new NotaService();
 
 const PIE_COLORS = ['#004085', '#007bff', '#66b0ff'];
 

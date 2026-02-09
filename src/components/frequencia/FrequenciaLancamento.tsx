@@ -9,7 +9,6 @@ import {
 import { CalendarIcon, Check, Info, Save, Undo, User, UserCheck, UserX, X } from "lucide-react";
 import { FaUserCheck, FaUsers, FaUserTimes } from 'react-icons/fa';
 import { FrequenciaService } from '../../services/data/FrequenciaService';
-import { FirebaseFrequenciaRepository } from '../../repositories/frequencia/FirebaseFrequenciaRepository';
 import { AlunoService } from '../../services/usuario/AlunoService';
 import { ProfessorMateriaService } from '../../services/data/ProfessorMateriaService';
 import { FirebaseProfessorMateriaRepository } from '../../repositories/professor_materia/FirebaseProfessorMateriaRepository';
@@ -51,7 +50,7 @@ export default function FrequenciaLancamento({
 }: FrequenciaLancamentoProps): JSX.Element {
   // Inicializar services
   const frequenciaService = useMemo(
-    () => new FrequenciaService(new FirebaseFrequenciaRepository()),
+    () => new FrequenciaService(),
     []
   );
   const alunoService = useMemo(

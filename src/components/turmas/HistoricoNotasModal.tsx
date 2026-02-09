@@ -2,7 +2,6 @@ import React, { useMemo } from 'react';
 import { Modal, Table, Card } from 'react-bootstrap';
 import { BookOpen } from 'lucide-react';
 import { NotaService } from '../../services/data/NotaService';
-import { FirebaseNotaRepository } from '../../repositories/nota/FirebaseNotaRepository';
 
 interface DadosBoletim {
   materias: string[];
@@ -24,9 +23,9 @@ interface Props {
 }
 
 const HistoricoNotasModal: React.FC<Props> = ({ show, onHide, historicoAluno, getNotaColorUtil }) => {
-  // Inicializar NotaService
+  // Inicializar NotaService (apenas para cálculos locais, sem acesso direto ao Firebase)
   const notaService = useMemo(
-    () => new NotaService(new FirebaseNotaRepository()),
+    () => new NotaService(),
     []
   );
 

@@ -1,7 +1,7 @@
 import { Aluno } from '../../models/Aluno';
-// URL da Cloud Function 2ª geração (impressa no deploy)
-const ALUNO_FUNCTION_BASE_URL =
-  'https://gerenciaaluno-3ohr3pb77q-uc.a.run.app';
+// URL da Cloud Function unificada mobclassApi
+const MOBCLASS_API_URL =
+  'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
 
 type AlunoFunctionAction =
   | 'listar'
@@ -27,10 +27,10 @@ export class AlunoService {
     payload: any,
     defaultErrorMessage: string,
   ): Promise<T> {
-    const response = await fetch(ALUNO_FUNCTION_BASE_URL, {
+    const response = await fetch(MOBCLASS_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ...payload }),
+      body: JSON.stringify({ domain: 'aluno', action, ...payload }),
     });
 
     let result: any = null;

@@ -16,7 +16,6 @@ import { Aluno } from '../../models/Aluno';
 import { Materia } from '../../models/Materia';
 import { Nota } from '../../models/Nota';
 import { NotaService } from '../../services/data/NotaService';
-import { FirebaseNotaRepository } from '../../repositories/nota/FirebaseNotaRepository';
 import { FirebaseMateriaRepository } from '../../repositories/materia/FirebaseMateriaRepository';
 
 interface NotasVisualizacaoProps {
@@ -53,7 +52,7 @@ export default function NotasVisualizacao({
 
   // Inicializar NotaService
   const notaService = useMemo(
-    () => new NotaService(new FirebaseNotaRepository(), new FirebaseMateriaRepository()),
+    () => new NotaService(new FirebaseMateriaRepository()),
     []
   );
 

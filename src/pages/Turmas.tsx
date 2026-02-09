@@ -15,7 +15,6 @@ import type { Nota } from '../models/Nota';
 import type { Materia } from '../models/Materia';
 import type { Professor } from '../models/Professor';
 import { NotaService } from '../services/data/NotaService';
-import { FirebaseNotaRepository } from '../repositories/nota/FirebaseNotaRepository';
 import { MateriaService } from '../services/data/MateriaService';
 import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 import { ProfessorService } from '../services/data/ProfessorService';
@@ -39,11 +38,10 @@ import { AlunoService } from '../services/usuario/AlunoService';
 
 // Instanciar Services
 const alunoService = new AlunoService();
-const notaRepository = new FirebaseNotaRepository();
 const materiaRepository = new FirebaseMateriaRepository();
 const professorRepository = new FirebaseProfessorRepository();
 const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
-const notaService = new NotaService(notaRepository, materiaRepository);
+const notaService = new NotaService(materiaRepository);
 const materiaService = new MateriaService(materiaRepository);
 const professorService = new ProfessorService(professorRepository);
 const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);

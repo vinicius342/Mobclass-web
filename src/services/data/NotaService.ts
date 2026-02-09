@@ -1,7 +1,22 @@
-import { INotaRepository } from '../../repositories/nota/INotaRepository';
 import { Nota } from '../../models/Nota';
 import { Aluno } from '../../models/Aluno';
 import { IMateriaRepository } from '../../repositories/materia/IMateriaRepository';
+
+// URL da Cloud Function unificada mobclassApi
+const MOBCLASS_API_URL =
+  'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
+
+type NotaFunctionAction =
+  | 'listar'
+  | 'buscarPorId'
+  | 'listarPorAluno'
+  | 'listarPorAlunoETurma'
+  | 'listarPorTurma'
+  | 'mediasPorTurma'
+  | 'salvar'
+  | 'atualizar'
+  | 'excluir'
+  | 'copiarNotas';
 
 export interface BoletimAluno {
   materias: string[];
@@ -9,51 +24,128 @@ export interface BoletimAluno {
   notas: Record<string, Record<string, { mediaFinal: number | null }>>;
 }
 
+export interface MediaPorTurmaResponse {
+  turmaId: string;
+  media: number;
+}
+
 export class NotaService {
   constructor(
-    private notaRepository: INotaRepository,
     private materiaRepository?: IMateriaRepository
   ) { }
 
+  private async postNotaFunction<T = any>(
+    action: NotaFunctionAction,
+    payload: any,
+    defaultErrorMessage: string,
+  ): Promise<T> {
+    const response = await fetch(MOBCLASS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'notas', action, ...payload }),
+    });
+
+    let result: any = null;
+    try {
+      result = await response.json();
+    } catch {
+      result = null;
+    }
+
+    if (!response.ok) {
+      throw new Error((result && result.message) || defaultErrorMessage);
+    }
+
+    return result as T;
+  }
+
   async listarPorAluno(alunoUid: string): Promise<Nota[]> {
-    return this.notaRepository.findByAlunoUid(alunoUid);
+    return this.postNotaFunction<Nota[]>(
+      'listarPorAluno',
+      { alunoUid },
+      'Erro ao listar notas do aluno',
+    );
   }
 
   async listarPorAlunoETurma(alunoUid: string, turmaId: string): Promise<Nota[]> {
-    return this.notaRepository.findByAlunoUidETurma(alunoUid, turmaId);
+    return this.postNotaFunction<Nota[]>(
+      'listarPorAlunoETurma',
+      { alunoUid, turmaId },
+      'Erro ao listar notas do aluno na turma',
+    );
   }
 
   async listarPorTurma(turmaId: string): Promise<Nota[]> {
-    return this.notaRepository.findByTurmaId(turmaId);
+    return this.postNotaFunction<Nota[]>(
+      'listarPorTurma',
+      { turmaId },
+      'Erro ao listar notas da turma',
+    );
+  }
+
+  async listarMediasPorTurma(
+    turmaIds: string[],
+    materiaId?: string,
+  ): Promise<MediaPorTurmaResponse[]> {
+    return this.postNotaFunction<MediaPorTurmaResponse[]>(
+      'mediasPorTurma',
+      { turmaIds, materiaId },
+      'Erro ao calcular médias por turma',
+    );
   }
 
   async listarTodas(): Promise<Nota[]> {
-    return this.notaRepository.findAll();
+    return this.postNotaFunction<Nota[]>(
+      'listar',
+      {},
+      'Erro ao listar todas as notas',
+    );
   }
 
   async buscarPorId(id: string): Promise<Nota | null> {
-    return this.notaRepository.findById(id);
+    return this.postNotaFunction<Nota | null>(
+      'buscarPorId',
+      { id },
+      'Erro ao buscar nota',
+    );
   }
 
   async salvar(nota: Omit<Nota, 'id'> & { id?: string }): Promise<string> {
-    if (nota.id) {
-      await this.notaRepository.update(nota.id, nota);
-      return nota.id;
-    } else {
-      return await this.notaRepository.create(nota);
-    }
+    const { id, ...notaSemId } = nota as any;
+
+    const result = await this.postNotaFunction<{ id: string }>(
+      'salvar',
+      { id, nota: notaSemId },
+      'Erro ao salvar nota',
+    );
+
+    return result.id;
   }
 
   async atualizar(id: string, nota: Partial<Omit<Nota, 'id'>>): Promise<void> {
-    return this.notaRepository.update(id, nota);
+    const { id: _ignored, ...notaSemId } = nota as any;
+
+    await this.postNotaFunction(
+      'atualizar',
+      { id, nota: notaSemId },
+      'Erro ao atualizar nota',
+    );
   }
 
   async excluir(id: string): Promise<void> {
-    return this.notaRepository.delete(id);
+    await this.postNotaFunction(
+      'excluir',
+      { id },
+      'Erro ao excluir nota',
+    );
   }
 
   async copiarNotas(alunoUid: string, turmaOrigemId: string, turmaDestinoId: string): Promise<void> {
-    await this.notaRepository.copiarNotas(alunoUid, turmaOrigemId, turmaDestinoId);
+    await this.postNotaFunction(
+      'copiarNotas',
+      { alunoUid, turmaOrigemId, turmaDestinoId },
+      'Erro ao copiar notas',
+    );
   }
 
   calcularMediasPorTurma(

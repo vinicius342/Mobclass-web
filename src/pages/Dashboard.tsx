@@ -23,17 +23,15 @@ import { TarefaService } from '../services/data/TarefaService';
 import { FirebaseTarefaRepository } from '../repositories/tarefa/FirebaseTarefaRepository';
 import { FirebaseEntregaRepository } from '../repositories/entrega/FirebaseEntregaRepository';
 import { FrequenciaService } from '../services/data/FrequenciaService';
-import { FirebaseFrequenciaRepository } from '../repositories/frequencia/FirebaseFrequenciaRepository';
 import { NotaService } from '../services/data/NotaService';
-import { FirebaseNotaRepository } from '../repositories/nota/FirebaseNotaRepository';
 
 // Instanciar services
 const materiaService = new MateriaService(new FirebaseMateriaRepository());
 const alunoService = new AlunoService();
 const professorService = new ProfessorService(new FirebaseProfessorRepository());
 const tarefaService = new TarefaService(new FirebaseTarefaRepository(), new FirebaseEntregaRepository());
-const frequenciaService = new FrequenciaService(new FirebaseFrequenciaRepository());
-const notaService = new NotaService(new FirebaseNotaRepository());
+const frequenciaService = new FrequenciaService();
+const notaService = new NotaService();
 
 interface Counts {
   alunos: number;
@@ -59,7 +57,6 @@ export default function Dashboard(): JSX.Element {
   const [freqData, setFreqData] = useState<FreqPorTurma[]>([]);
   const [freqDataOriginal, setFreqDataOriginal] = useState<any[]>([]);
   const [notaData, setNotaData] = useState<NotaMediaPorTurma[]>([]);
-  const [notaDataOriginal, setNotaDataOriginal] = useState<any[]>([]);
   const [turmasLista, setTurmasLista] = useState<{ id: string; nome: string }[]>([]);
   const [materiasLista, setMateriasLista] = useState<{ id: string; nome: string }[]>([]);
   const [grupoTurmasSelecionado, setGrupoTurmasSelecionado] = useState<number>(-1); // -1 = todas
@@ -144,9 +141,8 @@ export default function Dashboard(): JSX.Element {
 
     async function fetchGraficos() {
       try {
-        const [frequencias, notas, materias] = await Promise.all([
+        const [frequencias, materias] = await Promise.all([
           frequenciaService.listar(),
-          notaService.listarTodas(),
           materiaService.listar(),
         ]);
 
@@ -162,20 +158,8 @@ export default function Dashboard(): JSX.Element {
             const freqResults = frequenciaService.calcularTaxasPorTurma(freqDocs, turmasLista);
             setFreqData(freqResults);
 
-            // Processa notas em outro chunk
-            setTimeout(() => {
-              const notaDocs = notas.filter((n: any) => turmasLista.some(t => t.id === n.turmaId));
-              setNotaDataOriginal(notaDocs);
-
-              const notaResults = notaService.calcularMediasPorTurma(
-                notaDocs,
-                turmasLista,
-                disciplinaSelecionada !== 'todas' ? { materiaId: disciplinaSelecionada } : undefined
-              );
-
-              setNotaData(notaResults);
-              setLoadingGraficos(false);
-            }, 0);
+            // Inicialmente, não carrega notas aqui; serão buscadas pelo efeito de filtros
+            setLoadingGraficos(false);
           }, 0);
         }, 0);
       } catch (error) {
@@ -242,7 +226,7 @@ export default function Dashboard(): JSX.Element {
 
   // Recalcular notas quando filtros de turma ou disciplina mudarem
   useEffect(() => {
-    if (!isAdmin || notaDataOriginal.length === 0 || turmasLista.length === 0) return;
+    if (!isAdmin || turmasLista.length === 0) return;
 
     // Calcular nota média por turma
     let turmasParaCalcular = turmasLista;
@@ -252,22 +236,28 @@ export default function Dashboard(): JSX.Element {
       turmasParaCalcular = gruposTurmas[grupoTurmasSelecionado] || [];
     }
 
-    const filtros: any = {};
-    if (grupoTurmasSelecionado !== -1) {
-      filtros.grupoTurmas = turmasParaCalcular;
-    }
-    if (disciplinaSelecionada !== 'todas') {
-      filtros.materiaId = disciplinaSelecionada;
-    }
+    const turmaIds = turmasParaCalcular.map(t => t.id);
+    const materiaId = disciplinaSelecionada !== 'todas' ? disciplinaSelecionada : undefined;
 
-    const notaResults = notaService.calcularMediasPorTurma(
-      notaDataOriginal,
-      turmasParaCalcular,
-      Object.keys(filtros).length > 0 ? filtros : undefined
-    );
+    (async () => {
+      try {
+        const medias = await notaService.listarMediasPorTurma(turmaIds, materiaId);
+        const resultado = medias.map(m => {
+          const turma =
+            turmasParaCalcular.find(t => t.id === m.turmaId) ||
+            turmasLista.find(t => t.id === m.turmaId);
 
-    setNotaData(notaResults);
-  }, [grupoTurmasSelecionado, disciplinaSelecionada, notaDataOriginal, turmasLista, gruposTurmas, isAdmin]);
+          return {
+            turma: turma ? turma.nome : m.turmaId,
+            media: m.media,
+          };
+        });
+        setNotaData(resultado);
+      } catch (error) {
+        console.error('Erro ao carregar médias por turma:', error);
+      }
+    })();
+  }, [grupoTurmasSelecionado, disciplinaSelecionada, turmasLista, gruposTurmas, isAdmin]);
 
   const dadosFreqFiltrados = grupoTurmasSelecionado === -1
     ? freqData

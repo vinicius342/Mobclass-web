@@ -10,7 +10,6 @@ import { Aluno } from '../models/Aluno';
 import { Turma } from '../models/Turma';
 import { Nota } from '../models/Nota';
 import { NotaService } from '../services/data/NotaService';
-import { FirebaseNotaRepository } from '../repositories/nota/FirebaseNotaRepository';
 import { turmaService } from '../services/data/TurmaService';
 import { AlunoService } from '../services/usuario/AlunoService';
 import { MateriaService, MateriaComTurma } from '../services/data/MateriaService';
@@ -32,7 +31,7 @@ export default function Notas(): JSX.Element {
 
   // Inicializar services
   const notaService = useMemo(
-    () => new NotaService(new FirebaseNotaRepository(), new FirebaseMateriaRepository()),
+    () => new NotaService(new FirebaseMateriaRepository()),
     []
   );
   const alunoService = useMemo(

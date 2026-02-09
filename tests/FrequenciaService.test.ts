@@ -1,91 +1,5 @@
 import { FrequenciaService } from '../src/services/data/FrequenciaService';
 import { Frequencia } from '../src/models/Frequencia';
-import { IFrequenciaRepository } from '../src/repositories/frequencia/IFrequenciaRepository';
-
-class FakeFrequenciaRepository implements IFrequenciaRepository {
-  private frequencias: Frequencia[];
-
-  constructor(initial: Frequencia[] = []) {
-    this.frequencias = [...initial];
-  }
-
-  async findAll(): Promise<Frequencia[]> {
-    return this.frequencias;
-  }
-
-  async findById(id: string): Promise<Frequencia | null> {
-    return this.frequencias.find(f => f.id === id) ?? null;
-  }
-
-  async create(frequencia: Omit<Frequencia, 'id'>): Promise<string> {
-    const id = `id-${this.frequencias.length + 1}`;
-    this.frequencias.push({ id, ...frequencia });
-    return id;
-  }
-
-  async update(id: string, frequencia: Partial<Omit<Frequencia, 'id'>>): Promise<void> {
-    this.frequencias = this.frequencias.map(f => (f.id === id ? { ...f, ...frequencia } : f));
-  }
-
-  async delete(id: string): Promise<void> {
-    this.frequencias = this.frequencias.filter(f => f.id !== id);
-  }
-
-  async findByAlunoId(alunoId: string): Promise<Frequencia[]> {
-    return this.frequencias.filter(f => f.alunoId === alunoId);
-  }
-
-  async findByAlunoIdETurma(alunoId: string, turmaId: string): Promise<Frequencia[]> {
-    return this.frequencias.filter(f => f.alunoId === alunoId && f.turmaId === turmaId);
-  }
-
-  async findByTurmaId(turmaId: string): Promise<Frequencia[]> {
-    return this.frequencias.filter(f => f.turmaId === turmaId);
-  }
-
-  async findByTurmaMateria(turmaId: string, materiaId: string, data: string): Promise<Frequencia[]> {
-    return this.frequencias.filter(
-      f => f.turmaId === turmaId && f.materiaId === materiaId && f.data === data,
-    );
-  }
-
-  async findByAlunoIdEPeriodo(alunoId: string, dataInicio: string, dataFim: string): Promise<Frequencia[]> {
-    return this.frequencias.filter(f => {
-      return (
-        f.alunoId === alunoId &&
-        f.data >= dataInicio &&
-        f.data <= dataFim
-      );
-    });
-  }
-
-  async findByPeriodo(dataInicio: string, dataFim: string): Promise<Frequencia[]> {
-    return this.frequencias.filter(f => f.data >= dataInicio && f.data <= dataFim);
-  }
-
-  async salvarEmLote(frequencias: Omit<Frequencia, 'id'>[]): Promise<void> {
-    for (const freq of frequencias) {
-      await this.create(freq);
-    }
-  }
-
-  async copiarFrequencias(alunoId: string, turmaOrigemId: string, turmaDestinoId: string): Promise<void> {
-    const originais = this.frequencias.filter(
-      f => f.alunoId === alunoId && f.turmaId === turmaOrigemId,
-    );
-    for (const freq of originais) {
-      await this.create({
-        alunoId: freq.alunoId,
-        turmaId: turmaDestinoId,
-        materiaId: freq.materiaId,
-        data: freq.data,
-        presenca: freq.presenca,
-        professorId: freq.professorId,
-        observacao: freq.observacao,
-      });
-    }
-  }
-}
 
 const makeFreq = (overrides: Partial<Frequencia> = {}): Frequencia => ({
   id: overrides.id ?? '1',
@@ -99,102 +13,206 @@ const makeFreq = (overrides: Partial<Frequencia> = {}): Frequencia => ({
 });
 
 describe('FrequenciaService', () => {
-  describe('métodos que usam repositório', () => {
-    it('listar deve delegar para findAll', async () => {
-      const repo = new FakeFrequenciaRepository([
-        makeFreq({ id: '1' }),
-        makeFreq({ id: '2' }),
-      ]);
-      const service = new FrequenciaService(repo);
-
-      const result = await service.listar();
-
-      expect(result).toHaveLength(2);
-      expect(result.map(f => f.id)).toEqual(['1', '2']);
+  describe('métodos de dados (Cloud Function)', () => {
+    beforeEach(() => {
+      global.fetch = jest.fn();
     });
 
-    it('listarPorAluno deve delegar para findByAlunoId', async () => {
-      const repo = new FakeFrequenciaRepository([
-        makeFreq({ id: '1', alunoId: 'A' }),
-        makeFreq({ id: '2', alunoId: 'B' }),
-        makeFreq({ id: '3', alunoId: 'A' }),
-      ]);
-      const service = new FrequenciaService(repo);
+    it('listar deve chamar a Cloud Function com action "listar"', async () => {
+      const frequenciasMock = [
+        makeFreq({ id: '1' }),
+        makeFreq({ id: '2' }),
+      ];
 
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => frequenciasMock,
+      });
+
+      const service = new FrequenciaService();
+      const result = await service.listar();
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'frequencia', action: 'listar' }),
+        }),
+      );
+      expect(result).toEqual(frequenciasMock);
+    });
+
+    it('listarPorAluno deve chamar a Cloud Function com action "listarPorAluno"', async () => {
+      const frequenciasMock = [
+        makeFreq({ id: '1', alunoId: 'A' }),
+        makeFreq({ id: '3', alunoId: 'A' }),
+      ];
+
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => frequenciasMock,
+      });
+
+      const service = new FrequenciaService();
       const result = await service.listarPorAluno('A');
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'frequencia', action: 'listarPorAluno', alunoId: 'A' }),
+        }),
+      );
       expect(result.map(f => f.id)).toEqual(['1', '3']);
     });
 
-    it('listarPorAlunoETurma deve delegar para findByAlunoIdETurma', async () => {
-      const repo = new FakeFrequenciaRepository([
+    it('listarPorAlunoETurma deve chamar a Cloud Function com alunoId e turmaId', async () => {
+      const frequenciasMock = [
         makeFreq({ id: '1', alunoId: 'A', turmaId: 'T1' }),
-        makeFreq({ id: '2', alunoId: 'A', turmaId: 'T2' }),
-        makeFreq({ id: '3', alunoId: 'B', turmaId: 'T1' }),
-      ]);
-      const service = new FrequenciaService(repo);
+      ];
 
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => frequenciasMock,
+      });
+
+      const service = new FrequenciaService();
       const result = await service.listarPorAlunoETurma('A', 'T1');
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'frequencia', action: 'listarPorAlunoETurma', alunoId: 'A', turmaId: 'T1' }),
+        }),
+      );
       expect(result.map(f => f.id)).toEqual(['1']);
     });
 
-    it('listarPorTurma deve delegar para findByTurmaId', async () => {
-      const repo = new FakeFrequenciaRepository([
+    it('listarPorTurma deve chamar a Cloud Function com turmaId', async () => {
+      const frequenciasMock = [
         makeFreq({ id: '1', turmaId: 'T1' }),
-        makeFreq({ id: '2', turmaId: 'T2' }),
         makeFreq({ id: '3', turmaId: 'T1' }),
-      ]);
-      const service = new FrequenciaService(repo);
+      ];
 
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => frequenciasMock,
+      });
+
+      const service = new FrequenciaService();
       const result = await service.listarPorTurma('T1');
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'frequencia', action: 'listarPorTurma', turmaId: 'T1' }),
+        }),
+      );
       expect(result.map(f => f.id)).toEqual(['1', '3']);
     });
 
-    it('buscarPorPeriodo deve delegar para findByPeriodo', async () => {
-      const repo = new FakeFrequenciaRepository([
+    it('buscarPorPeriodo deve chamar a Cloud Function com dataInicio e dataFim', async () => {
+      const frequenciasMock = [
         makeFreq({ id: '1', data: '2025-03-01' }),
         makeFreq({ id: '2', data: '2025-03-15' }),
-        makeFreq({ id: '3', data: '2025-04-01' }),
-      ]);
-      const service = new FrequenciaService(repo);
+      ];
 
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => frequenciasMock,
+      });
+
+      const service = new FrequenciaService();
       const result = await service.buscarPorPeriodo('2025-03-01', '2025-03-31');
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'frequencia', action: 'buscarPorPeriodo', dataInicio: '2025-03-01', dataFim: '2025-03-31' }),
+        }),
+      );
       expect(result.map(f => f.id)).toEqual(['1', '2']);
     });
 
-    it('copiarFrequencias deve delegar para o repositório', async () => {
-      const repo = new FakeFrequenciaRepository([
-        makeFreq({ id: '1', alunoId: 'A', turmaId: 'T1' }),
-      ]);
-      const spy = jest.spyOn(repo, 'copiarFrequencias');
-      const service = new FrequenciaService(repo);
+    it('copiarFrequencias deve chamar a Cloud Function com alunoId, turmaOrigemId e turmaDestinoId', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true }),
+      });
 
+      const service = new FrequenciaService();
       await service.copiarFrequencias('A', 'T1', 'T2');
 
-      expect(spy).toHaveBeenCalledWith('A', 'T1', 'T2');
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'frequencia', action: 'copiarFrequencias', alunoId: 'A', turmaOrigemId: 'T1', turmaDestinoId: 'T2' }),
+        }),
+      );
     });
 
-    it('buscarPorAlunoIdEPeriodo deve delegar para findByAlunoIdEPeriodo', async () => {
-      const repo = new FakeFrequenciaRepository([
-        makeFreq({ id: '1', alunoId: 'A', data: '2025-01-10' }),
+    it('buscarPorAlunoIdEPeriodo deve chamar a Cloud Function com alunoId, dataInicio e dataFim', async () => {
+      const frequenciasMock = [
         makeFreq({ id: '2', alunoId: 'A', data: '2025-02-10' }),
-        makeFreq({ id: '3', alunoId: 'B', data: '2025-02-10' }),
-      ]);
-      const service = new FrequenciaService(repo);
+      ];
 
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => frequenciasMock,
+      });
+
+      const service = new FrequenciaService();
       const result = await service.buscarPorAlunoIdEPeriodo('A', '2025-02-01', '2025-02-28');
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'frequencia', action: 'buscarPorAlunoIdEPeriodo', alunoId: 'A', dataInicio: '2025-02-01', dataFim: '2025-02-28' }),
+        }),
+      );
       expect(result.map(f => f.id)).toEqual(['2']);
+    });
+
+    it('salvarFrequencias deve chamar a Cloud Function com array de frequências', async () => {
+      const frequenciasMock = [
+        { alunoId: 'A', turmaId: 'T1', materiaId: 'M1', data: '2025-03-10', presenca: true, professorId: 'P1' },
+      ];
+
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true }),
+      });
+
+      const service = new FrequenciaService();
+      await service.salvarFrequencias(frequenciasMock);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'frequencia', action: 'salvarFrequencias', frequencias: frequenciasMock }),
+        }),
+      );
     });
   });
 
   describe('calcularPercentualPresenca', () => {
+    beforeEach(() => {
+      global.fetch = jest.fn();
+    });
+
     it('deve retornar 0 quando não houver frequencias', async () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => [],
+      });
+
+      const service = new FrequenciaService();
 
       const percentual = await service.calcularPercentualPresenca('A', 'T1');
 
@@ -202,12 +220,16 @@ describe('FrequenciaService', () => {
     });
 
     it('deve calcular percentual de presenças', async () => {
-      const repo = new FakeFrequenciaRepository([
-        makeFreq({ id: '1', alunoId: 'A', turmaId: 'T1', presenca: true }),
-        makeFreq({ id: '2', alunoId: 'A', turmaId: 'T1', presenca: false }),
-        makeFreq({ id: '3', alunoId: 'A', turmaId: 'T1', presenca: true }),
-      ]);
-      const service = new FrequenciaService(repo);
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          makeFreq({ id: '1', alunoId: 'A', turmaId: 'T1', presenca: true }),
+          makeFreq({ id: '2', alunoId: 'A', turmaId: 'T1', presenca: false }),
+          makeFreq({ id: '3', alunoId: 'A', turmaId: 'T1', presenca: true }),
+        ],
+      });
+
+      const service = new FrequenciaService();
 
       const percentual = await service.calcularPercentualPresenca('A', 'T1');
 
@@ -217,8 +239,7 @@ describe('FrequenciaService', () => {
 
   describe('calcularTaxasPorTurma', () => {
     it('deve calcular taxa simples sem filtros', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const frequencias: Frequencia[] = [
         makeFreq({ id: '1', turmaId: 'T1', presenca: true }),
@@ -240,8 +261,7 @@ describe('FrequenciaService', () => {
     });
 
     it('deve aplicar filtro por matéria', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const frequencias: Frequencia[] = [
         makeFreq({ id: '1', turmaId: 'T1', materiaId: 'MAT', presenca: true }),
@@ -258,8 +278,7 @@ describe('FrequenciaService', () => {
     });
 
     it('deve aplicar filtro por período hoje', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const hoje = new Date().toISOString().split('T')[0];
 
@@ -278,8 +297,7 @@ describe('FrequenciaService', () => {
     });
 
     it('deve aplicar filtro por mês e ano', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const frequencias: Frequencia[] = [
         makeFreq({ id: '1', turmaId: 'T1', data: '2025-03-10', presenca: true }),
@@ -298,8 +316,7 @@ describe('FrequenciaService', () => {
     });
 
     it('deve aplicar filtro personalizado por data exata', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const frequencias: Frequencia[] = [
         makeFreq({ id: '1', turmaId: 'T1', data: '2025-03-10', presenca: true }),
@@ -318,8 +335,7 @@ describe('FrequenciaService', () => {
 
   describe('agruparPorDiaSemana', () => {
     it('deve agrupar por dia da semana em português', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const diasPt: Record<string, string> = {
         Monday: 'Segunda-feira',
@@ -345,8 +361,7 @@ describe('FrequenciaService', () => {
     });
 
     it('deve ignorar datas inválidas sem lançar erro', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const diasPt: Record<string, string> = {
         Monday: 'Segunda-feira',
@@ -364,23 +379,31 @@ describe('FrequenciaService', () => {
 
   describe('listarPorTurmaMateria', () => {
     it('deve filtrar pela combinação turma/matéria/data', async () => {
-      const repo = new FakeFrequenciaRepository([
-        makeFreq({ id: '1', turmaId: 'T1', materiaId: 'MAT', data: '2025-03-10' }),
-        makeFreq({ id: '2', turmaId: 'T1', materiaId: 'MAT', data: '2025-03-11' }),
-        makeFreq({ id: '3', turmaId: 'T2', materiaId: 'MAT', data: '2025-03-10' }),
-      ]);
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([
+            makeFreq({ id: '1', turmaId: 'T1', materiaId: 'MAT', data: '2025-03-10' }),
+          ]),
+        } as Response),
+      );
 
       const result = await service.listarPorTurmaMateria('T1', 'MAT', '2025-03-10');
 
       expect(result.map(f => f.id)).toEqual(['1']);
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://mobclassapi-3ohr3pb77q-uc.a.run.app',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
     });
   });
 
   describe('inicializarAttendance', () => {
     it('deve inicializar com valores existentes ou null', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const alunos = [
         { id: 'A1', nome: 'Aluno 1' },
@@ -399,8 +422,7 @@ describe('FrequenciaService', () => {
 
   describe('mapearJustificativas', () => {
     it('deve mapear observações por alunoId', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const frequencias: Frequencia[] = [
         makeFreq({ id: '1', alunoId: 'A1', observacao: 'Atestado' }),
@@ -415,8 +437,7 @@ describe('FrequenciaService', () => {
 
   describe('marcarTodosPresentes/Ausentes', () => {
     it('deve marcar todos presentes', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const alunos = [
         { id: 'A1', nome: 'Aluno 1' },
@@ -432,8 +453,7 @@ describe('FrequenciaService', () => {
     });
 
     it('deve marcar todos ausentes', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const alunos = [
         { id: 'A1', nome: 'Aluno 1' },
@@ -451,8 +471,7 @@ describe('FrequenciaService', () => {
 
   describe('prepararFrequenciasComJustificativas', () => {
     it('deve montar lista sem observacao quando não houver justificativa', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const alunos = [
         { id: 'A1', nome: 'Aluno 1' },
@@ -484,8 +503,7 @@ describe('FrequenciaService', () => {
     });
 
     it('deve incluir observacao quando existir justificativa', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const alunos = [{ id: 'A1', nome: 'Aluno 1' }];
       const attendance = { A1: false } as Record<string, boolean | null>;
@@ -506,13 +524,15 @@ describe('FrequenciaService', () => {
   });
 
   describe('salvarFrequencias', () => {
-    it('deve criar quando não existir registro e atualizar quando existir', async () => {
-      const existente: Frequencia = makeFreq({ id: '1', alunoId: 'A1', turmaId: 'T1', materiaId: 'MAT', data: '2025-03-10', presenca: false });
-      const repo = new FakeFrequenciaRepository([existente]);
-      const service = new FrequenciaService(repo);
-
-      const createSpy = jest.spyOn(repo, 'create');
-      const updateSpy = jest.spyOn(repo, 'update');
+    it('deve salvar múltiplas frequências via API', async () => {
+      const service = new FrequenciaService();
+      
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true }),
+        } as Response),
+      );
 
       const payloads: Omit<Frequencia, 'id'>[] = [
         {
@@ -535,22 +555,18 @@ describe('FrequenciaService', () => {
 
       await service.salvarFrequencias(payloads);
 
-      expect(updateSpy).toHaveBeenCalledTimes(1);
-      expect(createSpy).toHaveBeenCalledTimes(1);
-
-      const all = await repo.findAll();
-      const atualizada = all.find(f => f.alunoId === 'A1');
-      const criada = all.find(f => f.alunoId === 'A2');
-
-      expect(atualizada?.presenca).toBe(true);
-      expect(criada).toBeDefined();
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://mobclassapi-3ohr3pb77q-uc.a.run.app',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
     });
   });
 
   describe('calcularEstatisticas', () => {
     it('deve calcular totais e percentuais', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const frequencias = [
         { presenca: true },
@@ -568,8 +584,7 @@ describe('FrequenciaService', () => {
     });
 
     it('deve lidar com lista vazia', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const stats = service.calcularEstatisticas([]);
 
@@ -581,8 +596,7 @@ describe('FrequenciaService', () => {
 
   describe('filtrarAlunosPorNome', () => {
     it('deve filtrar por presentes, ausentes e nome', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const alunos = [
         { id: 'A1', nome: 'Ana' },
@@ -608,8 +622,7 @@ describe('FrequenciaService', () => {
 
   describe('calcularEstatisticasGerais', () => {
     it('deve calcular percentuais gerais de presença e ausência', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const frequencias: Frequencia[] = [
         makeFreq({ presenca: true }),
@@ -627,8 +640,7 @@ describe('FrequenciaService', () => {
     });
 
     it('deve retornar 0 para lista vazia', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const stats = service.calcularEstatisticasGerais([]);
 
@@ -640,8 +652,7 @@ describe('FrequenciaService', () => {
 
   describe('calcularTopAlunosPresenca', () => {
     it('deve retornar top alunos por percentual de presença', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const alunos = [
         { id: 'A1', nome: 'Ana' },
@@ -665,8 +676,7 @@ describe('FrequenciaService', () => {
 
   describe('calcularResumosPorAluno e ordenarResumos', () => {
     it('deve calcular e ordenar resumos', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const alunos = [
         { id: 'A1', nome: 'Bruno' },
@@ -702,8 +712,7 @@ describe('FrequenciaService', () => {
 
   describe('calcularHistoricoPorBimestre', () => {
     it('deve calcular históricos por bimestre para um aluno', () => {
-      const repo = new FakeFrequenciaRepository();
-      const service = new FrequenciaService(repo);
+      const service = new FrequenciaService();
 
       const ano = 2025;
       const aluno = { id: 'A1', nome: 'Aluno 1' };

@@ -34,7 +34,7 @@ describe('AlunoService (Cloud Function) - integração HTTP', () => {
       expect.any(String),
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ action: 'listar' }),
+        body: JSON.stringify({ domain: 'aluno', action: 'listar' }),
       }),
     );
     expect(result).toEqual(alunosMock);
@@ -55,7 +55,7 @@ describe('AlunoService (Cloud Function) - integração HTTP', () => {
       expect.any(String),
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ action: 'buscarPorId', id: 'a1' }),
+        body: JSON.stringify({ domain: 'aluno', action: 'buscarPorId', id: 'a1' }),
       }),
     );
     expect(result).toEqual(alunoMock);
@@ -76,19 +76,19 @@ describe('AlunoService (Cloud Function) - integração HTTP', () => {
     expect(global.fetch).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        body: JSON.stringify({ action: 'promoverAluno', id: 'a1', anoAtual: '2023', anoDestino: '2024', turmaId: 'turma-2' }),
+        body: JSON.stringify({ domain: 'aluno', action: 'promoverAluno', id: 'a1', anoAtual: '2023', anoDestino: '2024', turmaId: 'turma-2' }),
       }),
     );
     expect(global.fetch).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        body: JSON.stringify({ action: 'reprovarAluno', id: 'a1', anoAtual: '2024', anoDestino: '2024', turmaId: 'turma-3' }),
+        body: JSON.stringify({ domain: 'aluno', action: 'reprovarAluno', id: 'a1', anoAtual: '2024', anoDestino: '2024', turmaId: 'turma-3' }),
       }),
     );
     expect(global.fetch).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        body: JSON.stringify({ action: 'transferirAluno', id: 'a1', anoAtual: '2024', anoDestino: '2024', turmaId: 'turma-4' }),
+        body: JSON.stringify({ domain: 'aluno', action: 'transferirAluno', id: 'a1', anoAtual: '2024', anoDestino: '2024', turmaId: 'turma-4' }),
       }),
     );
   });
@@ -107,7 +107,7 @@ describe('AlunoService (Cloud Function) - integração HTTP', () => {
     expect(global.fetch).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        body: JSON.stringify({ action: 'listarPorTurmaEAnoLetivo', turmaId: 't1', anoLetivo: '2024' }),
+        body: JSON.stringify({ domain: 'aluno', action: 'listarPorTurmaEAnoLetivo', turmaId: 't1', anoLetivo: '2024' }),
       }),
     );
     expect(result).toEqual(alunosMock);
@@ -125,7 +125,7 @@ describe('AlunoService (Cloud Function) - integração HTTP', () => {
     expect(global.fetch).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        body: JSON.stringify({ action: 'atualizar', id: 'a1', aluno: { nome: 'Atualizado' } }),
+        body: JSON.stringify({ domain: 'aluno', action: 'atualizar', id: 'a1', aluno: { nome: 'Atualizado' } }),
       }),
     );
   });
@@ -143,6 +143,7 @@ describe('AlunoService (Cloud Function) - integração HTTP', () => {
       expect.any(String),
       expect.objectContaining({
         body: JSON.stringify({
+          domain: 'aluno',
           action: 'updateHistorico',
           id: 'a1',
           anoAtual: '2023',
@@ -195,6 +196,7 @@ describe('AlunoService - calcularStatusAluno (via Cloud Function)', () => {
       expect.any(String),
       expect.objectContaining({
         body: JSON.stringify({
+          domain: 'aluno',
           action: 'calcularStatusAluno',
           alunoId: 'a1',
           turmaId: 't1',
@@ -240,6 +242,7 @@ describe('AlunoService - calcularStatusAlunosEmLote (via Cloud Function)', () =>
       expect.any(String),
       expect.objectContaining({
         body: JSON.stringify({
+          domain: 'aluno',
           action: 'calcularStatusAlunosEmLote',
           itens: [
             { alunoId: 'a1', turmaId: 't1', anoLetivo: 2024 },
@@ -271,6 +274,7 @@ describe('AlunoService - copiarDadosAcademicos (via Cloud Function)', () => {
       expect.any(String),
       expect.objectContaining({
         body: JSON.stringify({
+          domain: 'aluno',
           action: 'copiarDadosAcademicos',
           alunoId: 'a1',
           turmaOrigemId: 't-origem',

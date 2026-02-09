@@ -6,7 +6,6 @@ import { Turma } from '../../models/Turma';
 import { Materia } from '../../models/Materia';
 import { Frequencia } from '../../models/Frequencia';
 import { FrequenciaService } from '../../services/data/FrequenciaService';
-import { FirebaseFrequenciaRepository } from '../../repositories/frequencia/FirebaseFrequenciaRepository';
 import { AlunoService } from '../../services/usuario/AlunoService';
 import { calcularStatusFrequencia } from '../../utils/frequenciaUtils';
 import DatePicker from "react-datepicker";
@@ -26,7 +25,7 @@ interface FrequenciaRelatoriosProps {
 export default function FrequenciaRelatorios({ turmas, materias, anoLetivo, onToast }: FrequenciaRelatoriosProps) {
   // Inicializar services
   const frequenciaService = useMemo(
-    () => new FrequenciaService(new FirebaseFrequenciaRepository()),
+    () => new FrequenciaService(),
     []
   );
   const alunoService = useMemo(
