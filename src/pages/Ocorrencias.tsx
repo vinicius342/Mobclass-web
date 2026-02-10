@@ -132,9 +132,7 @@ export default function Ocorrencias() {
           return;
         }
         // Buscar professor pelo email
-        const professorService = new (await import('../services/data/ProfessorService')).ProfessorService(
-          new (await import('../repositories/professor/FirebaseProfessorRepository')).FirebaseProfessorRepository()
-        );
+        const professorService = new (await import('../services/data/ProfessorService')).ProfessorService();
         const allProfessores = await professorService.listar();
         const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
         if (!professorAtual) {

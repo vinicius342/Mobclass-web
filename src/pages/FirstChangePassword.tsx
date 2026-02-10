@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
 import { auth } from "../services/firebase/firebase";
 import { UserService } from "../services/usuario/UserService";
-import { FirebaseUserRepository } from "../repositories/user/FirebaseUserRepository";
 import {
   Container,
   Card,
@@ -14,7 +13,7 @@ import {
 } from "react-bootstrap";
 import logo from "../assets/logo.png";
 
-const userService = new UserService(new FirebaseUserRepository());
+const userService = new UserService();
 
 export default function FirstChangePassword() {
   const [senhaAtual, setSenhaAtual] = useState("");

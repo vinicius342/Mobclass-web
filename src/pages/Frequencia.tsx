@@ -16,7 +16,6 @@ import { MateriaService } from '../services/data/MateriaService';
 import { ProfessorService } from '../services/data/ProfessorService';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
 import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
-import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
 import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 import type { Turma } from '../models/Turma';
 import type { ProfessorMateria } from '../models/ProfessorMateria';
@@ -27,8 +26,7 @@ import FrequenciaLancamento from '../components/frequencia/FrequenciaLancamento'
 const materiaRepository = new FirebaseMateriaRepository();
 const materiaService = new MateriaService(materiaRepository);
 
-const professorRepository = new FirebaseProfessorRepository();
-const professorService = new ProfessorService(professorRepository);
+const professorService = new ProfessorService();
 
 const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
 const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);

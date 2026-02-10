@@ -1,7 +1,7 @@
 import { db } from '../../services/firebase/firebase';
 import { collection, getDocs, doc, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { Turma } from '../../models/Turma';
-import { ITurmaRepository } from '../ITurmaRepository';
+import { ITurmaRepository } from './ITurmaRepository';
 
 export class FirebaseTurmaRepository implements ITurmaRepository {
   async findAll(): Promise<Turma[]> {

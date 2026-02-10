@@ -18,7 +18,6 @@ import { NotaService } from '../services/data/NotaService';
 import { MateriaService } from '../services/data/MateriaService';
 import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 import { ProfessorService } from '../services/data/ProfessorService';
-import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
 import { useAuth } from '../contexts/AuthContext';
 import Paginacao from '../components/common/Paginacao';
 import { Users, BookOpen, Clock } from 'lucide-react';
@@ -39,11 +38,10 @@ import { AlunoService } from '../services/usuario/AlunoService';
 // Instanciar Services
 const alunoService = new AlunoService();
 const materiaRepository = new FirebaseMateriaRepository();
-const professorRepository = new FirebaseProfessorRepository();
 const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
 const notaService = new NotaService(materiaRepository);
 const materiaService = new MateriaService(materiaRepository);
-const professorService = new ProfessorService(professorRepository);
+const professorService = new ProfessorService();
 const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
 
 export default function Turmas() {

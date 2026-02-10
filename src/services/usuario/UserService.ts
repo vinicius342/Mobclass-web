@@ -1,25 +1,25 @@
-import { IUserRepository } from '../../repositories/user/IUserRepository';
 import { Responsavel } from '../../models/Responsavel';
 import { Administrador } from '../../models/Administrador';
 import { Turma as TurmaModel } from '../../models/Turma';
 
 const GERENCIA_USUARIO_BASE_URL =
   'https://us-central1-agenda-digital-e481b.cloudfunctions.net/gerenciaUsuario';
+const API_URL = 'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
 
 export class UserService {
-  constructor(private userRepository: IUserRepository) {}
+  constructor() {}
 
   /**
    * Atualiza o status do usuário na coleção 'users'
    */
   async atualizarStatus(uid: string, status: 'Ativo' | 'Inativo'): Promise<void> {
-    await this.userRepository.updateStatus(uid, status);
+    await this.updateStatus(uid, status);
     
     // Se inativo, também desabilitar no Firebase Auth
     if (status === 'Inativo') {
-      await this.userRepository.updateDisabled(uid, true);
+      await this.updateDisabled(uid, true);
     } else {
-      await this.userRepository.updateDisabled(uid, false);
+      await this.updateDisabled(uid, false);
     }
   }
 
@@ -36,20 +36,65 @@ export class UserService {
    * Busca usuário na coleção "users" por e-mail (case-insensitive).
    */
   async buscarPorEmailCaseInsensitive(email: string): Promise<{ id: string; email: string } | null> {
-    return this.userRepository.findByEmailCaseInsensitive(email);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'user', action: 'findByEmailCaseInsensitive', email }),
+    });
+    if (!response.ok) throw new Error('Erro ao buscar usuário por email');
+    return response.json();
   }
 
   /**
    * Atualiza o status somente se existir documento na coleção "users".
    */
   async atualizarStatusSeExistir(uid: string, status: 'Ativo' | 'Inativo'): Promise<void> {
-    const exists = await this.userRepository.exists(uid);
-    if (!exists) return;
+    const existsResult = await this.exists(uid);
+    if (!existsResult) return;
     await this.atualizarStatus(uid, status);
   }
 
   async marcarPrimeiroAcessoConcluido(uid: string): Promise<void> {
-    await this.userRepository.updateFirstAcesso(uid, false);
+    await this.updateFirstAcesso(uid, false);
+  }
+
+  // Métodos internos que chamam o backend
+  private async updateStatus(uid: string, status: 'Ativo' | 'Inativo'): Promise<void> {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'user', action: 'updateStatus', uid, status }),
+    });
+    if (!response.ok) throw new Error('Erro ao atualizar status');
+  }
+
+  private async updateDisabled(uid: string, disabled: boolean): Promise<void> {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'user', action: 'updateDisabled', uid, disabled }),
+    });
+    if (!response.ok) throw new Error('Erro ao atualizar disabled');
+  }
+
+  private async updateFirstAcesso(uid: string, firstAcesso: boolean): Promise<void> {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'user', action: 'updateFirstAcesso', uid, firstAcesso }),
+    });
+    if (!response.ok) throw new Error('Erro ao atualizar primeiro acesso');
+  }
+
+  private async exists(uid: string): Promise<boolean> {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'user', action: 'exists', uid }),
+    });
+    if (!response.ok) throw new Error('Erro ao verificar existência de usuário');
+    const result = await response.json();
+    return result.exists;
   }
 
   private async postGerenciaUsuario<T = any>(

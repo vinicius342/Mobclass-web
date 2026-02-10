@@ -1,10 +1,10 @@
-import { ITarefaRepository } from '../../repositories/tarefa/ITarefaRepository';
-import { IEntregaRepository } from '../../repositories/entrega/IEntregaRepository';
 import { Tarefa } from '../../models/Tarefa';
 import { Entrega } from '../../models/Entrega';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+
+const API_URL = 'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
 
 export interface UrlValidationResult {
   isValid: boolean;
@@ -17,54 +17,99 @@ export interface UrlValidationResult {
 }
 
 export class TarefaService {
-  constructor(
-    private tarefaRepository: ITarefaRepository,
-    private entregaRepository: IEntregaRepository
-  ) {}
+  constructor() {}
 
   // ==================== CRUD Tarefas ====================
 
   async listarTarefas(): Promise<Tarefa[]> {
-    return await this.tarefaRepository.findAll();
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'tarefa', action: 'listar' }),
+    });
+    if (!response.ok) throw new Error('Erro ao listar tarefas');
+    return await response.json();
   }
 
   async listarTarefasPorTurmas(turmaIds: string[]): Promise<Tarefa[]> {
-    return await this.tarefaRepository.findByTurmas(turmaIds);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'tarefa', action: 'listarPorTurmas', turmaIds }),
+    });
+    if (!response.ok) throw new Error('Erro ao listar tarefas por turmas');
+    return await response.json();
   }
 
   async buscarTarefaPorId(id: string): Promise<Tarefa | null> {
-    return await this.tarefaRepository.findById(id);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'tarefa', action: 'buscarPorId', id }),
+    });
+    if (!response.ok) throw new Error('Erro ao buscar tarefa');
+    return await response.json();
   }
 
   async criarTarefa(tarefa: Omit<Tarefa, 'id'>): Promise<string> {
-    return await this.tarefaRepository.create(tarefa);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'tarefa', action: 'criar', tarefa }),
+    });
+    if (!response.ok) throw new Error('Erro ao criar tarefa');
+    const result = await response.json();
+    return result.id;
   }
 
   async atualizarTarefa(id: string, tarefa: Partial<Omit<Tarefa, 'id'>>): Promise<void> {
-    await this.tarefaRepository.update(id, tarefa);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'tarefa', action: 'atualizar', id, tarefa }),
+    });
+    if (!response.ok) throw new Error('Erro ao atualizar tarefa');
   }
 
   async excluirTarefa(id: string): Promise<void> {
-    // Delete task
-    await this.tarefaRepository.delete(id);
-    
-    // Delete all related submissions
-    const entregas = await this.entregaRepository.findByTarefaId(id);
-    await Promise.all(entregas.map(e => this.entregaRepository.delete(e.id)));
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'tarefa', action: 'excluir', id }),
+    });
+    if (!response.ok) throw new Error('Erro ao excluir tarefa');
   }
 
   // ==================== CRUD Entregas ====================
 
   async listarEntregas(): Promise<Entrega[]> {
-    return await this.entregaRepository.findAll();
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'tarefa', action: 'listarEntregas' }),
+    });
+    if (!response.ok) throw new Error('Erro ao listar entregas');
+    return await response.json();
   }
 
   async buscarEntregaPorId(id: string): Promise<Entrega | null> {
-    return await this.entregaRepository.findById(id);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'tarefa', action: 'buscarEntregaPorId', id }),
+    });
+    if (!response.ok) throw new Error('Erro ao buscar entrega');
+    return await response.json();
   }
 
   async buscarEntregaPorAlunoETarefa(alunoId: string, tarefaId: string): Promise<Entrega | null> {
-    return await this.entregaRepository.findByAlunoAndTarefa(alunoId, tarefaId);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'tarefa', action: 'buscarEntregaPorAlunoETarefa', alunoId, tarefaId }),
+    });
+    if (!response.ok) throw new Error('Erro ao buscar entrega por aluno e tarefa');
+    return await response.json();
   }
 
   async atualizarOuCriarEntrega(
@@ -72,39 +117,23 @@ export class TarefaService {
     tarefaId: string,
     status: string
   ): Promise<string> {
-    const entregaExistente = await this.entregaRepository.findByAlunoAndTarefa(alunoId, tarefaId);
-
-    const updateData: Partial<Entrega> = { status };
-    if (status === 'concluida') {
-      updateData.dataConclusao = new Date().toISOString();
-    } else {
-      // Remover o campo dataConclusao do objeto para não enviar undefined
-      // Se já existe, será removido do documento
-      // Firebase não aceita undefined, mas aceita omissão do campo
-      // updateData.dataConclusao = undefined;
-      // Alternativa: usar deleteField do Firestore
-      if ('dataConclusao' in updateData) {
-        delete updateData.dataConclusao;
-      }
-    }
-
-    if (entregaExistente) {
-      await this.entregaRepository.update(entregaExistente.id, updateData);
-      return entregaExistente.id;
-    } else {
-      const novaEntrega: Omit<Entrega, 'id'> = {
-        alunoId,
-        tarefaId,
-        dataEntrega: new Date().toISOString(),
-        status,
-        ...(status === 'concluida' && { dataConclusao: new Date().toISOString() })
-      };
-      return await this.entregaRepository.create(novaEntrega);
-    }
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'tarefa', action: 'atualizarOuCriarEntrega', alunoId, tarefaId, status }),
+    });
+    if (!response.ok) throw new Error('Erro ao atualizar ou criar entrega');
+    const result = await response.json();
+    return result.id;
   }
 
   async atualizarObservacoes(entregaId: string, observacoes: string): Promise<void> {
-    await this.entregaRepository.update(entregaId, { observacoes });
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'tarefa', action: 'atualizarObservacoes', entregaId, observacoes }),
+    });
+    if (!response.ok) throw new Error('Erro ao atualizar observações');
   }
 
   // ==================== URL Validation ====================

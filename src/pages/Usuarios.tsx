@@ -20,14 +20,10 @@ import { Turma as TurmaModel } from '../models/Turma';
 
 // Services
 import { ProfessorService } from '../services/data/ProfessorService';
-import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
 import { AlunoService } from '../services/usuario/AlunoService';
 import { ResponsavelService } from '../services/usuario/ResponsavelService';
-import { FirebaseResponsavelRepository } from '../repositories/responsavel/FirebaseResponsavelRepository';
 import { AdministradorService } from '../services/usuario/AdministradorService';
-import { FirebaseAdministradorRepository } from '../repositories/administrador/FirebaseAdministradorRepository';
 import { UserService, UsuariosService, type AbaUsuarios, type ContextoUsuarios, type FiltrosUsuarios } from '../services/usuario/UserService';
-import { FirebaseUserRepository } from '../repositories/user/FirebaseUserRepository';
 import { turmaService } from '../services/data/TurmaService';
 import { isTurmaVirtualizada } from '../utils/turmasHelpers';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
@@ -48,12 +44,12 @@ export default function Usuarios(): JSX.Element {
   const { anoLetivo } = useAnoLetivoAtual();
 
   // Instanciar services
-  const professorService = useMemo(() => new ProfessorService(new FirebaseProfessorRepository()), []);
+  const professorService = useMemo(() => new ProfessorService(), []);
   const professorMateriaService = useMemo(() => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()), []);
   const alunoService = useMemo(() => new AlunoService(), []);
-  const responsavelService = useMemo(() => new ResponsavelService(new FirebaseResponsavelRepository()), []);
-  const administradorService = useMemo(() => new AdministradorService(new FirebaseAdministradorRepository()), []);
-  const userService = useMemo(() => new UserService(new FirebaseUserRepository()), []);
+  const responsavelService = useMemo(() => new ResponsavelService(), []);
+  const administradorService = useMemo(() => new AdministradorService(), []);
+  const userService = useMemo(() => new UserService(), []);
   const [activeTab, setActiveTab] = useState<AbaUsuarios>('todos');
   const [search, setSearch] = useState('');
   const [professores, setProfessores] = useState<Professor[]>([]);

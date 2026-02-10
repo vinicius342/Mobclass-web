@@ -24,8 +24,6 @@ import { ProfessorMateria as Vinculo } from '../models/ProfessorMateria';
 
 // Services
 import { TarefaService } from '../services/data/TarefaService';
-import { FirebaseTarefaRepository } from '../repositories/tarefa/FirebaseTarefaRepository';
-import { FirebaseEntregaRepository } from '../repositories/entrega/FirebaseEntregaRepository';
 import { turmaService } from '../services/data/TurmaService';
 import { MateriaService } from '../services/data/MateriaService';
 import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
@@ -43,10 +41,7 @@ export default function Tarefas() {
 
   // Service instances
   const tarefaService = useMemo(() => {
-    return new TarefaService(
-      new FirebaseTarefaRepository(),
-      new FirebaseEntregaRepository()
-    );
+    return new TarefaService();
   }, []);
 
   const materiaService = useMemo(() => new MateriaService(new FirebaseMateriaRepository()), []);
@@ -175,9 +170,7 @@ export default function Tarefas() {
         }
 
         // Buscar professor pelo email
-        const professorService = new (await import('../services/data/ProfessorService')).ProfessorService(
-          new (await import('../repositories/professor/FirebaseProfessorRepository')).FirebaseProfessorRepository()
-        );
+        const professorService = new (await import('../services/data/ProfessorService')).ProfessorService();
         const allProfessores = await professorService.listar();
         professorAtual = allProfessores.find((p: any) => p.email === userData.email);
 

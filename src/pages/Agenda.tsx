@@ -15,7 +15,6 @@ import { MateriaService } from '../services/data/MateriaService';
 import { ProfessorService } from '../services/data/ProfessorService';
 import { AgendaService } from '../services/data/AgendaService';
 import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
-import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
 import { FirebaseAgendaRepository } from '../repositories/agenda/FirebaseAgendaRepository';
 import type { Turma } from '../models/Turma';
 import type { Agenda } from '../models/Agenda';
@@ -37,8 +36,7 @@ import {
 const materiaRepository = new FirebaseMateriaRepository();
 const materiaService = new MateriaService(materiaRepository);
 
-const professorRepository = new FirebaseProfessorRepository();
-const professorService = new ProfessorService(professorRepository);
+const professorService = new ProfessorService();
 
 
 const agendaRepository = new FirebaseAgendaRepository();

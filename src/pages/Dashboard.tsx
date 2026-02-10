@@ -18,18 +18,15 @@ import { MateriaService } from '../services/data/MateriaService';
 import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 import { AlunoService } from '../services/usuario/AlunoService';
 import { ProfessorService } from '../services/data/ProfessorService';
-import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
 import { TarefaService } from '../services/data/TarefaService';
-import { FirebaseTarefaRepository } from '../repositories/tarefa/FirebaseTarefaRepository';
-import { FirebaseEntregaRepository } from '../repositories/entrega/FirebaseEntregaRepository';
 import { FrequenciaService } from '../services/data/FrequenciaService';
 import { NotaService } from '../services/data/NotaService';
 
 // Instanciar services
 const materiaService = new MateriaService(new FirebaseMateriaRepository());
 const alunoService = new AlunoService();
-const professorService = new ProfessorService(new FirebaseProfessorRepository());
-const tarefaService = new TarefaService(new FirebaseTarefaRepository(), new FirebaseEntregaRepository());
+const professorService = new ProfessorService();
+const tarefaService = new TarefaService();
 const frequenciaService = new FrequenciaService();
 const notaService = new NotaService();
 
