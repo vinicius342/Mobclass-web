@@ -1,6 +1,7 @@
 import { Nota } from '../../models/Nota';
 import { Aluno } from '../../models/Aluno';
-import { IMateriaRepository } from '../../repositories/materia/IMateriaRepository';
+import { Materia } from '../../models/Materia';
+import { MateriaService } from './MateriaService';
 
 // URL da Cloud Function unificada mobclassApi
 const MOBCLASS_API_URL =
@@ -31,7 +32,7 @@ export interface MediaPorTurmaResponse {
 
 export class NotaService {
   constructor(
-    private materiaRepository?: IMateriaRepository
+    private materiaService?: MateriaService
   ) { }
 
   private async postNotaFunction<T = any>(
@@ -314,8 +315,8 @@ export class NotaService {
    * @returns Objeto com dados do boletim formatado ou null se não houver notas
    */
   async gerarBoletimAluno(aluno: Aluno, anoLetivo: number): Promise<BoletimAluno | null> {
-    if (!this.materiaRepository) {
-      throw new Error('MateriaRepository não foi injetado no NotaService');
+    if (!this.materiaService) {
+      throw new Error('MateriaService não foi injetado no NotaService');
     }
 
     try {
@@ -330,9 +331,9 @@ export class NotaService {
       }
 
       // Buscar todas as matérias
-      const todasMaterias = await this.materiaRepository.findAll();
+      const todasMaterias = await this.materiaService.listar();
       const materiasMap = new Map<string, string>();
-      todasMaterias.forEach(materia => {
+      todasMaterias.forEach((materia: Materia) => {
         materiasMap.set(materia.id, materia.nome);
       });
 
@@ -629,3 +630,5 @@ export class NotaService {
     return notas.slice(inicio, inicio + itensPorPagina);
   }
 }
+
+export const notaService = new NotaService();

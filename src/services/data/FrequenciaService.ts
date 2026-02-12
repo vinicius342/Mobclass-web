@@ -13,7 +13,8 @@ type FrequenciaFunctionAction =
   | 'buscarPorPeriodo'
   | 'buscarPorAlunoIdEPeriodo'
   | 'salvarFrequencias'
-  | 'copiarFrequencias';
+  | 'copiarFrequencias'
+  | 'calcularTaxasDashboard';
 
 export class FrequenciaService {
   constructor() {}
@@ -104,6 +105,29 @@ export class FrequenciaService {
       'salvarFrequencias',
       { frequencias },
       'Erro ao salvar frequências',
+    );
+  }
+
+  /**
+   * Calcula taxas de frequência por turma de forma otimizada no backend.
+   * Ideal para Dashboard - retorna apenas dados agregados.
+   */
+  async calcularTaxasDashboard(
+    turmaIds: string[],
+    filtros?: {
+      materiaId?: string;
+      periodo?: {
+        tipo: 'hoje' | 'mes' | 'personalizado';
+        data?: string;
+        mes?: string;
+        ano?: number;
+      };
+    }
+  ): Promise<{ turmaId: string; presencas: number; faltas: number; taxa: number }[]> {
+    return this.postFrequenciaFunction<{ turmaId: string; presencas: number; faltas: number; taxa: number }[]>(
+      'calcularTaxasDashboard',
+      { turmaIds, filtros },
+      'Erro ao calcular taxas de frequência',
     );
   }
 

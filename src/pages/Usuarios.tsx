@@ -27,7 +27,6 @@ import { UserService, UsuariosService, type AbaUsuarios, type ContextoUsuarios, 
 import { turmaService } from '../services/data/TurmaService';
 import { isTurmaVirtualizada } from '../utils/turmasHelpers';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
-import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 
 // PDF
 import jsPDF from 'jspdf';
@@ -45,7 +44,7 @@ export default function Usuarios(): JSX.Element {
 
   // Instanciar services
   const professorService = useMemo(() => new ProfessorService(), []);
-  const professorMateriaService = useMemo(() => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()), []);
+  const professorMateriaService = useMemo(() => new ProfessorMateriaService(), []);
   const alunoService = useMemo(() => new AlunoService(), []);
   const responsavelService = useMemo(() => new ResponsavelService(), []);
   const administradorService = useMemo(() => new AdministradorService(), []);

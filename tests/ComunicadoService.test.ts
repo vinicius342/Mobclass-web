@@ -1,6 +1,5 @@
 import { ComunicadoService } from '../src/services/data/ComunicadoService';
 import { Comunicado } from '../src/models/Comunicado';
-import { IComunicadoRepository } from '../src/repositories/comunicado/IComunicadoRepository';
 import { Timestamp } from 'firebase/firestore';
 
 // Mock simples para Timestamp para facilitar asserções
@@ -16,40 +15,6 @@ jest.mock('firebase/firestore', () => {
   };
 });
 
-class FakeComunicadoRepository implements IComunicadoRepository {
-  private comunicados: Comunicado[];
-
-  constructor(initial: Comunicado[] = []) {
-    this.comunicados = [...initial];
-  }
-
-  async listar(): Promise<Comunicado[]> {
-    return this.comunicados;
-  }
-
-  async listarPorTurmas(turmaIds: string[]): Promise<Comunicado[]> {
-    return this.comunicados.filter(c => turmaIds.includes(c.turmaId));
-  }
-
-  async buscarPorId(id: string): Promise<Comunicado | null> {
-    return this.comunicados.find(c => c.id === id) ?? null;
-  }
-
-  async criar(comunicado: Omit<Comunicado, 'id'>): Promise<string> {
-    const id = `id-${this.comunicados.length + 1}`;
-    this.comunicados.push({ id, ...comunicado });
-    return id;
-  }
-
-  async atualizar(id: string, comunicado: Partial<Omit<Comunicado, 'id'>>): Promise<void> {
-    this.comunicados = this.comunicados.map(c => (c.id === id ? { ...c, ...comunicado } : c));
-  }
-
-  async deletar(id: string): Promise<void> {
-    this.comunicados = this.comunicados.filter(c => c.id !== id);
-  }
-}
-
 const makeComunicado = (overrides: Partial<Comunicado> = {}): Comunicado => ({
   id: overrides.id ?? '1',
   assunto: overrides.assunto ?? 'Aviso',
@@ -62,51 +27,99 @@ const makeComunicado = (overrides: Partial<Comunicado> = {}): Comunicado => ({
 });
 
 describe('ComunicadoService', () => {
+  let service: ComunicadoService;
+  let fetchMock: jest.Mock;
+
+  beforeEach(() => {
+    service = new ComunicadoService();
+    fetchMock = jest.fn();
+    global.fetch = fetchMock;
+  });
+
   describe('métodos de repositório', () => {
     it('deve listar comunicados', async () => {
-      const repo = new FakeComunicadoRepository([
+      const mockComunicados = [
         makeComunicado({ id: '1' }),
         makeComunicado({ id: '2' }),
-      ]);
-      const service = new ComunicadoService(repo);
+      ];
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockComunicados,
+      });
 
       const result = await service.listar();
 
       expect(result).toHaveLength(2);
       expect(result[0].id).toBe('1');
       expect(result[1].id).toBe('2');
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'comunicado', action: 'listar' }),
+        })
+      );
     });
 
     it('deve listar comunicados por múltiplas turmas', async () => {
-      const repo = new FakeComunicadoRepository([
+      const mockComunicados = [
         makeComunicado({ id: '1', turmaId: 'A' }),
-        makeComunicado({ id: '2', turmaId: 'B' }),
         makeComunicado({ id: '3', turmaId: 'C' }),
-      ]);
-      const service = new ComunicadoService(repo);
+      ];
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockComunicados,
+      });
 
       const result = await service.listarPorTurmas(['A', 'C']);
 
       expect(result.map(c => c.id)).toEqual(['1', '3']);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'comunicado', action: 'listarPorTurmas', turmaIds: ['A', 'C'] }),
+        })
+      );
     });
 
     it('deve buscar comunicado por id', async () => {
-      const repo = new FakeComunicadoRepository([
-        makeComunicado({ id: '1' }),
-        makeComunicado({ id: '2' }),
-      ]);
-      const service = new ComunicadoService(repo);
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => makeComunicado({ id: '2' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => null,
+        });
 
       const found = await service.buscarPorId('2');
       const notFound = await service.buscarPorId('3');
 
       expect(found?.id).toBe('2');
       expect(notFound).toBeNull();
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({ domain: 'comunicado', action: 'buscarPorId', id: '2' }),
+        })
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({ domain: 'comunicado', action: 'buscarPorId', id: '3' }),
+        })
+      );
     });
 
     it('deve criar comunicado', async () => {
-      const repo = new FakeComunicadoRepository();
-      const service = new ComunicadoService(repo);
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'id-1' }),
+      });
 
       const id = await service.criar({
         assunto: 'Novo',
@@ -118,41 +131,65 @@ describe('ComunicadoService', () => {
       });
 
       expect(id).toBe('id-1');
-      const all = await service.listar();
-      expect(all).toHaveLength(1);
-      expect(all[0].id).toBe(id);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({
+            domain: 'comunicado',
+            action: 'criar',
+            comunicado: {
+              assunto: 'Novo',
+              mensagem: 'Mensagem nova',
+              turmaId: 'T1',
+              turmaNome: 'Turma 1',
+              data: mockNow,
+              status: 'enviado',
+            },
+          }),
+        })
+      );
     });
 
     it('deve atualizar comunicado', async () => {
-      const repo = new FakeComunicadoRepository([
-        makeComunicado({ id: '1', assunto: 'Antigo' }),
-      ]);
-      const service = new ComunicadoService(repo);
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => undefined,
+      });
 
       await service.atualizar('1', { assunto: 'Atualizado' });
 
-      const updated = await service.buscarPorId('1');
-      expect(updated?.assunto).toBe('Atualizado');
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({
+            domain: 'comunicado',
+            action: 'atualizar',
+            id: '1',
+            comunicado: { assunto: 'Atualizado' },
+          }),
+        })
+      );
     });
 
     it('deve deletar comunicado', async () => {
-      const repo = new FakeComunicadoRepository([
-        makeComunicado({ id: '1' }),
-        makeComunicado({ id: '2' }),
-      ]);
-      const service = new ComunicadoService(repo);
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => undefined,
+      });
 
       await service.deletar('1');
 
-      const all = await service.listar();
-      expect(all).toHaveLength(1);
-      expect(all[0].id).toBe('2');
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({ domain: 'comunicado', action: 'deletar', id: '1' }),
+        })
+      );
     });
   });
 
   describe('filtros simples', () => {
-    const repo = new FakeComunicadoRepository();
-    const service = new ComunicadoService(repo);
+    const service = new ComunicadoService();
 
     const comunicados: Comunicado[] = [
       makeComunicado({ id: '1', status: 'enviado', turmaId: 'A', assunto: 'Prova' }),
@@ -190,8 +227,7 @@ describe('ComunicadoService', () => {
   });
 
   describe('buscarPorTexto', () => {
-    const repo = new FakeComunicadoRepository();
-    const service = new ComunicadoService(repo);
+    const service = new ComunicadoService();
 
     const comunicados: Comunicado[] = [
       makeComunicado({ id: '1', assunto: 'Prova de Matemática', mensagem: 'Estudem capítulo 1', turmaNome: '6º ano A' }),
@@ -215,8 +251,7 @@ describe('ComunicadoService', () => {
   });
 
   describe('aplicarFiltros', () => {
-    const repo = new FakeComunicadoRepository();
-    const service = new ComunicadoService(repo);
+    const service = new ComunicadoService();
 
     const comunicados: Comunicado[] = [
       makeComunicado({ id: '1', assunto: 'Prova', mensagem: 'Matemática', turmaId: 'A', turmaNome: 'Turma A', status: 'enviado' }),
@@ -242,8 +277,7 @@ describe('ComunicadoService', () => {
   });
 
   describe('extrairAssuntos', () => {
-    const repo = new FakeComunicadoRepository();
-    const service = new ComunicadoService(repo);
+    const service = new ComunicadoService();
 
     it('deve extrair assuntos únicos e ordenados', () => {
       const comunicados: Comunicado[] = [
@@ -264,8 +298,7 @@ describe('ComunicadoService', () => {
   });
 
   describe('validarComunicado', () => {
-    const repo = new FakeComunicadoRepository();
-    const service = new ComunicadoService(repo);
+    const service = new ComunicadoService();
 
     const baseDados = {
       assunto: 'Assunto',
@@ -303,9 +336,19 @@ describe('ComunicadoService', () => {
   });
 
   describe('criarParaMultiplasTurmas', () => {
+    let service: ComunicadoService;
+    let fetchMock: jest.Mock;
+
+    beforeEach(() => {
+      service = new ComunicadoService();
+      fetchMock = jest.fn();
+      global.fetch = fetchMock;
+    });
+
     it('deve criar comunicados para cada turma usando status enviado', async () => {
-      const repo = new FakeComunicadoRepository();
-      const service = new ComunicadoService(repo);
+      fetchMock
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'id-1' }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'id-2' }) });
 
       const dados = {
         assunto: 'Aviso',
@@ -321,19 +364,48 @@ describe('ComunicadoService', () => {
       const count = await service.criarParaMultiplasTurmas(dados, turmas);
 
       expect(count).toBe(2);
-      const all = await repo.listar();
-      expect(all).toHaveLength(2);
-      expect(all.map(c => c.turmaId)).toEqual(['T1', 'T2']);
-      expect(all.every(c => c.status === 'enviado')).toBe(true);
-      expect(all.every(c => c.data === mockNow)).toBe(true);
-      // não deve ter dataAgendamento quando não for agendado
-      expect(all.every(c => c.dataAgendamento === undefined)).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({
+            domain: 'comunicado',
+            action: 'criar',
+            comunicado: {
+              assunto: 'Aviso',
+              mensagem: 'Mensagem',
+              turmaId: 'T1',
+              turmaNome: 'Turma 1',
+              data: mockNow,
+              status: 'enviado',
+            },
+          }),
+        })
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({
+            domain: 'comunicado',
+            action: 'criar',
+            comunicado: {
+              assunto: 'Aviso',
+              mensagem: 'Mensagem',
+              turmaId: 'T2',
+              turmaNome: 'Turma 2',
+              data: mockNow,
+              status: 'enviado',
+            },
+          }),
+        })
+      );
     });
 
     it('deve preencher dataAgendamento quando status for agendado e data fornecida', async () => {
-      const repo = new FakeComunicadoRepository();
-      const service = new ComunicadoService(repo);
       const agendamento = new Date();
+      fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'id-1' }) });
 
       const dados = {
         assunto: 'Aviso',
@@ -347,17 +419,30 @@ describe('ComunicadoService', () => {
       const count = await service.criarParaMultiplasTurmas(dados, turmas);
 
       expect(count).toBe(1);
-      const all = await repo.listar();
-      expect(all).toHaveLength(1);
-      expect(all[0].status).toBe('agendado');
-      expect(all[0].dataAgendamento).toEqual(mockFromDate(agendamento));
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({
+            domain: 'comunicado',
+            action: 'criar',
+            comunicado: {
+              assunto: 'Aviso',
+              mensagem: 'Mensagem',
+              turmaId: 'T1',
+              turmaNome: 'Turma 1',
+              data: mockNow,
+              status: 'agendado',
+              dataAgendamento: mockFromDate(agendamento),
+            },
+          }),
+        })
+      );
     });
   });
 
   describe('prepararPayloadAtualizacao', () => {
     it('deve montar payload básico com timestamp atual', () => {
-      const repo = new FakeComunicadoRepository();
-      const service = new ComunicadoService(repo);
+      const service = new ComunicadoService();
 
       const dados = {
         assunto: 'Assunto',
@@ -381,8 +466,7 @@ describe('ComunicadoService', () => {
     });
 
     it('deve incluir dataAgendamento quando status for agendado e data fornecida', () => {
-      const repo = new FakeComunicadoRepository();
-      const service = new ComunicadoService(repo);
+      const service = new ComunicadoService();
       const agendamento = new Date();
 
       const dados = {

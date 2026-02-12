@@ -1,6 +1,5 @@
 import { OcorrenciaService, TIPOS_OCORRENCIA_PADRAO } from '../src/services/data/OcorrenciaService';
 import { Ocorrencia } from '../src/models/Ocorrencia';
-import { IOcorrenciaRepository } from '../src/repositories/ocorrencia/IOcorrenciaRepository';
 
 jest.mock('jspdf', () => {
   class JsPDFMock {
@@ -33,36 +32,6 @@ jest.mock('xlsx', () => {
   };
 });
 
-class FakeOcorrenciaRepository implements IOcorrenciaRepository {
-  private ocorrencias: Ocorrencia[];
-
-  constructor(initial: Ocorrencia[] = []) {
-    this.ocorrencias = [...initial];
-  }
-
-  async findAll(): Promise<Ocorrencia[]> {
-    return this.ocorrencias;
-  }
-
-  async findById(id: string): Promise<Ocorrencia | null> {
-    return this.ocorrencias.find(o => o.id === id) ?? null;
-  }
-
-  async create(ocorrencia: Omit<Ocorrencia, 'id'>): Promise<string> {
-    const id = `id-${this.ocorrencias.length + 1}`;
-    this.ocorrencias.push({ id, ...ocorrencia });
-    return id;
-  }
-
-  async update(id: string, ocorrencia: Partial<Omit<Ocorrencia, 'id'>>): Promise<void> {
-    this.ocorrencias = this.ocorrencias.map(o => (o.id === id ? { ...o, ...ocorrencia } : o));
-  }
-
-  async delete(id: string): Promise<void> {
-    this.ocorrencias = this.ocorrencias.filter(o => o.id !== id);
-  }
-}
-
 const makeOcorrencia = (overrides: Partial<Ocorrencia> = {}): Ocorrencia => ({
   id: overrides.id ?? '1',
   titulo: overrides.titulo ?? 'Ocorrência',
@@ -84,35 +53,68 @@ const makeOcorrencia = (overrides: Partial<Ocorrencia> = {}): Ocorrencia => ({
 });
 
 describe('OcorrenciaService', () => {
+  let service: OcorrenciaService;
+  let fetchMock: jest.Mock;
+
+  beforeEach(() => {
+    service = new OcorrenciaService();
+    fetchMock = jest.fn();
+    global.fetch = fetchMock;
+  });
+
   describe('métodos de repositório', () => {
-    it('listar deve delegar para findAll', async () => {
-      const repo = new FakeOcorrenciaRepository([
+    it('listar deve chamar API com domain ocorrencia', async () => {
+      const mockOcorrencias = [
         makeOcorrencia({ id: '1' }),
         makeOcorrencia({ id: '2' }),
-      ]);
-      const service = new OcorrenciaService(repo);
+      ];
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockOcorrencias,
+      });
 
       const result = await service.listar();
+      
       expect(result.map(o => o.id)).toEqual(['1', '2']);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'ocorrencia', action: 'listar' }),
+        })
+      );
     });
 
-    it('buscarPorId deve delegar para findById', async () => {
-      const repo = new FakeOcorrenciaRepository([
-        makeOcorrencia({ id: '1' }),
-        makeOcorrencia({ id: '2' }),
-      ]);
-      const service = new OcorrenciaService(repo);
+    it('buscarPorId deve chamar API com id', async () => {
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => makeOcorrencia({ id: '2' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => null,
+        });
 
       const found = await service.buscarPorId('2');
       const notFound = await service.buscarPorId('3');
 
       expect(found?.id).toBe('2');
       expect(notFound).toBeNull();
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({ domain: 'ocorrencia', action: 'buscarPorId', id: '2' }),
+        })
+      );
     });
 
-    it('criar deve delegar para create', async () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
+    it('criar deve chamar API e retornar id', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'id-1' }),
+      });
 
       const id = await service.criar({
         titulo: 'Nova',
@@ -133,63 +135,68 @@ describe('OcorrenciaService', () => {
       });
 
       expect(id).toBe('id-1');
-      const all = await repo.findAll();
-      expect(all).toHaveLength(1);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"domain":"ocorrencia"'),
+        })
+      );
     });
 
-    it('atualizar deve delegar para update', async () => {
-      const repo = new FakeOcorrenciaRepository([
-        makeOcorrencia({ id: '1', descricao: 'Antiga' }),
-      ]);
-      const service = new OcorrenciaService(repo);
+    it('atualizar deve chamar API com id e dados', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => undefined,
+      });
 
       await service.atualizar('1', { descricao: 'Nova' });
-      const updated = await repo.findById('1');
 
-      expect(updated?.descricao).toBe('Nova');
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({
+            domain: 'ocorrencia',
+            action: 'atualizar',
+            id: '1',
+            ocorrencia: { descricao: 'Nova' },
+          }),
+        })
+      );
     });
 
-    it('excluir deve delegar para delete', async () => {
-      const repo = new FakeOcorrenciaRepository([
-        makeOcorrencia({ id: '1' }),
-        makeOcorrencia({ id: '2' }),
-      ]);
-      const service = new OcorrenciaService(repo);
+    it('excluir deve chamar API com id', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => undefined,
+      });
 
       await service.excluir('1');
-      const all = await repo.findAll();
 
-      expect(all.map(o => o.id)).toEqual(['2']);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({ domain: 'ocorrencia', action: 'deletar', id: '1' }),
+        })
+      );
     });
   });
 
   describe('obterLabelTipo, extrairTiposPersonalizados, obterTodosOsTipos', () => {
     it('obterLabelTipo deve retornar label de tipo padrão', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const tipo = TIPOS_OCORRENCIA_PADRAO[0];
       expect(service.obterLabelTipo(tipo.value)).toBe(tipo.label);
     });
 
     it('obterLabelTipo deve retornar tipo personalizado quando presente na lista', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       expect(service.obterLabelTipo('novo_tipo', ['novo_tipo'])).toBe('novo_tipo');
     });
 
     it('obterLabelTipo deve formatar fallback com espaços e capitalização', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       expect(service.obterLabelTipo('tipo_personalizado')).toBe('Tipo personalizado');
     });
 
     it('extrairTiposPersonalizados deve retornar apenas tipos não padrão', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const ocorrencias: Ocorrencia[] = [
         makeOcorrencia({ tipo: TIPOS_OCORRENCIA_PADRAO[0].value }),
         makeOcorrencia({ tipo: 'personalizado' }),
@@ -202,9 +209,6 @@ describe('OcorrenciaService', () => {
     });
 
     it('obterTodosOsTipos deve juntar padrão e personalizados', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const ocorrencias: Ocorrencia[] = [makeOcorrencia({ tipo: 'personalizado' })];
 
       const tipos = service.obterTodosOsTipos(ocorrencias);
@@ -216,9 +220,6 @@ describe('OcorrenciaService', () => {
 
   describe('filtrar', () => {
     it('deve aplicar filtros de tipo, turma, aluno e busca textual', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const ocorrencias: Ocorrencia[] = [
         makeOcorrencia({
           id: '1',
@@ -260,9 +261,6 @@ describe('OcorrenciaService', () => {
 
   describe('calcularEstatisticas e contarOcorrenciasAlunoNoAno', () => {
     it('deve calcular estatísticas básicas', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const now = new Date();
       const esteMes = now.toISOString();
       const outroMes = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
@@ -281,9 +279,6 @@ describe('OcorrenciaService', () => {
     });
 
     it('deve contar ocorrências de aluno no ano atual', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const anoAtual = new Date().getFullYear();
       const esteAno = new Date(anoAtual, 0, 1).toISOString();
       const anoPassado = new Date(anoAtual - 1, 0, 1).toISOString();
@@ -301,9 +296,6 @@ describe('OcorrenciaService', () => {
 
   describe('prepararDadosOcorrencia e validarFormulario', () => {
     it('deve preparar dados para criação, incluindo dataCriacao e dataResolucao quando resolvida', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const formData = {
         tipo: 'nao_fez_atividade',
         tipoPersonalizado: '',
@@ -333,9 +325,6 @@ describe('OcorrenciaService', () => {
     });
 
     it('deve usar tipoPersonalizado quando tipo for "outro"', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const formData = {
         tipo: 'outro',
         tipoPersonalizado: 'nova_ocorrencia',
@@ -354,9 +343,6 @@ describe('OcorrenciaService', () => {
     });
 
     it('validarFormulario deve garantir aluno e tipo personalizado quando necessário', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const invalidoSemAluno = service.validarFormulario({
         tipo: 'nao_fez_atividade',
         tipoPersonalizado: '',
@@ -382,9 +368,6 @@ describe('OcorrenciaService', () => {
 
   describe('prepararParaExportacao, exportarPDF e exportarExcel', () => {
     it('prepararParaExportacao deve aplicar filtros e ordenar por data desc', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const ontem = new Date();
       ontem.setDate(ontem.getDate() - 1);
 
@@ -400,18 +383,12 @@ describe('OcorrenciaService', () => {
     });
 
     it('exportarPDF deve chamar jsPDF e autotable sem erros', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const ocorrencias: Ocorrencia[] = [makeOcorrencia({})];
 
       expect(() => service.exportarPDF(ocorrencias)).not.toThrow();
     });
 
     it('exportarExcel deve chamar XLSX.writeFile sem erros', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const ocorrencias: Ocorrencia[] = [makeOcorrencia({})];
 
       expect(() => service.exportarExcel(ocorrencias)).not.toThrow();
@@ -420,18 +397,12 @@ describe('OcorrenciaService', () => {
 
   describe('isTipoPadrao e paginarOcorrencias', () => {
     it('isTipoPadrao deve verificar se tipo é padrão', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const tipoPadrao = TIPOS_OCORRENCIA_PADRAO[0].value;
       expect(service.isTipoPadrao(tipoPadrao)).toBe(true);
       expect(service.isTipoPadrao('nao_existente')).toBe(false);
     });
 
     it('paginarOcorrencias deve paginar corretamente', () => {
-      const repo = new FakeOcorrenciaRepository();
-      const service = new OcorrenciaService(repo);
-
       const ocorrencias: Ocorrencia[] = [
         makeOcorrencia({ id: '1' }),
         makeOcorrencia({ id: '2' }),

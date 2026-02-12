@@ -11,7 +11,6 @@ import { FaUserCheck, FaUsers, FaUserTimes } from 'react-icons/fa';
 import { FrequenciaService } from '../../services/data/FrequenciaService';
 import { AlunoService } from '../../services/usuario/AlunoService';
 import { ProfessorMateriaService } from '../../services/data/ProfessorMateriaService';
-import { FirebaseProfessorMateriaRepository } from '../../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 import { Aluno } from '../../models/Aluno';
 import { Turma } from '../../models/Turma';
 import { Materia } from '../../models/Materia';
@@ -58,7 +57,7 @@ export default function FrequenciaLancamento({
     []
   );
   const professorMateriaService = useMemo(
-    () => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()),
+    () => new ProfessorMateriaService(),
     []
   );
 

@@ -1,37 +1,6 @@
 import { MateriaService, MateriaComTurma } from '../src/services/data/MateriaService';
 import { Materia } from '../src/models/Materia';
-import { IMateriaRepository } from '../src/repositories/materia/IMateriaRepository';
 import { ProfessorMateria } from '../src/models/ProfessorMateria';
-
-class FakeMateriaRepository implements IMateriaRepository {
-  private materias: Materia[];
-
-  constructor(initial: Materia[] = []) {
-    this.materias = [...initial];
-  }
-
-  async findAll(): Promise<Materia[]> {
-    return this.materias;
-  }
-
-  async findById(id: string): Promise<Materia | null> {
-    return this.materias.find(m => m.id === id) ?? null;
-  }
-
-  async create(materia: Omit<Materia, 'id'>): Promise<string> {
-    const id = `id-${this.materias.length + 1}`;
-    this.materias.push({ id, ...materia });
-    return id;
-  }
-
-  async update(id: string, materia: Partial<Omit<Materia, 'id'>>): Promise<void> {
-    this.materias = this.materias.map(m => (m.id === id ? { ...m, ...materia } : m));
-  }
-
-  async delete(id: string): Promise<void> {
-    this.materias = this.materias.filter(m => m.id !== id);
-  }
-}
 
 const makeMateria = (overrides: Partial<Materia> = {}): Materia => ({
   id: overrides.id ?? '1',
@@ -48,44 +17,106 @@ const makeVinculo = (overrides: Partial<ProfessorMateria> = {}): ProfessorMateri
 });
 
 describe('MateriaService', () => {
+  beforeEach(() => {
+    global.fetch = jest.fn();
+  });
+
   describe('métodos de repositório', () => {
     it('deve listar matérias', async () => {
-      const repo = new FakeMateriaRepository([
+      const mockMaterias = [
         makeMateria({ id: '1', nome: 'Matemática' }),
         makeMateria({ id: '2', nome: 'História' }),
-      ]);
-      const service = new MateriaService(repo);
+      ];
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: async () => mockMaterias,
+      });
 
+      const service = new MateriaService();
       const result = await service.listar();
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'materia', action: 'listar' }),
+        })
+      );
       expect(result).toHaveLength(2);
       expect(result.map(m => m.id)).toEqual(['1', '2']);
     });
 
     it('deve buscar por id', async () => {
-      const repo = new FakeMateriaRepository([
-        makeMateria({ id: '1', nome: 'Matemática' }),
-        makeMateria({ id: '2', nome: 'História' }),
-      ]);
-      const service = new MateriaService(repo);
+      const mockMateria = makeMateria({ id: '2', nome: 'História' });
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockMateria,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => null,
+        });
 
+      const service = new MateriaService();
       const found = await service.buscarPorId('2');
       const notFound = await service.buscarPorId('3');
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'materia', action: 'buscarPorId', id: '2' }),
+        })
+      );
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'materia', action: 'buscarPorId', id: '3' }),
+        })
+      );
       expect(found?.id).toBe('2');
       expect(notFound).toBeNull();
     });
 
     it('deve criar matéria', async () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const newId = 'id-1';
+      const mockMaterias = [
+        makeMateria({ id: newId, codigo: 'MAT1', nome: 'Matemática', categoria: 'Exatas' }),
+      ];
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => newId,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockMaterias,
+        });
 
+      const service = new MateriaService();
       const id = await service.criar({
         codigo: 'MAT1',
         nome: 'Matemática',
         categoria: 'Exatas',
       });
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            domain: 'materia',
+            action: 'criar',
+            materia: {
+              codigo: 'MAT1',
+              nome: 'Matemática',
+              categoria: 'Exatas',
+            },
+          }),
+        })
+      );
       expect(id).toBe('id-1');
       const all = await service.listar();
       expect(all).toHaveLength(1);
@@ -93,26 +124,58 @@ describe('MateriaService', () => {
     });
 
     it('deve atualizar matéria', async () => {
-      const repo = new FakeMateriaRepository([
-        makeMateria({ id: '1', nome: 'Matemática' }),
-      ]);
-      const service = new MateriaService(repo);
+      const mockUpdated = makeMateria({ id: '1', nome: 'Matemática II' });
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => undefined,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockUpdated,
+        });
 
+      const service = new MateriaService();
       await service.atualizar('1', { nome: 'Matemática II' });
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            domain: 'materia',
+            action: 'atualizar',
+            id: '1',
+            materia: { nome: 'Matemática II' },
+          }),
+        })
+      );
       const updated = await service.buscarPorId('1');
       expect(updated?.nome).toBe('Matemática II');
     });
 
     it('deve excluir matéria', async () => {
-      const repo = new FakeMateriaRepository([
-        makeMateria({ id: '1' }),
-        makeMateria({ id: '2' }),
-      ]);
-      const service = new MateriaService(repo);
+      const mockRemaining = [makeMateria({ id: '2' })];
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => undefined,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockRemaining,
+        });
 
+      const service = new MateriaService();
       await service.excluir('1');
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'materia', action: 'excluir', id: '1' }),
+        })
+      );
       const all = await service.listar();
       expect(all).toHaveLength(1);
       expect(all[0].id).toBe('2');
@@ -121,8 +184,7 @@ describe('MateriaService', () => {
 
   describe('construirMateriasComTurmas', () => {
     it('deve construir lista de matérias com turmaId a partir dos vínculos', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       const materias: Materia[] = [
         makeMateria({ id: 'M1', nome: 'Matemática' }),
@@ -142,8 +204,7 @@ describe('MateriaService', () => {
     });
 
     it('deve aplicar filtro de turmas nos vínculos', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       const materias: Materia[] = [
         makeMateria({ id: 'M1', nome: 'Matemática' }),
@@ -161,8 +222,7 @@ describe('MateriaService', () => {
     });
 
     it('não deve duplicar combinações matéria/turma', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       const materias: Materia[] = [makeMateria({ id: 'M1' })];
 
@@ -180,8 +240,7 @@ describe('MateriaService', () => {
 
   describe('removerDuplicatas', () => {
     it('deve remover duplicatas mantendo apenas uma por id', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       const materiasComTurma: MateriaComTurma[] = [
         { id: 'M1', codigo: 'C1', nome: 'Matemática', turmaId: 'T1' },
@@ -198,8 +257,7 @@ describe('MateriaService', () => {
 
   describe('gerarCodigoMateria', () => {
     it('deve gerar código com 3 letras do início + 3 dígitos', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       const codigo = service.gerarCodigoMateria('Matemática');
 
@@ -209,40 +267,35 @@ describe('MateriaService', () => {
 
   describe('determinarCategoria', () => {
     it('deve respeitar categoria salva, se fornecida', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       const categoria = service.determinarCategoria('Matemática', 'OutraCategoria');
       expect(categoria).toBe('OutraCategoria');
     });
 
     it('deve classificar matérias de exatas', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       expect(service.determinarCategoria('Matemática', undefined)).toBe('Exatas');
       expect(service.determinarCategoria('Física', undefined)).toBe('Exatas');
     });
 
     it('deve classificar matérias de humanas', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       expect(service.determinarCategoria('História', undefined)).toBe('Humanas');
       expect(service.determinarCategoria('Geografia', undefined)).toBe('Humanas');
     });
 
     it('deve classificar matérias de linguagens', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       expect(service.determinarCategoria('Português', undefined)).toBe('Linguagens');
       expect(service.determinarCategoria('Inglês', undefined)).toBe('Linguagens');
     });
 
     it('deve classificar demais como Outras', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       // Pelo regex atual, "Física" cai em Exatas
       expect(service.determinarCategoria('Educação Física', undefined)).toBe('Exatas');
@@ -251,8 +304,7 @@ describe('MateriaService', () => {
 
   describe('validarDuplicidade', () => {
     it('deve retornar true quando houver matéria com mesmo nome e categoria', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       const materias: Materia[] = [
         { id: '1', codigo: 'C1', nome: 'Matemática', categoria: 'Exatas' },
@@ -264,8 +316,7 @@ describe('MateriaService', () => {
     });
 
     it('deve ignorar id especificado ao validar duplicidade', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       const materias: Materia[] = [
         { id: '1', codigo: 'C1', nome: 'Matemática', categoria: 'Exatas' },
@@ -276,8 +327,7 @@ describe('MateriaService', () => {
     });
 
     it('deve comparar nome ignorando maiúsculas/minúsculas e espaços', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       const materias: Materia[] = [
         { id: '1', codigo: 'C1', nome: '  matemática  ', categoria: 'Exatas' },
@@ -290,8 +340,7 @@ describe('MateriaService', () => {
 
   describe('filtrarEPaginar', () => {
     it('deve filtrar por termo de busca e categoria e paginar resultado', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       const materias: Materia[] = [
         { id: '1', codigo: 'C1', nome: 'Matemática', categoria: 'Exatas' },
@@ -315,8 +364,7 @@ describe('MateriaService', () => {
     });
 
     it('deve funcionar sem filtros (retornar tudo paginado)', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       const materias: Materia[] = [
         { id: '1', codigo: 'C1', nome: 'Matemática', categoria: 'Exatas' },
@@ -338,8 +386,7 @@ describe('MateriaService', () => {
 
   describe('calcularEstatisticasPorCategoria', () => {
     it('deve calcular totais por categoria', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       const materias: Materia[] = [
         { id: '1', codigo: 'C1', nome: 'Matemática', categoria: 'Exatas' },
@@ -358,8 +405,7 @@ describe('MateriaService', () => {
     });
 
     it('deve retornar zeros para lista vazia', () => {
-      const repo = new FakeMateriaRepository();
-      const service = new MateriaService(repo);
+      const service = new MateriaService();
 
       const stats = service.calcularEstatisticasPorCategoria([]);
 

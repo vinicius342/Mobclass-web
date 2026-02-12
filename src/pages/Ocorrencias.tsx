@@ -21,19 +21,14 @@ import Paginacao from '../components/common/Paginacao';
 import { Ocorrencia } from '../models/Ocorrencia';
 import { Aluno } from '../models/Aluno';
 import { Turma } from '../models/Turma';
-import { OcorrenciaService } from '../services/data/OcorrenciaService';
-import { FirebaseOcorrenciaRepository } from '../repositories/ocorrencia/FirebaseOcorrenciaRepository';
+import { ocorrenciaService } from '../services/data/OcorrenciaService';
 import { AlunoService } from '../services/usuario/AlunoService';
 import { turmaService } from '../services/data/TurmaService';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
-import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 
 
-const ocorrenciaRepository = new FirebaseOcorrenciaRepository();
-const ocorrenciaService = new OcorrenciaService(ocorrenciaRepository);
 const alunoService = new AlunoService();
-const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
-const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
+const professorMateriaService = new ProfessorMateriaService();
 
 export default function Ocorrencias() {
   const authContext = useAuth();

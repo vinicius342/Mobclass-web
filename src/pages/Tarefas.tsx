@@ -26,9 +26,7 @@ import { ProfessorMateria as Vinculo } from '../models/ProfessorMateria';
 import { TarefaService } from '../services/data/TarefaService';
 import { turmaService } from '../services/data/TurmaService';
 import { MateriaService } from '../services/data/MateriaService';
-import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
-import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 import { AlunoService } from '../services/usuario/AlunoService';
 
 export default function Tarefas() {
@@ -44,8 +42,8 @@ export default function Tarefas() {
     return new TarefaService();
   }, []);
 
-  const materiaService = useMemo(() => new MateriaService(new FirebaseMateriaRepository()), []);
-  const professorMateriaService = useMemo(() => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()), []);
+  const materiaService = useMemo(() => new MateriaService(), []);
+  const professorMateriaService = useMemo(() => new ProfessorMateriaService(), []);
   const alunoService = useMemo(() => new AlunoService(), []);
 
   // Função auxiliar para verificar se um link é seguro (async)

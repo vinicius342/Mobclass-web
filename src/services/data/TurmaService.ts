@@ -1,9 +1,6 @@
 import type { Turma } from '../../models/Turma';
-import type { ITurmaRepository } from '../../repositories/turma/ITurmaRepository';
 
-import { FirebaseTurmaRepository } from '../../repositories/turma/FirebaseTurmaRepository';
-import { db } from '../firebase/firebase';
-import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+const API_URL = 'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
 
 // Util interno para extrair o número da série a partir do nome da turma (ex.: "7º A" -> 7)
 const extrairNumeroSerie = (nomeTurma: string): number => {
@@ -11,20 +8,34 @@ const extrairNumeroSerie = (nomeTurma: string): number => {
   return match ? parseInt(match[1], 10) : 0;
 };
 
-const turmaRepository: ITurmaRepository = new FirebaseTurmaRepository();
-
 export const turmaService = {
-  listarTodas: (): Promise<Turma[]> => turmaRepository.findAll(),
+  listarTodas: async (): Promise<Turma[]> => {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'turma', action: 'listar' }),
+    });
+    if (!response.ok) throw new Error('Erro ao listar turmas');
+    return response.json();
+  },
 
-  buscarPorId: (id: string): Promise<Turma | null> => turmaRepository.findById(id),
+  buscarPorId: async (id: string): Promise<Turma | null> => {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'turma', action: 'buscarPorId', id }),
+    });
+    if (!response.ok) throw new Error('Erro ao buscar turma');
+    return response.json();
+  },
 
   listarPorAnoLetivo: async (anoLetivo: string): Promise<Turma[]> => {
-    const turmas = await turmaRepository.findAll();
+    const turmas = await turmaService.listarTodas();
     return turmas.filter((t: Turma) => t.anoLetivo === anoLetivo);
   },
 
   listarComVirtualizacao: async (anoLetivo: string): Promise<Turma[]> => {
-    const todasTurmas = await turmaRepository.findAll();
+    const todasTurmas = await turmaService.listarTodas();
 
     const turmasReaisAnoAtual = todasTurmas.filter((t: Turma) =>
       t.anoLetivo === anoLetivo && !t.turmaOriginalId
@@ -52,7 +63,7 @@ export const turmaService = {
   },
 
   obterProximoAnoComVirtualizacao: async (anoAtual: string): Promise<Turma[]> => {
-    const todasTurmas = await turmaRepository.findAll();
+    const todasTurmas = await turmaService.listarTodas();
     const anoProximo = (parseInt(anoAtual) + 1).toString();
 
     const turmasReaisProximoAno = todasTurmas.filter(
@@ -131,9 +142,9 @@ export const turmaService = {
     const listaProximoAno = await turmaService.obterProximoAnoComVirtualizacao(anoAtual);
     let destino = listaProximoAno.find(t => t.id === proximaTurmaId) || null;
 
-    // Fallback: tentar buscar diretamente pelo repositório (caso lista não contenha)
+    // Fallback: tentar buscar diretamente pelo serviço (caso lista não contenha)
     if (!destino) {
-      destino = (await turmaRepository.findById(proximaTurmaId)) as Turma | null;
+      destino = (await turmaService.buscarPorId(proximaTurmaId)) as Turma | null;
     }
 
     // Validar promoção com base na turma atual, se destino encontrado
@@ -149,13 +160,44 @@ export const turmaService = {
     if (!turma.nome || !turma.anoLetivo || !turma.turno) {
       throw new Error('Dados obrigatórios da turma não preenchidos');
     }
-    return await turmaRepository.create(turma);
+
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'turma', action: 'criar', turma })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao criar turma: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.id;
   },
 
-  atualizar: (id: string, turma: Partial<Omit<Turma, 'id' | 'turmaOriginalId'>>): Promise<void> =>
-    turmaRepository.update(id, turma),
+  atualizar: async (id: string, turma: Partial<Omit<Turma, 'id' | 'turmaOriginalId'>>): Promise<void> => {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'turma', action: 'atualizar', id, turma })
+    });
 
-  excluir: (id: string): Promise<void> => turmaRepository.delete(id),
+    if (!response.ok) {
+      throw new Error(`Erro ao atualizar turma: ${response.statusText}`);
+    }
+  },
+
+  excluir: async (id: string): Promise<void> => {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'turma', action: 'excluir', id })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao excluir turma: ${response.statusText}`);
+    }
+  },
 
   gerarTurmasVirtualizadas: async (turmasAtuais: Turma[], anoProximo: string): Promise<Turma[]> => {
     const turmasVirtualizadas: Turma[] = [];
@@ -181,18 +223,18 @@ export const turmaService = {
       throw new Error('Turma não é virtualizada');
     }
 
-    const { turmaOriginalId } = turmaVirtual;
-    const novaTurmaPayload: Omit<Turma, 'id' | 'turmaOriginalId'> = {
-      nome: turmaVirtual.nome,
-      anoLetivo: turmaVirtual.anoLetivo,
-      turno: turmaVirtual.turno,
-    } as any;
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'turma', action: 'materializarTurma', turmaVirtual })
+    });
 
-    const novaTurmaId = await turmaRepository.create(novaTurmaPayload as any);
+    if (!response.ok) {
+      throw new Error(`Erro ao materializar turma: ${response.statusText}`);
+    }
 
-    await turmaRepository.update(turmaOriginalId, { isVirtual: false });
-
-    return novaTurmaId;
+    const data = await response.json();
+    return data.id;
   },
 
   /**
@@ -222,13 +264,13 @@ export const turmaService = {
           return turmaId; // Retornar o ID original se não encontrar
         }
       } else {
-        // Turma real: buscar no cache ou no repositório
+        // Turma real: buscar no cache ou no serviço
         if (turmasCache) {
           turmaVirtual = turmasCache.find(t => t.id === turmaId);
         }
         
         if (!turmaVirtual) {
-          turmaVirtual = (await turmaRepository.findById(turmaId)) || undefined;
+          turmaVirtual = (await turmaService.buscarPorId(turmaId)) || undefined;
         }
       }
     } else {
@@ -242,61 +284,23 @@ export const turmaService = {
       return turmaId;
     }
 
-    // Verificar se já existe uma turma real com o mesmo nome no ano atual
-    const turmasReaisQuery = query(
-      collection(db, 'turmas'),
-      where('nome', '==', turmaVirtual.nome),
-      where('anoLetivo', '==', turmaVirtual.anoLetivo)
-    );
+    // Chamar backend para materializar com dados
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        domain: 'turma', 
+        action: 'materializarTurmaVirtualComDados', 
+        turmaVirtual,
+        excluirAgendasIds 
+      })
+    });
 
-    const turmasReaisSnap = await getDocs(turmasReaisQuery);
-
-    if (turmasReaisSnap.empty) {
-      // Materializar a turma virtual
-      const turmaRealId = await turmaService.materializarTurma(turmaVirtual);
-
-      // Copiar vínculos professor-matéria da turma original
-      const vinculosOriginaisQuery = query(
-        collection(db, 'professores_materias'),
-        where('turmaId', '==', turmaVirtual.turmaOriginalId)
-      );
-
-      const vinculosOriginaisSnap = await getDocs(vinculosOriginaisQuery);
-
-      for (const vinculoDoc of vinculosOriginaisSnap.docs) {
-        const vinculoData = vinculoDoc.data();
-        await addDoc(collection(db, 'professores_materias'), {
-          professorId: vinculoData.professorId,
-          materiaId: vinculoData.materiaId,
-          turmaId: turmaRealId
-        });
-      }
-
-      // Copiar documentos da agenda para o novo turmaId
-      const agendasOriginaisQuery = query(
-        collection(db, 'agenda'),
-        where('turmaId', '==', turmaVirtual.turmaOriginalId)
-      );
-
-      const agendasOriginaisSnap = await getDocs(agendasOriginaisQuery);
-
-      for (const agendaDoc of agendasOriginaisSnap.docs) {
-        // Pular agendas que estão sendo editadas para evitar duplicação
-        if (excluirAgendasIds && excluirAgendasIds.includes(agendaDoc.id)) {
-          continue;
-        }
-        
-        const agendaData = agendaDoc.data();
-        await addDoc(collection(db, 'agenda'), {
-          ...agendaData,
-          turmaId: turmaRealId
-        });
-      }
-
-      return turmaRealId;
-    } else {
-      // Turma real já existe, usar ela
-      return turmasReaisSnap.docs[0].id;
+    if (!response.ok) {
+      throw new Error(`Erro ao materializar turma com dados: ${response.statusText}`);
     }
+
+    const data = await response.json();
+    return data.id;
   }
 }

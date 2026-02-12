@@ -15,20 +15,18 @@ import { BarChart3, Filter } from 'lucide-react';
 // Services
 import { turmaService } from '../services/data/TurmaService';
 import { MateriaService } from '../services/data/MateriaService';
-import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 import { AlunoService } from '../services/usuario/AlunoService';
 import { ProfessorService } from '../services/data/ProfessorService';
 import { TarefaService } from '../services/data/TarefaService';
 import { FrequenciaService } from '../services/data/FrequenciaService';
-import { NotaService } from '../services/data/NotaService';
+import { notaService } from '../services/data/NotaService';
 
 // Instanciar services
-const materiaService = new MateriaService(new FirebaseMateriaRepository());
+const materiaService = new MateriaService();
 const alunoService = new AlunoService();
 const professorService = new ProfessorService();
 const tarefaService = new TarefaService();
 const frequenciaService = new FrequenciaService();
-const notaService = new NotaService();
 
 interface Counts {
   alunos: number;
@@ -52,7 +50,6 @@ export default function Dashboard(): JSX.Element {
 
   const [counts, setCounts] = useState<Counts | null>(null);
   const [freqData, setFreqData] = useState<FreqPorTurma[]>([]);
-  const [freqDataOriginal, setFreqDataOriginal] = useState<any[]>([]);
   const [notaData, setNotaData] = useState<NotaMediaPorTurma[]>([]);
   const [turmasLista, setTurmasLista] = useState<{ id: string; nome: string }[]>([]);
   const [materiasLista, setMateriasLista] = useState<{ id: string; nome: string }[]>([]);
@@ -138,25 +135,34 @@ export default function Dashboard(): JSX.Element {
 
     async function fetchGraficos() {
       try {
-        const [frequencias, materias] = await Promise.all([
-          frequenciaService.listar(),
-          materiaService.listar(),
-        ]);
+        const materias = await materiaService.listar();
 
-        // Processa matérias primeiro
+        // Processa matérias
         setTimeout(() => {
           setMateriasLista(materias);
 
-          // Processa frequências em outro chunk
-          setTimeout(() => {
-            const freqDocs = frequencias.filter((f: any) => turmasLista.some(t => t.id === f.turmaId));
-            setFreqDataOriginal(freqDocs);
-
-            const freqResults = frequenciaService.calcularTaxasPorTurma(freqDocs, turmasLista);
-            setFreqData(freqResults);
-
-            // Inicialmente, não carrega notas aqui; serão buscadas pelo efeito de filtros
-            setLoadingGraficos(false);
+          // Carrega frequências de forma otimizada - apenas dados agregados
+          setTimeout(async () => {
+            try {
+              const turmaIds = turmasLista.map(t => t.id);
+              const resultados = await frequenciaService.calcularTaxasDashboard(turmaIds);
+              
+              // Mapeia resultados para o formato esperado
+              const freqResults = turmasLista.map(turma => {
+                const resultado = resultados.find(r => r.turmaId === turma.id);
+                return {
+                  turma: turma.nome,
+                  taxa: resultado?.taxa || 0
+                };
+              });
+              
+              setFreqData(freqResults);
+              setLoadingGraficos(false);
+            } catch (error) {
+              console.error('Erro ao carregar taxas de frequência:', error);
+              setFreqData([]);
+              setLoadingGraficos(false);
+            }
           }, 0);
         }, 0);
       } catch (error) {
@@ -166,7 +172,7 @@ export default function Dashboard(): JSX.Element {
     }
 
     fetchGraficos();
-  }, [isAdmin, loadingGraficos, turmasLista, disciplinaSelecionada]);
+  }, [isAdmin, loadingGraficos, turmasLista]);
 
   // Seleciona automaticamente o grupo de turmas com melhor taxa de frequência média
   useEffect(() => {
@@ -193,33 +199,50 @@ export default function Dashboard(): JSX.Element {
 
   // Recalcular frequência quando disciplina ou período mudar
   useEffect(() => {
-    if (!isAdmin || freqDataOriginal.length === 0 || turmasLista.length === 0) return;
+    if (!isAdmin || turmasLista.length === 0) return;
 
-    const filtros: any = {};
+    async function recarregarFrequencias() {
+      try {
+        const filtros: any = {};
 
-    // Filtrar por disciplina
-    if (disciplinaSelecionada !== 'todas') {
-      filtros.materiaId = disciplinaSelecionada;
+        // Filtrar por disciplina
+        if (disciplinaSelecionada !== 'todas') {
+          filtros.materiaId = disciplinaSelecionada;
+        }
+
+        // Filtrar por período
+        if (tipoPeriodo) {
+          filtros.periodo = {
+            tipo: tipoPeriodo as 'hoje' | 'mes' | 'personalizado',
+            data: dataPersonalizada,
+            mes: mesSelecionado,
+            ano: anoLetivo
+          };
+        }
+
+        const turmaIds = turmasLista.map(t => t.id);
+        const resultados = await frequenciaService.calcularTaxasDashboard(
+          turmaIds,
+          Object.keys(filtros).length > 0 ? filtros : undefined
+        );
+
+        // Mapeia resultados para o formato esperado
+        const freqResults = turmasLista.map(turma => {
+          const resultado = resultados.find(r => r.turmaId === turma.id);
+          return {
+            turma: turma.nome,
+            taxa: resultado?.taxa || 0
+          };
+        });
+
+        setFreqData(freqResults);
+      } catch (error) {
+        console.error('Erro ao recalcular frequências:', error);
+      }
     }
 
-    // Filtrar por período
-    if (tipoPeriodo) {
-      filtros.periodo = {
-        tipo: tipoPeriodo as 'hoje' | 'mes' | 'personalizado',
-        data: dataPersonalizada,
-        mes: mesSelecionado,
-        ano: anoLetivo // Adicionar ano letivo do context
-      };
-      // console.log('Filtros aplicados:', filtros);
-    }
-
-    const freqResults = frequenciaService.calcularTaxasPorTurma(
-      freqDataOriginal,
-      turmasLista,
-      Object.keys(filtros).length > 0 ? filtros : undefined
-    );
-    setFreqData(freqResults);
-  }, [disciplinaSelecionada, tipoPeriodo, mesSelecionado, dataPersonalizada, freqDataOriginal, turmasLista, isAdmin, anoLetivo]);
+    recarregarFrequencias();
+  }, [disciplinaSelecionada, tipoPeriodo, mesSelecionado, dataPersonalizada, turmasLista, isAdmin, anoLetivo]);
 
   // Recalcular notas quando filtros de turma ou disciplina mudarem
   useEffect(() => {

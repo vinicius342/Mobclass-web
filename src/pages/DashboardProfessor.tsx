@@ -12,24 +12,18 @@ import { FaTasks, FaCalendarAlt, FaBullhorn } from 'react-icons/fa';
 
 // Services
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
-import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 import { ProfessorService } from '../services/data/ProfessorService';
 import { TarefaService } from '../services/data/TarefaService';
-import { AgendaService } from '../services/data/AgendaService';
-import { FirebaseAgendaRepository } from '../repositories/agenda/FirebaseAgendaRepository';
-import { ComunicadoService } from '../services/data/ComunicadoService';
-import { FirebaseComunicadoRepository } from '../repositories/comunicado/FirebaseComunicadoRepository';
+import { agendaService } from '../services/data/AgendaService';
+import { comunicadoService } from '../services/data/ComunicadoService';
 import { FrequenciaService } from '../services/data/FrequenciaService';
-import { NotaService } from '../services/data/NotaService';
+import { notaService } from '../services/data/NotaService';
 
 // Instanciar services
-const professorMateriaService = new ProfessorMateriaService(new FirebaseProfessorMateriaRepository());
+const professorMateriaService = new ProfessorMateriaService();
 const professorService = new ProfessorService();
 const tarefaService = new TarefaService();
-const agendaService = new AgendaService(new FirebaseAgendaRepository());
-const comunicadoService = new ComunicadoService(new FirebaseComunicadoRepository());
 const frequenciaService = new FrequenciaService();
-const notaService = new NotaService();
 
 const PIE_COLORS = ['#004085', '#007bff', '#66b0ff'];
 
@@ -65,17 +59,17 @@ export default function DashboardProfessor() {
         setLoading(false);
         return;
       }
-      
+
       // Buscar professor pelo email
       const allProfessores = await professorService.listar();
       const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
-      
+
       if (!professorAtual) {
         console.error('Professor não encontrado com email:', userData.email);
         setLoading(false);
         return;
       }
-      
+
       // Buscar vínculos do professor
       const vinculos = await professorMateriaService.listarPorProfessor(professorAtual.id);
       const turmaIds = [...new Set(vinculos.map(v => v.turmaId))];

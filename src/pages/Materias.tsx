@@ -10,10 +10,8 @@ import { PlusCircle, PencilFill, TrashFill } from 'react-bootstrap-icons';
 import { Notebook } from 'lucide-react';
 import { Materia } from '../models/Materia';
 import { MateriaService } from '../services/data/MateriaService';
-import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 
-const materiaRepository = new FirebaseMateriaRepository();
-const materiaService = new MateriaService(materiaRepository);
+const materiaService = new MateriaService();
 
 export default function Materias(): JSX.Element {
   const [materias, setMaterias] = useState<Materia[]>([]);

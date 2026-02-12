@@ -9,13 +9,10 @@ import {
 import { Aluno } from '../models/Aluno';
 import { Turma } from '../models/Turma';
 import { Nota } from '../models/Nota';
-import { NotaService } from '../services/data/NotaService';
 import { turmaService } from '../services/data/TurmaService';
 import { AlunoService } from '../services/usuario/AlunoService';
 import { MateriaService, MateriaComTurma } from '../services/data/MateriaService';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
-import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
-import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivo } from '../contexts/AnoLetivoContext';
 import { Save, Check, Undo, BookOpen } from 'lucide-react';
@@ -29,9 +26,9 @@ export default function Notas(): JSX.Element {
   const isAdmin = userData?.tipo === 'administradores';
   const { anoLetivo } = useAnoLetivo();
 
-  // Inicializar services
-  const notaService = useMemo(
-    () => new NotaService(new FirebaseMateriaRepository()),
+  // Importar singleton do NotaService
+  const { notaService } = useMemo(
+    () => ({ notaService: require('../services/data/NotaService').notaService }),
     []
   );
   const alunoService = useMemo(
@@ -39,11 +36,11 @@ export default function Notas(): JSX.Element {
     []
   );
   const materiaService = useMemo(
-    () => new MateriaService(new FirebaseMateriaRepository()),
+    () => new MateriaService(),
     []
   );
   const professorMateriaService = useMemo(
-    () => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()),
+    () => new ProfessorMateriaService(),
     []
   );
 

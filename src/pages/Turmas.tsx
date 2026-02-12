@@ -14,9 +14,7 @@ import type { Aluno } from '../models/Aluno';
 import type { Nota } from '../models/Nota';
 import type { Materia } from '../models/Materia';
 import type { Professor } from '../models/Professor';
-import { NotaService } from '../services/data/NotaService';
 import { MateriaService } from '../services/data/MateriaService';
-import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 import { ProfessorService } from '../services/data/ProfessorService';
 import { useAuth } from '../contexts/AuthContext';
 import Paginacao from '../components/common/Paginacao';
@@ -32,17 +30,14 @@ import TurmasListMobile from '../components/turmas/TurmasListMobile';
 import TransferenciaModal from '../components/turmas/TransferenciaModal';
 import { ProfessorMateria } from '../models/ProfessorMateria';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
-import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 import { AlunoService } from '../services/usuario/AlunoService';
+import { notaService } from '../services/data/NotaService';
 
 // Instanciar Services
 const alunoService = new AlunoService();
-const materiaRepository = new FirebaseMateriaRepository();
-const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
-const notaService = new NotaService(materiaRepository);
-const materiaService = new MateriaService(materiaRepository);
+const materiaService = new MateriaService();
 const professorService = new ProfessorService();
-const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
+const professorMateriaService = new ProfessorMateriaService();
 
 export default function Turmas() {
   const { anoLetivo, carregandoAnos, anosDisponiveis } = useAnoLetivoAtual();

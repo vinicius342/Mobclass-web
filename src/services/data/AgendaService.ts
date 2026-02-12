@@ -1,36 +1,101 @@
-import { IAgendaRepository } from '../../repositories/agenda/IAgendaRepository';
 import { Agenda } from '../../models/Agenda';
-import { ProfessorMateria } from '../../models/ProfessorMateria';
+
+const API_URL = 'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
 
 export class AgendaService {
-  constructor(private repository: IAgendaRepository) {}
-
   async listar(): Promise<Agenda[]> {
-    return this.repository.listar();
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'agenda', action: 'listar' })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao listar agendas: ${response.statusText}`);
+    }
+
+    return response.json();
   }
 
   async buscarPorId(id: string): Promise<Agenda | null> {
-    return this.repository.buscarPorId(id);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'agenda', action: 'buscarPorId', id })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao buscar agenda: ${response.statusText}`);
+    }
+
+    return response.json();
   }
 
   async criar(agenda: Omit<Agenda, 'id'>): Promise<string> {
-    return this.repository.criar(agenda);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'agenda', action: 'criar', agenda })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao criar agenda: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.id;
   }
 
   async atualizar(id: string, agenda: Partial<Omit<Agenda, 'id'>>): Promise<void> {
-    return this.repository.atualizar(id, agenda);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'agenda', action: 'atualizar', id, agenda })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao atualizar agenda: ${response.statusText}`);
+    }
   }
 
   async deletar(id: string): Promise<void> {
-    return this.repository.deletar(id);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'agenda', action: 'deletar', id })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao deletar agenda: ${response.statusText}`);
+    }
   }
 
   async listarPorTurma(turmaId: string): Promise<Agenda[]> {
-    return this.repository.listarPorTurma(turmaId);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'agenda', action: 'listarPorTurma', turmaId })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao listar agendas por turma: ${response.statusText}`);
+    }
+
+    return response.json();
   }
 
   async listarPorTurmas(turmaIds: string[]): Promise<Agenda[]> {
-    return this.repository.listarPorTurmas(turmaIds);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'agenda', action: 'listarPorTurmas', turmaIds })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao listar agendas por turmas: ${response.statusText}`);
+    }
+
+    return response.json();
   }
 
   /**
@@ -85,3 +150,5 @@ export class AgendaService {
     return agrupado;
   }
 }
+
+export const agendaService = new AgendaService();

@@ -1,8 +1,9 @@
 import { Ocorrencia } from '../../models/Ocorrencia';
-import { IOcorrenciaRepository } from '../../repositories/ocorrencia/IOcorrenciaRepository';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+
+const API_URL = 'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
 
 // Tipos padrão do sistema
 export const TIPOS_OCORRENCIA_PADRAO = [
@@ -15,26 +16,71 @@ export const TIPOS_OCORRENCIA_PADRAO = [
 ];
 
 export class OcorrenciaService {
-  constructor(private ocorrenciaRepository: IOcorrenciaRepository) {}
-
   async listar(): Promise<Ocorrencia[]> {
-    return this.ocorrenciaRepository.findAll();
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'ocorrencia', action: 'listar' })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao listar ocorrências: ${response.statusText}`);
+    }
+
+    return response.json();
   }
 
   async buscarPorId(id: string): Promise<Ocorrencia | null> {
-    return this.ocorrenciaRepository.findById(id);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'ocorrencia', action: 'buscarPorId', id })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao buscar ocorrência: ${response.statusText}`);
+    }
+
+    return response.json();
   }
 
   async criar(ocorrencia: Omit<Ocorrencia, 'id'>): Promise<string> {
-    return this.ocorrenciaRepository.create(ocorrencia);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'ocorrencia', action: 'criar', ocorrencia })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao criar ocorrência: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.id;
   }
 
   async atualizar(id: string, ocorrencia: Partial<Omit<Ocorrencia, 'id'>>): Promise<void> {
-    return this.ocorrenciaRepository.update(id, ocorrencia);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'ocorrencia', action: 'atualizar', id, ocorrencia })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao atualizar ocorrência: ${response.statusText}`);
+    }
   }
 
   async excluir(id: string): Promise<void> {
-    return this.ocorrenciaRepository.delete(id);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'ocorrencia', action: 'deletar', id })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao excluir ocorrência: ${response.statusText}`);
+    }
   }
 
   /**
@@ -343,3 +389,5 @@ export class OcorrenciaService {
       .filter(aluno => aluno !== undefined);
   }
 }
+
+export const ocorrenciaService = new OcorrenciaService();

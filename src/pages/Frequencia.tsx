@@ -1,4 +1,3 @@
-import { FirebaseAgendaRepository } from '../repositories/agenda/FirebaseAgendaRepository';
 import { AgendaService } from '../services/data/AgendaService';
 // src/pages/Frequencia.tsx - Corrigido para usar professores_materias
 import { JSX, useEffect, useState } from 'react';
@@ -15,26 +14,22 @@ import { turmaService } from '../services/data/TurmaService';
 import { MateriaService } from '../services/data/MateriaService';
 import { ProfessorService } from '../services/data/ProfessorService';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
-import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
-import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 import type { Turma } from '../models/Turma';
 import type { ProfessorMateria } from '../models/ProfessorMateria';
 import type { Materia } from '../models/Materia';
 import FrequenciaLancamento from '../components/frequencia/FrequenciaLancamento';
 
 // Instanciar services
-const materiaRepository = new FirebaseMateriaRepository();
-const materiaService = new MateriaService(materiaRepository);
+const materiaService = new MateriaService();
 
 const professorService = new ProfessorService();
 
-const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
-const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
+const professorMateriaService = new ProfessorMateriaService();
 import FrequenciaRelatorios from '../components/frequencia/FrequenciaRelatorios';
 
 export default function Frequencia(): JSX.Element {
   // Instanciar agendaService
-  const agendaService = new AgendaService(new FirebaseAgendaRepository());
+  const agendaService = new AgendaService();
   const { userData } = useAuth()!;
   const { anoLetivo } = useAnoLetivoAtual();
   const isAdmin = userData?.tipo === 'administradores';
