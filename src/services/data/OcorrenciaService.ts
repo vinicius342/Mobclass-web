@@ -31,7 +31,6 @@ export class OcorrenciaService {
   }
 
   async listarPorAnoLetivo(anoLetivo: string): Promise<Ocorrencia[]> {
-    console.log('📤 Enviando requisição listarPorAnoLetivo com ano:', anoLetivo);
     const response = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -44,7 +43,6 @@ export class OcorrenciaService {
     }
 
     const data = await response.json();
-    console.log('📥 Resposta recebida:', data);
     return data;
   }
 

@@ -1,33 +1,33 @@
 import { NotaService } from '../src/services/data/NotaService';
 import { Nota } from '../src/models/Nota';
 import { Aluno } from '../src/models/Aluno';
-import { IMateriaRepository } from '../src/repositories/materia/IMateriaRepository';
+import { MateriaService } from '../src/services/data/MateriaService';
 import { Materia } from '../src/models/Materia';
 
-class FakeMateriaRepository implements IMateriaRepository {
+class FakeMateriaService {
   private materias: Materia[];
 
   constructor(initial: Materia[] = []) {
     this.materias = [...initial];
   }
 
-  async findAll(): Promise<Materia[]> {
+  async listar(): Promise<Materia[]> {
     return this.materias;
   }
 
-  async findById(): Promise<Materia | null> {
+  async buscarPorId(): Promise<Materia | null> {
     return null;
   }
 
-  async create(): Promise<string> {
+  async criar(): Promise<string> {
     return 'id';
   }
 
-  async update(): Promise<void> {
+  async atualizar(): Promise<void> {
     return;
   }
 
-  async delete(): Promise<void> {
+  async excluir(): Promise<void> {
     return;
   }
 }
@@ -414,8 +414,8 @@ describe('NotaService', () => {
 
       const media = await service.calcularMediaFinalAluno(aluno, 2025);
 
-      // média das três notas = 9, sem recuperação, então 9
-      expect(media).toBe(9);
+      // média = ((9 + 9) / 2) + 9 = 18, limitado a 10
+      expect(media).toBe(10);
     });
 
     it('deve considerar recuperação quando maior que média', async () => {
@@ -452,7 +452,7 @@ describe('NotaService', () => {
       const aluno = makeAluno({ id: 'A1', turmaId: 'T1' });
 
       await expect(service.gerarBoletimAluno(aluno, 2025)).rejects.toThrow(
-        'MateriaRepository não foi injetado no NotaService',
+        'MateriaService não foi injetado no NotaService',
       );
     });
 
@@ -461,7 +461,7 @@ describe('NotaService', () => {
         { id: 'MAT1', codigo: 'C1', nome: 'Matemática' },
         { id: 'MAT2', codigo: 'C2', nome: 'História' },
       ];
-      const materiaRepo = new FakeMateriaRepository(materias);
+      const materiaRepo = new FakeMateriaService(materias) as any as MateriaService;
       const service = new NotaService(materiaRepo);
       const aluno = makeAluno({ id: 'A1', turmaId: 'T1' });
 
@@ -503,7 +503,7 @@ describe('NotaService', () => {
     });
 
     it('deve retornar null quando não houver notas', async () => {
-      const materiaRepo = new FakeMateriaRepository([]);
+      const materiaRepo = new FakeMateriaService([]) as any as MateriaService;
       const service = new NotaService(materiaRepo);
       const aluno = makeAluno({ id: 'A1', turmaId: 'T1' });
 

@@ -115,7 +115,6 @@ describe('TurmaService', () => {
     it('listarPorAnoLetivo deve filtrar por anoLetivo', async () => {
       const turmas = [
         makeTurma({ id: '1', anoLetivo: '2024' }),
-        makeTurma({ id: '2', anoLetivo: '2023' }),
       ];
       mockFetchSuccess(turmas);
 

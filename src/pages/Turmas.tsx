@@ -1161,6 +1161,7 @@ export default function Turmas() {
             historicoAluno={historicoAluno}
             setShowHistorico={setShowHistorico}
             getNotaColorUtil={getNotaColorUtil}
+            notaService={notaService}
           />
         </div>
 
