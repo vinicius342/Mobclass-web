@@ -1,5 +1,5 @@
 // src/components/notas/NotasVisualizacao.tsx
-import { JSX, useState, useMemo } from 'react';
+import { JSX, useState } from 'react';
 import { Row, Col, Card, FormControl, Dropdown, Button, Modal, Table } from 'react-bootstrap';
 import { BarChart, Award, Activity, TrendingDown, ArrowDownUp, Download } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -15,6 +15,7 @@ import { Turma } from '../../models/Turma';
 import { Aluno } from '../../models/Aluno';
 import { Materia } from '../../models/Materia';
 import { Nota } from '../../models/Nota';
+import { notaService } from '../../services/data/NotaService';
 
 interface NotasVisualizacaoProps {
   filtroTurma: string;
@@ -47,12 +48,6 @@ export default function NotasVisualizacao({
   const [historicoAluno, setHistoricoAluno] = useState<{ nome: string, notas: Nota[] } | null>(null);
   const [ordenacao, setOrdenacao] = useState<'nome' | 'parcial' | 'global' | 'participacao' | 'recuperacao' | 'media' | 'data'>('nome');
   const [buscaLocal, setBuscaLocal] = useState('');
-
-  // Importar singleton do NotaService
-  const { notaService } = useMemo(
-    () => ({ notaService: require('../../services/data/NotaService').notaService }),
-    []
-  );
 
   // Filtrar notas por alunos ativos e deduplicar
   const notasFiltradas = notas.filter(n => {

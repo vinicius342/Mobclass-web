@@ -10,6 +10,7 @@ import { Aluno } from '../models/Aluno';
 import { Turma } from '../models/Turma';
 import { Nota } from '../models/Nota';
 import { turmaService } from '../services/data/TurmaService';
+import { NotaService } from '../services/data/NotaService';
 import { AlunoService } from '../services/usuario/AlunoService';
 import { MateriaService, MateriaComTurma } from '../services/data/MateriaService';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
@@ -26,23 +27,11 @@ export default function Notas(): JSX.Element {
   const isAdmin = userData?.tipo === 'administradores';
   const { anoLetivo } = useAnoLetivo();
 
-  // Importar singleton do NotaService
-  const { notaService } = useMemo(
-    () => ({ notaService: require('../services/data/NotaService').notaService }),
-    []
-  );
-  const alunoService = useMemo(
-    () => new AlunoService(),
-    []
-  );
-  const materiaService = useMemo(
-    () => new MateriaService(),
-    []
-  );
-  const professorMateriaService = useMemo(
-    () => new ProfessorMateriaService(),
-    []
-  );
+  const alunoService = useMemo(() => new AlunoService(), []);
+  const materiaService = useMemo(() => new MateriaService(), []);
+  const professorMateriaService = useMemo(() => new ProfessorMateriaService(), []);
+  // Corrigir: criar NotaService com MateriaService injetado
+  const notaService = useMemo(() => new NotaService(materiaService), [materiaService]);
 
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
@@ -85,14 +74,17 @@ export default function Notas(): JSX.Element {
         let materiaIds: string[] = [];
 
         if (isAdmin) {
-          // Buscar todas as turmas do ano letivo
-          const todasTurmas = await turmaService.listarTodas();
-          turmasList = todasTurmas.filter((t: Turma) => Number(t.anoLetivo) === anoLetivo);
+          // Buscar turmas do ano letivo (otimizado)
+          turmasList = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
 
-          // Buscar vínculos e matérias
+          // Buscar vínculos e matérias em paralelo
           const turmaIdsAnoLetivo = turmasList.map(t => t.id);
-          const todosVinculos = await professorMateriaService.listar();
-          const todasMaterias = await materiaService.listar();
+          const [todosVinculos, todasMaterias] = await Promise.all([
+            turmaIdsAnoLetivo.length > 0
+              ? professorMateriaService.listarPorTurmas(turmaIdsAnoLetivo)
+              : Promise.resolve([]),
+            materiaService.listar()
+          ]);
 
           // Construir matérias com turmas usando o service
           materiasList = materiaService.construirMateriasComTurmas(
@@ -143,14 +135,22 @@ export default function Notas(): JSX.Element {
           materiaIds = Array.from(new Set(materiasList.map(m => m.id)));
         }
 
-        // Buscar todos os alunos ativos via service
-        const todosAlunos = await alunoService.listar();
+        // Buscar alunos e notas em paralelo (otimizado)
+        const turmaIds = turmasList.map(t => t.id);
+        
+        const [todosAlunos, todasNotas] = await Promise.all([
+          turmaIds.length > 0
+            ? alunoService.listarPorTurmas(turmaIds)
+            : Promise.resolve([]),
+          turmaIds.length > 0
+            ? notaService.listarPorTurmas(turmaIds)
+            : Promise.resolve([])
+        ]);
+
         const alunosAtivos = todosAlunos
           .filter((a: Aluno) => a.status !== 'Inativo')
           .sort((a: Aluno, b: Aluno) => a.nome.localeCompare(b.nome));
-
-        // Buscar notas
-        const todasNotas = await notaService.listarTodas();
+        
         const notasFiltradas = isAdmin
           ? todasNotas
           : todasNotas.filter((n: Nota) => materiaIds.includes(n.materiaId));
@@ -817,6 +817,7 @@ export default function Notas(): JSX.Element {
           historicoAluno={historicoAluno}
           setShowHistorico={setShowHistorico}
           getNotaColorUtil={getNotaColorUtil}
+          notaService={notaService}
         />
       </Container>
     </AppLayout>

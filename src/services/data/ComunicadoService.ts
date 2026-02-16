@@ -32,6 +32,20 @@ export class ComunicadoService {
     return response.json();
   }
 
+  async listarPorAnoLetivo(anoLetivo: string): Promise<Comunicado[]> {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'comunicado', action: 'listarPorAnoLetivo', anoLetivo })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao listar comunicados por ano letivo: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
   async buscarPorId(id: string): Promise<Comunicado | null> {
     const response = await fetch(API_URL, {
       method: 'POST',

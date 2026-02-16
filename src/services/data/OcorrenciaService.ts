@@ -30,6 +30,24 @@ export class OcorrenciaService {
     return response.json();
   }
 
+  async listarPorAnoLetivo(anoLetivo: string): Promise<Ocorrencia[]> {
+    console.log('📤 Enviando requisição listarPorAnoLetivo com ano:', anoLetivo);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'ocorrencia', action: 'listarPorAnoLetivo', anoLetivo })
+    });
+
+    if (!response.ok) {
+      console.error('❌ Erro na resposta:', response.status, response.statusText);
+      throw new Error(`Erro ao listar ocorrências por ano letivo: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log('📥 Resposta recebida:', data);
+    return data;
+  }
+
   async buscarPorId(id: string): Promise<Ocorrencia | null> {
     const response = await fetch(API_URL, {
       method: 'POST',

@@ -149,23 +149,26 @@ export default function Agenda() {
   }, [filtroBusca, filtroTurma, filtroProfessor, filtroTurno, filtroDia]);
 
   const fetchAgendaPorTurma = async () => {
-    const data = await agendaService.listar();
-
-    const turmaIdsValidos = new Set<string>();
+    // Extrair IDs das turmas (considerando virtualizadas)
+    const turmaIdsValidos: string[] = [];
     turmas.forEach(t => {
       if (t.turmaOriginalId && t.turmaOriginalId) {
-        turmaIdsValidos.add(t.turmaOriginalId);
+        turmaIdsValidos.push(t.turmaOriginalId);
       } else {
-        turmaIdsValidos.add(t.id);
+        turmaIdsValidos.push(t.id);
       }
     });
 
-    const dataFiltrada = data.filter(item => {
-      return turmaIdsValidos.has(item.turmaId);
-    });
+    if (turmaIdsValidos.length === 0) {
+      setAgendaPorTurma({});
+      return;
+    }
+
+    // Buscar apenas agendas das turmas atuais (otimizado)
+    const data = await agendaService.listarPorTurmas([...new Set(turmaIdsValidos)]);
 
     const agrupado: Record<string, Agenda[]> = {};
-    dataFiltrada.forEach(item => {
+    data.forEach(item => {
       const turma = turmas.find(t => {
         if (t.turmaOriginalId && t.turmaOriginalId) {
           return t.turmaOriginalId === item.turmaId;

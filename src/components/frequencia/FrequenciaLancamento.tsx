@@ -103,21 +103,8 @@ export default function FrequenciaLancamento({
       }
       setLoading(true);
       try {
-        // Buscar turma selecionada para obter o ano letivo correto
-        const turmaSelecionada = turmas.find(t => t.id === turmaId);
-
-        if (!turmaSelecionada) {
-          setAlunos([]);
-          setAttendance({});
-          setLoading(false);
-          return;
-        }
-
-        // Buscar alunos pela turma e ano letivo (excluindo inativos)
-        const todosAlunos = await alunoService.listarPorTurmaEAnoLetivo(
-          turmaId,
-          turmaSelecionada.anoLetivo,
-        );
+        // Buscar alunos pela turma (excluindo inativos) - usa versão otimizada
+        const todosAlunos = await alunoService.listarPorTurmaSimplificado(turmaId);
         const alunosAtivos = todosAlunos
           .filter((aluno: any) => aluno.status !== 'Inativo')
           .sort((a: any, b: any) => a.nome.localeCompare(b.nome));

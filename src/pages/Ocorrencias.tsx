@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Container, Row, Col, Card, Button, Modal, Form, Badge, Table, Spinner, Dropdown } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
@@ -39,7 +39,7 @@ export default function Ocorrencias() {
   const temAcesso = userData?.tipo === 'administradores' || userData?.tipo === 'professores';
 
   const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>([]);
-  const [alunos, setAlunos] = useState<Aluno[]>([]);
+  const [alunos, setAlunos] = useState<Pick<Aluno, 'id' | 'nome' | 'status' | 'turmaId'>[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -75,11 +75,16 @@ export default function Ocorrencias() {
     medidas: ''
   });
 
+  const isLoadingRef = useRef(false);
+
   useEffect(() => {
     carregarDados();
   }, [anoLetivo]);
 
   const carregarDados = async () => {
+    if (isLoadingRef.current) return; // Evitar chamadas duplicadas
+    isLoadingRef.current = true;
+
     try {
       setLoading(true);
       await Promise.all([
@@ -92,25 +97,42 @@ export default function Ocorrencias() {
       toast.error('Erro ao carregar dados');
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
   };
 
   const carregarOcorrencias = async () => {
     try {
-      const dados = await ocorrenciaService.listar();
+      console.log('🔍 Carregando ocorrências para ano letivo:', anoLetivo);
+      const dados = await ocorrenciaService.listarPorAnoLetivo(anoLetivo.toString());
+      console.log('📋 Ocorrências recebidas:', dados.length, dados);
       setOcorrencias(dados);
     } catch (error) {
-      console.error('Erro ao carregar ocorrências:', error);
+      console.error('❌ Erro ao carregar ocorrências:', error);
       setOcorrencias([]);
     }
   };
 
   const carregarAlunos = async () => {
     try {
-      const dados = await alunoService.listar();
+      console.log('🔍 Carregando alunos para ano letivo:', anoLetivo);
+      // Buscar turmas do ano letivo para filtrar alunos
+      const turmasAnoLetivo = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+      console.log('📚 Turmas do ano letivo:', turmasAnoLetivo.length, turmasAnoLetivo.map(t => ({ id: t.id, nome: t.nome, anoLetivo: t.anoLetivo })));
+      const turmaIds = turmasAnoLetivo.map(t => t.id);
+      
+      if (turmaIds.length === 0) {
+        console.log('⚠️ Nenhuma turma encontrada para o ano letivo');
+        setAlunos([]);
+        return;
+      }
+      
+      // Buscar apenas alunos das turmas do ano letivo (simplificado: apenas id e nome)
+      const dados = await alunoService.listarPorTurmasSimplificado(turmaIds);
+      console.log('👥 Alunos recebidos:', dados.length);
       setAlunos(dados);
     } catch (error) {
-      console.error('Erro ao carregar alunos:', error);
+      console.error('❌ Erro ao carregar alunos:', error);
       setAlunos([]);
     }
   };
@@ -246,12 +268,28 @@ export default function Ocorrencias() {
     searchQuery
   );
 
+  console.log('🔎 Filtros aplicados:', { 
+    totalOcorrencias: ocorrencias.length, 
+    filtroTipo, 
+    filtroTurma, 
+    filtroAluno, 
+    searchQuery,
+    ocorrenciasFiltradas: ocorrenciasFiltradas.length 
+  });
+
   // Paginação usando service
   const { ocorrenciasPaginadas, totalPaginas } = ocorrenciaService.paginarOcorrencias(
     ocorrenciasFiltradas,
     paginaAtual,
     itensPorPagina
   );
+
+  console.log('📄 Paginação:', { 
+    paginaAtual, 
+    itensPorPagina, 
+    ocorrenciasPaginadas: ocorrenciasPaginadas.length,
+    totalPaginas 
+  });
 
   const getTipoColor = (tipo: string) => {
     switch (tipo) {

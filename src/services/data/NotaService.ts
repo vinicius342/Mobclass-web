@@ -13,6 +13,7 @@ type NotaFunctionAction =
   | 'listarPorAluno'
   | 'listarPorAlunoETurma'
   | 'listarPorTurma'
+  | 'listarPorTurmas'
   | 'mediasPorTurma'
   | 'salvar'
   | 'atualizar'
@@ -81,6 +82,14 @@ export class NotaService {
       'listarPorTurma',
       { turmaId },
       'Erro ao listar notas da turma',
+    );
+  }
+
+  async listarPorTurmas(turmaIds: string[], materiaId?: string): Promise<Nota[]> {
+    return this.postNotaFunction<Nota[]>(
+      'listarPorTurmas',
+      { turmaIds, materiaId },
+      'Erro ao listar notas das turmas',
     );
   }
 
@@ -260,37 +269,11 @@ export class NotaService {
     notas.forEach(nota => {
       const materiaId = nota.materiaId;
 
-      // Verificar se a nota tem dados válidos antes de calcular
-      const temTresNotas =
-        typeof nota.notaParcial === 'number' &&
-        typeof nota.notaGlobal === 'number' &&
-        typeof nota.notaParticipacao === 'number';
+      // Usar o mesmo método calcularMediaFinal para consistência
+      const mediaFinal = this.calcularMediaFinal(nota);
 
-      const temRecuperacao = typeof nota.notaRecuperacao === 'number';
-
-      // Só calcular média se tiver notas válidas
-      if (temTresNotas || temRecuperacao) {
-        // Calcular média final da nota
-        let mediaFinal: number;
-        
-        // Calcula a média das três notas
-        if (temTresNotas) {
-          mediaFinal = (nota.notaParcial! + nota.notaGlobal! + nota.notaParticipacao!) / 3;
-          
-          // Se tiver recuperação, usa o maior valor entre média e recuperação
-          if (temRecuperacao) {
-            mediaFinal = Math.max(mediaFinal, nota.notaRecuperacao!);
-          }
-        } else {
-          // Se só tem recuperação, usa ela
-          mediaFinal = nota.notaRecuperacao!;
-        }
-
-        if (!notasPorMateria[materiaId]) notasPorMateria[materiaId] = [];
-        if (!isNaN(mediaFinal)) {
-          notasPorMateria[materiaId].push(mediaFinal);
-        }
-      }
+      if (!notasPorMateria[materiaId]) notasPorMateria[materiaId] = [];
+      notasPorMateria[materiaId].push(mediaFinal);
     });
 
     // Calcular média final de cada matéria (média dos bimestres)
@@ -344,17 +327,12 @@ export class NotaService {
       notas.forEach(nota => {
         const nomeMateria = materiasMap.get(nota.materiaId) || nota.materiaId;
         materiasEncontradas.add(nomeMateria);
-
         if (!notasPorMateriaBimestre[nota.bimestre]) {
           notasPorMateriaBimestre[nota.bimestre] = {};
         }
 
-        // Calcular média final usando a mesma lógica do calcularMediaFinal
-        const parcial = typeof nota.notaParcial === 'number' ? nota.notaParcial : 0;
-        const global = typeof nota.notaGlobal === 'number' ? nota.notaGlobal : 0;
-        const participacao = typeof nota.notaParticipacao === 'number' ? nota.notaParticipacao : 0;
-        const media = ((parcial + global) / 2) + participacao;
-        const mediaFinal = Math.min(parseFloat(media.toFixed(1)), 10);
+        // Usar o mesmo método calcularMediaFinal para consistência
+        const mediaFinal = this.calcularMediaFinal(nota);
 
         notasPorMateriaBimestre[nota.bimestre][nomeMateria] = {
           mediaFinal: mediaFinal
@@ -483,7 +461,9 @@ export class NotaService {
       media = Math.max(media, recuperacao);
     }
     
-    return Math.min(parseFloat(media.toFixed(1)), 10);
+    let mediaFinal = Math.min(parseFloat(media.toFixed(1)), 10)
+    
+    return mediaFinal;
   }
 
   /**
@@ -499,12 +479,17 @@ export class NotaService {
   /**
    * Formata data para string no formato DD/MM/YYYY
    */
-  formatarData(data: Date | string): string {
-    if (typeof data === 'string') return data;
-    const dia = String(data.getDate()).padStart(2, '0');
-    const mes = String(data.getMonth() + 1).padStart(2, '0');
-    const ano = data.getFullYear();
-    return `${dia}/${mes}/${ano}`;
+  formatarData(data: string | Date | null | undefined): string {
+    if (!data) return '-';
+    const d = typeof data === 'string' ? new Date(data) : data;
+    if (!(d instanceof Date) || isNaN(d.getTime())) return '-';
+    return d.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      // hour: '2-digit',
+      // minute: '2-digit'
+    });
   }
 
   /**

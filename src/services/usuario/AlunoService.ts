@@ -9,6 +9,10 @@ type AlunoFunctionAction =
   | 'promoverAluno'
   | 'reprovarAluno'
   | 'transferirAluno'
+  | 'listarPorTurma'
+  | 'listarPorTurmas'
+  | 'listarPorTurmaSimplificado'
+  | 'listarPorTurmasSimplificado'
   | 'listarPorTurmaEAnoLetivo'
   | 'atualizar'
   | 'updateHistorico'
@@ -84,6 +88,40 @@ export class AlunoService {
       'transferirAluno',
       { id, anoAtual, anoDestino, turmaId },
       'Erro ao transferir aluno',
+    );
+  }
+
+  async listarPorTurma(turmaId: string): Promise<Aluno[]> {
+    return this.postAlunoFunction<Aluno[]>(
+      'listarPorTurma',
+      { turmaId },
+      'Erro ao listar alunos por turma',
+    );
+  }
+
+  async listarPorTurmas(turmaIds: string[]): Promise<Aluno[]> {
+    return this.postAlunoFunction<Aluno[]>(
+      'listarPorTurmas',
+      { turmaIds },
+      'Erro ao listar alunos por turmas',
+    );
+  }
+
+  // Método otimizado que retorna apenas id, nome e status (para telas de frequência)
+  async listarPorTurmaSimplificado(turmaId: string): Promise<Pick<Aluno, 'id' | 'nome' | 'status'>[]> {
+    return this.postAlunoFunction<Pick<Aluno, 'id' | 'nome' | 'status'>[]>(
+      'listarPorTurmaSimplificado',
+      { turmaId },
+      'Erro ao listar alunos por turma',
+    );
+  }
+
+  // Método otimizado que retorna apenas id, nome, status e turmaId de múltiplas turmas (para filtros)
+  async listarPorTurmasSimplificado(turmaIds: string[]): Promise<Pick<Aluno, 'id' | 'nome' | 'status' | 'turmaId'>[]> {
+    return this.postAlunoFunction<Pick<Aluno, 'id' | 'nome' | 'status' | 'turmaId'>[]>(
+      'listarPorTurmasSimplificado',
+      { turmaIds },
+      'Erro ao listar alunos por turmas',
     );
   }
 

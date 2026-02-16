@@ -86,11 +86,8 @@ export default function FrequenciaRelatorios({ turmas, materias, anoLetivo, onTo
       // Buscar alunos usando repository
       let listaAlunos: Aluno[];
       if (turmaId) {
-        // Buscar alunos da turma no ano letivo informado
-        listaAlunos = await alunoService.listarPorTurmaEAnoLetivo(
-          turmaId,
-          anoLetivo.toString(),
-        );
+        // Buscar alunos da turma (versão otimizada com apenas id, nome, status)
+        listaAlunos = await alunoService.listarPorTurmaSimplificado(turmaId) as Aluno[];
       } else {
         // Buscar todos os alunos
         listaAlunos = await alunoService.listar();
@@ -127,20 +124,30 @@ export default function FrequenciaRelatorios({ turmas, materias, anoLetivo, onTo
         const fim = new Date(anoLetivo, indexMes + 1, 0);
         const inicioStr = inicio.toISOString().split('T')[0];
         const fimStr = fim.toISOString().split('T')[0];
-        frequencias = await frequenciaService.buscarPorPeriodo(inicioStr, fimStr);
+        // Usa método otimizado com filtros
+        frequencias = await frequenciaService.buscarPorPeriodoComFiltros(
+          inicioStr,
+          fimStr,
+          turmaId || undefined,
+          materiaId === 'all' ? undefined : materiaId
+        );
       } else if (tipoPeriodo === 'personalizado' && dataPeriodo[0] && dataPeriodo[1]) {
         const inicioStr = dataPeriodo[0].toISOString().split('T')[0];
         const fimStr = dataPeriodo[1].toISOString().split('T')[0];
-        frequencias = await frequenciaService.buscarPorPeriodo(inicioStr, fimStr);
+        // Usa método otimizado com filtros
+        frequencias = await frequenciaService.buscarPorPeriodoComFiltros(
+          inicioStr,
+          fimStr,
+          turmaId || undefined,
+          materiaId === 'all' ? undefined : materiaId
+        );
       } else {
         frequencias = [];
       }
 
-      // Filtrar por turma, matéria e alunos
+      // Filtrar apenas por alunos (turma/matéria já filtrados no backend)
       let registrosFiltrados = frequencias.filter(
-        freq => (!turmaId || freq.turmaId === turmaId) &&
-          (materiaId === 'all' || freq.materiaId === materiaId) &&
-          listaAlunos.some(aluno => aluno.id === freq.alunoId)
+        freq => listaAlunos.some(aluno => aluno.id === freq.alunoId)
       );
 
       setRegistrosRelatorio(registrosFiltrados);

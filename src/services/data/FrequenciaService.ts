@@ -10,7 +10,9 @@ type FrequenciaFunctionAction =
   | 'listarPorAluno'
   | 'listarPorAlunoETurma'
   | 'listarPorTurma'
+  | 'listarPorTurmaMateria'
   | 'buscarPorPeriodo'
+  | 'buscarPorPeriodoComFiltros'
   | 'buscarPorAlunoIdEPeriodo'
   | 'salvarFrequencias'
   | 'copiarFrequencias'
@@ -80,6 +82,20 @@ export class FrequenciaService {
     return this.postFrequenciaFunction<Frequencia[]>(
       'buscarPorPeriodo',
       { dataInicio, dataFim },
+      'Erro ao buscar frequências por período',
+    );
+  }
+
+  // Método otimizado para relatórios com filtros opcionais
+  async buscarPorPeriodoComFiltros(
+    dataInicio: string,
+    dataFim: string,
+    turmaId?: string,
+    materiaId?: string
+  ): Promise<Frequencia[]> {
+    return this.postFrequenciaFunction<Frequencia[]>(
+      'buscarPorPeriodoComFiltros',
+      { dataInicio, dataFim, turmaId, materiaId },
       'Erro ao buscar frequências por período',
     );
   }
@@ -231,11 +247,10 @@ export class FrequenciaService {
   }
 
   async listarPorTurmaMateria(turmaId: string, materiaId: string, data: string): Promise<Frequencia[]> {
-    const frequencias = await this.listar();
-    return frequencias.filter(f => 
-      f.turmaId === turmaId && 
-      f.materiaId === materiaId && 
-      f.data === data
+    return this.postFrequenciaFunction<Frequencia[]>(
+      'listarPorTurmaMateria',
+      { turmaId, materiaId, data },
+      'Erro ao listar frequências por turma/matéria',
     );
   }
 

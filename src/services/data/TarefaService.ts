@@ -31,6 +31,16 @@ export class TarefaService {
     return await response.json();
   }
 
+  async listarTarefasPorAnoLetivo(anoLetivo: string): Promise<Tarefa[]> {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'tarefa', action: 'listarPorAnoLetivo', anoLetivo }),
+    });
+    if (!response.ok) throw new Error('Erro ao listar tarefas por ano letivo');
+    return await response.json();
+  }
+
   async listarTarefasPorTurmas(turmaIds: string[]): Promise<Tarefa[]> {
     const response = await fetch(API_URL, {
       method: 'POST',
@@ -89,6 +99,16 @@ export class TarefaService {
       body: JSON.stringify({ domain: 'tarefa', action: 'listarEntregas' }),
     });
     if (!response.ok) throw new Error('Erro ao listar entregas');
+    return await response.json();
+  }
+
+  async listarEntregasPorAnoLetivo(anoLetivo: string): Promise<Entrega[]> {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'tarefa', action: 'listarEntregasPorAnoLetivo', anoLetivo }),
+    });
+    if (!response.ok) throw new Error('Erro ao listar entregas por ano letivo');
     return await response.json();
   }
 

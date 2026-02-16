@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Modal, Table, Card } from 'react-bootstrap';
 import { BookOpen } from 'lucide-react';
 
@@ -19,15 +19,10 @@ interface Props {
   historicoAluno: HistoricoAluno | null;
   setShowHistorico: (v: boolean) => void;
   getNotaColorUtil: (n?: number) => string;
+  notaService: any;
 }
 
-const HistoricoNotasModal: React.FC<Props> = ({ show, onHide, historicoAluno, getNotaColorUtil }) => {
-  // Importar singleton do NotaService (apenas para cálculos locais)
-  const { notaService } = useMemo(
-    () => ({ notaService: require('../../services/data/NotaService').notaService }),
-    []
-  );
-
+const HistoricoNotasModal: React.FC<Props> = ({ show, onHide, historicoAluno, getNotaColorUtil, notaService }) => {
   const dados = historicoAluno?.dadosBoletim;
 
   return (

@@ -19,6 +19,16 @@ export class ProfessorMateriaService {
     return response.json();
   }
 
+  async listarPorTurmas(turmaIds: string[]): Promise<ProfessorMateria[]> {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'professor_materia', action: 'listarPorTurmas', turmaIds }),
+    });
+    if (!response.ok) throw new Error('Erro ao listar vínculos por turmas');
+    return response.json();
+  }
+
   async buscarPorId(id: string): Promise<ProfessorMateria | null> {
     const response = await fetch(API_URL, {
       method: 'POST',

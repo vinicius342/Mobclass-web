@@ -30,8 +30,13 @@ export const turmaService = {
   },
 
   listarPorAnoLetivo: async (anoLetivo: string): Promise<Turma[]> => {
-    const turmas = await turmaService.listarTodas();
-    return turmas.filter((t: Turma) => t.anoLetivo === anoLetivo);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'turma', action: 'listarPorAnoLetivo', anoLetivo }),
+    });
+    if (!response.ok) throw new Error('Erro ao listar turmas por ano letivo');
+    return response.json();
   },
 
   listarComVirtualizacao: async (anoLetivo: string): Promise<Turma[]> => {

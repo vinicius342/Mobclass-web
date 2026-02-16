@@ -193,8 +193,8 @@ export default function Tarefas() {
       }
       setTurmas(turmasFiltradas);
 
-      // Buscar entregas usando service
-      const entregasList = await tarefaService.listarEntregas();
+      // Buscar entregas filtradas por ano letivo
+      const entregasList = await tarefaService.listarEntregasPorAnoLetivo(anoLetivo.toString());
       setEntregas(entregasList);
 
       // Buscar matérias usando service
@@ -203,8 +203,8 @@ export default function Tarefas() {
       const materiasFiltradas = todasMaterias.filter(m => materiaIds.includes(m.id));
       setMaterias(materiasFiltradas);
 
-      // Buscar tarefas usando service
-      const todasTarefas = await tarefaService.listarTarefas();
+      // Buscar tarefas filtradas por ano letivo
+      const todasTarefas = await tarefaService.listarTarefasPorAnoLetivo(anoLetivo.toString());
       const tarefasFiltradas = isAdmin
         ? todasTarefas
         : todasTarefas.filter(tarefa => materiaIds.includes(tarefa.materiaId));

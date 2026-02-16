@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import React from 'react';
 import AppLayout from '../components/layout/AppLayout';
 import {
@@ -95,59 +95,70 @@ export default function Comunicados() {
   const [expandedTurmas, setExpandedTurmas] = useState<Set<string>>(new Set());
   const itensPorPagina = 6;
   const maxCaracteres = 150;
+  const isFetchingRef = useRef(false);
 
   useEffect(() => {
     fetchData();
+  }, [userData, anoLetivo]);
+
+  useEffect(() => {
     if (showModal) {
       setTimeout(() => {
         document.getElementById('input-assunto')?.focus();
       }, 100);
     }
-  }, [showModal, userData, anoLetivo]);
+  }, [showModal]);
 
   const fetchData = async () => {
-    let listaTurmas: Turma[] = [];
+    if (isFetchingRef.current) return; // Evitar chamadas duplicadas
+    isFetchingRef.current = true;
 
-    if (isAdmin) {
-      listaTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
-    } else {
-      if (!userData?.email) {
-        setTurmas([]);
-        setComunicados([]);
-        return;
+    try {
+      let listaTurmas: Turma[] = [];
+
+      if (isAdmin) {
+        listaTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+      } else {
+        if (!userData?.email) {
+          setTurmas([]);
+          setComunicados([]);
+          return;
+        }
+
+        // Buscar professor pelo email
+        const professorService = new (await import('../services/data/ProfessorService')).ProfessorService();
+        const allProfessores = await professorService.listar();
+        const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
+
+        if (!professorAtual) {
+          console.error('Professor não encontrado com email:', userData.email);
+          setTurmas([]);
+          setComunicados([]);
+          return;
+        }
+
+        const vincList = await professorMateriaService.listarPorProfessor(professorAtual.id);
+
+        const turmaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.turmaId))];
+        const todasTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+        listaTurmas = todasTurmas.filter((t: Turma) => turmaIds.includes(t.id));
       }
 
-      // Buscar professor pelo email
-      const professorService = new (await import('../services/data/ProfessorService')).ProfessorService();
-      const allProfessores = await professorService.listar();
-      const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
+      setTurmas(listaTurmas.sort((a, b) => a.nome.localeCompare(b.nome)));
 
-      if (!professorAtual) {
-        console.error('Professor não encontrado com email:', userData.email);
-        setTurmas([]);
-        setComunicados([]);
-        return;
+      let comunicadosList: Comunicado[];
+      if (isAdmin) {
+        comunicadosList = await comunicadoService.listarPorAnoLetivo(anoLetivo.toString());
+      } else {
+        const turmaIds = listaTurmas.map(t => t.id);
+        comunicadosList = turmaIds.length > 0
+          ? await comunicadoService.listarPorTurmas(turmaIds)
+          : [];
       }
-
-      const vincList = await professorMateriaService.listarPorProfessor(professorAtual.id);
-
-      const turmaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.turmaId))];
-      const todasTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
-      listaTurmas = todasTurmas.filter((t: Turma) => turmaIds.includes(t.id));
+      setComunicados(comunicadosList);
+    } finally {
+      isFetchingRef.current = false;
     }
-
-    setTurmas(listaTurmas.sort((a, b) => a.nome.localeCompare(b.nome)));
-
-    let comunicadosList: Comunicado[];
-    if (isAdmin) {
-      comunicadosList = await comunicadoService.listar();
-    } else {
-      const turmaIds = listaTurmas.map(t => t.id);
-      comunicadosList = turmaIds.length > 0
-        ? await comunicadoService.listarPorTurmas(turmaIds)
-        : [];
-    }
-    setComunicados(comunicadosList);
   };
 
   const handleSalvar = async () => {
@@ -669,7 +680,23 @@ export default function Comunicados() {
                         hour: '2-digit',
                         minute: '2-digit'
                       })}`
-                      : `Criado em: ${c.data?.toDate().toLocaleDateString('pt-BR')}`
+                      : (() => {
+                          try {
+                            if (c.data && typeof c.data.toDate === 'function') {
+                              return `Criado em: ${c.data.toDate().toLocaleDateString('pt-BR')}`;
+                            } else if (c.data && c.data._seconds) {
+                              // Firestore Timestamp serializado com _seconds e _nanoseconds
+                              const dataObj = new Date(c.data._seconds * 1000);
+                              return `Criado em: ${dataObj.toLocaleDateString('pt-BR')}`;
+                            } else if (c.data) {
+                              const dataObj = typeof c.data === 'string' ? new Date(c.data) : new Date(c.data);
+                              return `Criado em: ${dataObj.toLocaleDateString('pt-BR')}`;
+                            }
+                            return 'Data não disponível';
+                          } catch (error) {
+                            return 'Data inválida';
+                          }
+                        })()
                     }
                   </small>
                 </div>
