@@ -1,30 +1,59 @@
 import { Materia } from '../../models/Materia';
-import { IMateriaRepository } from '../../repositories/materia/IMateriaRepository';
 import { ProfessorMateria } from '../../models/ProfessorMateria';
+
+const API_URL = 'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
 
 export type MateriaComTurma = Materia & { turmaId?: string };
 
 export class MateriaService {
-  constructor(private materiaRepository: IMateriaRepository) {}
+  constructor() {}
 
   async listar(): Promise<Materia[]> {
-    return this.materiaRepository.findAll();
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'materia', action: 'listar' }),
+    });
+    if (!response.ok) throw new Error('Erro ao listar matérias');
+    return response.json();
   }
 
   async buscarPorId(id: string): Promise<Materia | null> {
-    return this.materiaRepository.findById(id);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'materia', action: 'buscarPorId', id }),
+    });
+    if (!response.ok) throw new Error('Erro ao buscar matéria');
+    return response.json();
   }
 
   async criar(materia: Omit<Materia, 'id'>): Promise<string> {
-    return this.materiaRepository.create(materia);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'materia', action: 'criar', materia }),
+    });
+    if (!response.ok) throw new Error('Erro ao criar matéria');
+    return response.json();
   }
 
   async atualizar(id: string, materia: Partial<Omit<Materia, 'id'>>): Promise<void> {
-    return this.materiaRepository.update(id, materia);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'materia', action: 'atualizar', id, materia }),
+    });
+    if (!response.ok) throw new Error('Erro ao atualizar matéria');
   }
 
   async excluir(id: string): Promise<void> {
-    return this.materiaRepository.delete(id);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'materia', action: 'excluir', id }),
+    });
+    if (!response.ok) throw new Error('Erro ao excluir matéria');
   }
 
   /**

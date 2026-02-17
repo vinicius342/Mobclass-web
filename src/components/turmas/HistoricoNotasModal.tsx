@@ -1,8 +1,6 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Modal, Table, Card } from 'react-bootstrap';
 import { BookOpen } from 'lucide-react';
-import { NotaService } from '../../services/data/NotaService';
-import { FirebaseNotaRepository } from '../../repositories/nota/FirebaseNotaRepository';
 
 interface DadosBoletim {
   materias: string[];
@@ -21,15 +19,10 @@ interface Props {
   historicoAluno: HistoricoAluno | null;
   setShowHistorico: (v: boolean) => void;
   getNotaColorUtil: (n?: number) => string;
+  notaService: any;
 }
 
-const HistoricoNotasModal: React.FC<Props> = ({ show, onHide, historicoAluno, getNotaColorUtil }) => {
-  // Inicializar NotaService
-  const notaService = useMemo(
-    () => new NotaService(new FirebaseNotaRepository()),
-    []
-  );
-
+const HistoricoNotasModal: React.FC<Props> = ({ show, onHide, historicoAluno, getNotaColorUtil, notaService }) => {
   const dados = historicoAluno?.dadosBoletim;
 
   return (

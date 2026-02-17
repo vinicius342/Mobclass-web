@@ -1,41 +1,144 @@
-import { IAlunoRepository } from '../../repositories/aluno/IAlunoRepository';
 import { Aluno } from '../../models/Aluno';
-import { INotaRepository } from '../../repositories/nota/INotaRepository';
-import { IFrequenciaRepository } from '../../repositories/frequencia/IFrequenciaRepository';
+// URL da Cloud Function unificada mobclassApi
+const MOBCLASS_API_URL =
+  'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
+
+type AlunoFunctionAction =
+  | 'listar'
+  | 'buscarPorId'
+  | 'promoverAluno'
+  | 'reprovarAluno'
+  | 'transferirAluno'
+  | 'listarPorTurma'
+  | 'listarPorTurmas'
+  | 'listarPorTurmaSimplificado'
+  | 'listarPorTurmasSimplificado'
+  | 'listarPorTurmaEAnoLetivo'
+  | 'atualizar'
+  | 'updateHistorico'
+  | 'calcularStatusAluno'
+  | 'calcularStatusAlunosEmLote'
+  | 'copiarDadosAcademicos';
 
 export class AlunoService {
-  constructor(
-    private alunoRepository: IAlunoRepository,
-    private notaRepository?: INotaRepository,
-    private frequenciaRepository?: IFrequenciaRepository
-  ) { }
+  // Mantemos um construtor flexível para compatibilidade com chamadas existentes,
+  // mas os parâmetros são ignorados, pois o acesso aos dados agora é via Cloud Function.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  constructor(..._args: any[]) {}
+
+  private async postAlunoFunction<T = any>(
+    action: AlunoFunctionAction,
+    payload: any,
+    defaultErrorMessage: string,
+  ): Promise<T> {
+    const response = await fetch(MOBCLASS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'aluno', action, ...payload }),
+    });
+
+    let result: any = null;
+    try {
+      result = await response.json();
+    } catch {
+      result = null;
+    }
+
+    if (!response.ok) {
+      throw new Error((result && result.message) || defaultErrorMessage);
+    }
+
+    return result as T;
+  }
 
   async listar(): Promise<Aluno[]> {
-    return this.alunoRepository.findAll();
+    return this.postAlunoFunction<Aluno[]>(
+      'listar',
+      {},
+      'Erro ao listar alunos',
+    );
   }
 
   async buscarPorId(id: string): Promise<Aluno | null> {
-    return this.alunoRepository.findById(id);
+    return this.postAlunoFunction<Aluno | null>(
+      'buscarPorId',
+      { id },
+      'Erro ao buscar aluno',
+    );
   }
 
   async promoverAluno(id: string, anoAtual: string, anoDestino: string, turmaId: string) {
-    await this.alunoRepository.updateHistorico(id, anoAtual, anoDestino, turmaId, 'promovido');
+    await this.postAlunoFunction(
+      'promoverAluno',
+      { id, anoAtual, anoDestino, turmaId },
+      'Erro ao promover aluno',
+    );
   }
 
   async reprovarAluno(id: string, anoAtual: string, anoDestino: string, turmaId: string) {
-    await this.alunoRepository.updateHistorico(id, anoAtual, anoDestino, turmaId, 'reprovado');
+    await this.postAlunoFunction(
+      'reprovarAluno',
+      { id, anoAtual, anoDestino, turmaId },
+      'Erro ao reprovar aluno',
+    );
   }
 
   async transferirAluno(id: string, anoAtual: string, anoDestino: string, turmaId: string) {
-    await this.alunoRepository.updateHistorico(id, anoAtual, anoDestino, turmaId, 'transferido');
+    await this.postAlunoFunction(
+      'transferirAluno',
+      { id, anoAtual, anoDestino, turmaId },
+      'Erro ao transferir aluno',
+    );
+  }
+
+  async listarPorTurma(turmaId: string): Promise<Aluno[]> {
+    return this.postAlunoFunction<Aluno[]>(
+      'listarPorTurma',
+      { turmaId },
+      'Erro ao listar alunos por turma',
+    );
+  }
+
+  async listarPorTurmas(turmaIds: string[]): Promise<Aluno[]> {
+    return this.postAlunoFunction<Aluno[]>(
+      'listarPorTurmas',
+      { turmaIds },
+      'Erro ao listar alunos por turmas',
+    );
+  }
+
+  // Método otimizado que retorna apenas id, nome e status (para telas de frequência)
+  async listarPorTurmaSimplificado(turmaId: string): Promise<Pick<Aluno, 'id' | 'nome' | 'status'>[]> {
+    return this.postAlunoFunction<Pick<Aluno, 'id' | 'nome' | 'status'>[]>(
+      'listarPorTurmaSimplificado',
+      { turmaId },
+      'Erro ao listar alunos por turma',
+    );
+  }
+
+  // Método otimizado que retorna apenas id, nome, status e turmaId de múltiplas turmas (para filtros)
+  async listarPorTurmasSimplificado(turmaIds: string[]): Promise<Pick<Aluno, 'id' | 'nome' | 'status' | 'turmaId'>[]> {
+    return this.postAlunoFunction<Pick<Aluno, 'id' | 'nome' | 'status' | 'turmaId'>[]>(
+      'listarPorTurmasSimplificado',
+      { turmaIds },
+      'Erro ao listar alunos por turmas',
+    );
   }
 
   async listarPorTurmaEAnoLetivo(turmaId: string, anoLetivo: string): Promise<Aluno[]> {
-    return this.alunoRepository.findByTurmaEAnoLetivo(turmaId, anoLetivo);
+    return this.postAlunoFunction<Aluno[]>(
+      'listarPorTurmaEAnoLetivo',
+      { turmaId, anoLetivo },
+      'Erro ao listar alunos por turma/ano letivo',
+    );
   }
 
   async atualizar(id: string, aluno: Partial<Omit<Aluno, 'id'>>): Promise<void> {
-    await this.alunoRepository.update(id, aluno);
+    await this.postAlunoFunction(
+      'atualizar',
+      { id, aluno },
+      'Erro ao atualizar aluno',
+    );
   }
 
   async updateHistorico(
@@ -45,7 +148,11 @@ export class AlunoService {
     turmaId: string,
     status: 'promovido' | 'reprovado' | 'transferido'
   ) {
-    await this.alunoRepository.updateHistorico(id, anoAtual, anoDestino, turmaId, status);
+    await this.postAlunoFunction(
+      'updateHistorico',
+      { id, anoAtual, anoDestino, turmaId, status },
+      'Erro ao atualizar histórico do aluno',
+    );
   }
 
   /**
@@ -69,99 +176,52 @@ export class AlunoService {
    * @returns Status: 'Aprovado', 'Reprovado' ou 'Em Andamento'
    */
   async calcularStatusAluno(aluno: Aluno, anoLetivo: number): Promise<string> {
-    if (!this.notaRepository) {
-      throw new Error('NotaRepository não foi injetado no AlunoService');
-    }
-
     try {
-      // Obter a turma do aluno no ano letivo especificado
       const turmaId = this.obterTurmaDoAno(aluno, anoLetivo);
 
-      // Buscar notas do aluno na turma especificada
-      const notasData = await this.notaRepository.findByAlunoUidETurma(aluno.id, turmaId);
+      const result = await this.postAlunoFunction<{ status: string }>(
+        'calcularStatusAluno',
+        { alunoId: aluno.id, turmaId, anoLetivo },
+        'Erro ao calcular status do aluno',
+      );
 
-      if (notasData.length === 0) {
-        return 'Em Andamento'; // Sem notas = em andamento
-      }
-
-      // Agrupar notas por matéria e bimestre
-      const notasPorMateriaBimestre: { [materia: string]: { [bimestre: string]: any } } = {};
-
-      notasData.forEach(nota => {
-        if (!notasPorMateriaBimestre[nota.materiaId]) {
-          notasPorMateriaBimestre[nota.materiaId] = {};
-        }
-        notasPorMateriaBimestre[nota.materiaId][nota.bimestre] = nota;
-      });
-
-      // Verificar se tem notas dos 4 bimestres em pelo menos uma matéria
-      const bimestresEsperados = ['1º', '2º', '3º', '4º'];
-      let temTodasNotasDoAno = false;
-
-      Object.values(notasPorMateriaBimestre).forEach(bimestres => {
-        const bimestresPresentes = Object.keys(bimestres);
-        const temTodosBimestres = bimestresEsperados.every(b => bimestresPresentes.includes(b));
-
-        if (temTodosBimestres) {
-          temTodasNotasDoAno = true;
-        }
-      });
-
-      // Se não tem notas dos 4 bimestres, está "Em Andamento"
-      if (!temTodasNotasDoAno) {
-        return 'Em Andamento';
-      }
-
-      // Verificar se tem notas finais válidas em todas as matérias/bimestres
-      let todasMediasFinais: number[] = [];
-      let temNotaIncompleta = false;
-
-      Object.values(notasPorMateriaBimestre).forEach(bimestres => {
-        Object.values(bimestres).forEach((nota: any) => {
-          // Verificar se tem todas as 3 notas básicas OU nota de recuperação
-          const temTresNotas =
-            typeof nota.notaParcial === 'number' &&
-            typeof nota.notaGlobal === 'number' &&
-            typeof nota.notaParticipacao === 'number';
-
-          const temRecuperacao = typeof nota.notaRecuperacao === 'number';
-
-          if (temTresNotas || temRecuperacao) {
-            // Calcular média final
-            // Calcula média das três notas
-            let mediaFinal = (nota.notaParcial + nota.notaGlobal + nota.notaParticipacao) / 3;
-            
-            // Se tiver recuperação, usa o maior valor entre média e recuperação
-            if (nota.notaRecuperacao) {
-              mediaFinal = Math.max(mediaFinal, nota.notaRecuperacao);
-            }
-            
-            todasMediasFinais.push(mediaFinal);
-          } else {
-            temNotaIncompleta = true;
-          }
-        });
-      });
-
-      // Se tem nota incompleta, status é "Em Andamento"
-      if (temNotaIncompleta) {
-        return 'Em Andamento';
-      }
-
-      // Se não tem nenhuma média final calculada, também é "Em Andamento"
-      if (todasMediasFinais.length === 0) {
-        return 'Em Andamento';
-      }
-
-      // Calcular média geral do aluno
-      const mediaGeral = todasMediasFinais.reduce((sum, nota) => sum + nota, 0) / todasMediasFinais.length;
-
-      // Retornar status baseado na média geral
-      return mediaGeral >= 6 ? 'Aprovado' : 'Reprovado';
-
+      return result.status || 'Em Andamento';
     } catch (error) {
       console.error('Erro ao calcular status do aluno:', error);
       return 'Em Andamento';
+    }
+  }
+
+  /**
+   * Calcula o status de vários alunos em uma única chamada ao backend
+   * Retorna um mapa alunoId -> status
+   */
+  async calcularStatusAlunosEmLote(
+    alunos: Aluno[],
+    anoLetivo: number,
+  ): Promise<Record<string, string>> {
+    try {
+      const itens = alunos.map((aluno) => ({
+        alunoId: aluno.id,
+        turmaId: this.obterTurmaDoAno(aluno, anoLetivo),
+        anoLetivo,
+      }));
+
+      const result = await this.postAlunoFunction<{ resultados: Record<string, string> }>(
+        'calcularStatusAlunosEmLote',
+        { itens },
+        'Erro ao calcular status dos alunos em lote',
+      );
+
+      return result.resultados || {};
+    } catch (error) {
+      console.error('Erro ao calcular status dos alunos em lote:', error);
+      // Em caso de erro, retornamos todos como "Em Andamento" para não quebrar a tela
+      const fallback: Record<string, string> = {};
+      alunos.forEach((aluno) => {
+        fallback[aluno.id] = 'Em Andamento';
+      });
+      return fallback;
     }
   }
 
@@ -177,39 +237,16 @@ export class AlunoService {
     turmaOrigemId: string,
     turmaDestinoId: string
   ): Promise<void> {
-    if (!this.notaRepository) {
-      console.warn('NotaRepository não injetado, pulando cópia de notas');
-    }
-
-    if (!this.frequenciaRepository) {
-      console.warn('FrequenciaRepository não injetado, pulando cópia de frequências');
-    }
-
     try {
-      const promises: Promise<void>[] = [];
-
-      // Copiar notas se o repositório estiver disponível
-      if (this.notaRepository) {
-        promises.push(
-          this.notaRepository.copiarNotas(alunoId, turmaOrigemId, turmaDestinoId)
-        );
-      }
-
-      // Copiar frequências se o repositório estiver disponível
-      if (this.frequenciaRepository) {
-        promises.push(
-          this.frequenciaRepository.copiarFrequencias(alunoId, turmaOrigemId, turmaDestinoId)
-        );
-      }
-
-      // Executar cópias em paralelo
-      await Promise.all(promises);
+      await this.postAlunoFunction(
+        'copiarDadosAcademicos',
+        { alunoId, turmaOrigemId, turmaDestinoId },
+        'Erro ao copiar dados acadêmicos do aluno',
+      );
 
       console.log(`✅ Dados acadêmicos copiados para aluno ${alunoId}`);
-
     } catch (error) {
       console.error('❌ Erro ao copiar dados acadêmicos:', error);
-      // Não bloquear a operação principal por erro na cópia
       throw error;
     }
   }

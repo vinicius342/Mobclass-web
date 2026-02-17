@@ -6,11 +6,7 @@ import { Turma } from '../../models/Turma';
 import { Materia } from '../../models/Materia';
 import { Frequencia } from '../../models/Frequencia';
 import { FrequenciaService } from '../../services/data/FrequenciaService';
-import { FirebaseFrequenciaRepository } from '../../repositories/frequencia/FirebaseFrequenciaRepository';
-
-const frequenciaRepository = new FirebaseFrequenciaRepository();
-const frequenciaService = new FrequenciaService(frequenciaRepository);
-import { FirebaseAlunoRepository } from '../../repositories/aluno/FirebaseAlunoRepository';
+import { AlunoService } from '../../services/usuario/AlunoService';
 import { calcularStatusFrequencia } from '../../utils/frequenciaUtils';
 import DatePicker from "react-datepicker";
 import { CheckCircle, XCircle } from 'react-bootstrap-icons';
@@ -29,11 +25,11 @@ interface FrequenciaRelatoriosProps {
 export default function FrequenciaRelatorios({ turmas, materias, anoLetivo, onToast }: FrequenciaRelatoriosProps) {
   // Inicializar services
   const frequenciaService = useMemo(
-    () => new FrequenciaService(new FirebaseFrequenciaRepository()),
+    () => new FrequenciaService(),
     []
   );
-  const alunoRepository = useMemo(
-    () => new FirebaseAlunoRepository(),
+  const alunoService = useMemo(
+    () => new AlunoService(),
     []
   );
   // Estados de filtros
@@ -90,9 +86,11 @@ export default function FrequenciaRelatorios({ turmas, materias, anoLetivo, onTo
       // Buscar alunos usando repository
       let listaAlunos: Aluno[];
       if (turmaId) {
-        listaAlunos = await alunoRepository.findByTurmaId(turmaId);
+        // Buscar alunos da turma (versão otimizada com apenas id, nome, status)
+        listaAlunos = await alunoService.listarPorTurmaSimplificado(turmaId) as Aluno[];
       } else {
-        listaAlunos = await alunoRepository.findAll();
+        // Buscar todos os alunos
+        listaAlunos = await alunoService.listar();
       }
 
       // Filtrar ativos e ordenar
@@ -126,20 +124,30 @@ export default function FrequenciaRelatorios({ turmas, materias, anoLetivo, onTo
         const fim = new Date(anoLetivo, indexMes + 1, 0);
         const inicioStr = inicio.toISOString().split('T')[0];
         const fimStr = fim.toISOString().split('T')[0];
-        frequencias = await frequenciaService.buscarPorPeriodo(inicioStr, fimStr);
+        // Usa método otimizado com filtros
+        frequencias = await frequenciaService.buscarPorPeriodoComFiltros(
+          inicioStr,
+          fimStr,
+          turmaId || undefined,
+          materiaId === 'all' ? undefined : materiaId
+        );
       } else if (tipoPeriodo === 'personalizado' && dataPeriodo[0] && dataPeriodo[1]) {
         const inicioStr = dataPeriodo[0].toISOString().split('T')[0];
         const fimStr = dataPeriodo[1].toISOString().split('T')[0];
-        frequencias = await frequenciaService.buscarPorPeriodo(inicioStr, fimStr);
+        // Usa método otimizado com filtros
+        frequencias = await frequenciaService.buscarPorPeriodoComFiltros(
+          inicioStr,
+          fimStr,
+          turmaId || undefined,
+          materiaId === 'all' ? undefined : materiaId
+        );
       } else {
         frequencias = [];
       }
 
-      // Filtrar por turma, matéria e alunos
+      // Filtrar apenas por alunos (turma/matéria já filtrados no backend)
       let registrosFiltrados = frequencias.filter(
-        freq => (!turmaId || freq.turmaId === turmaId) &&
-          (materiaId === 'all' || freq.materiaId === materiaId) &&
-          listaAlunos.some(aluno => aluno.id === freq.alunoId)
+        freq => listaAlunos.some(aluno => aluno.id === freq.alunoId)
       );
 
       setRegistrosRelatorio(registrosFiltrados);

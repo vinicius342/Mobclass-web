@@ -13,10 +13,7 @@ import AgendaCadastroView from '../components/agenda/AgendaCadastroView';
 import { turmaService } from '../services/data/TurmaService';
 import { MateriaService } from '../services/data/MateriaService';
 import { ProfessorService } from '../services/data/ProfessorService';
-import { AgendaService } from '../services/data/AgendaService';
-import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
-import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
-import { FirebaseAgendaRepository } from '../repositories/agenda/FirebaseAgendaRepository';
+import { agendaService } from '../services/data/AgendaService';
 import type { Turma } from '../models/Turma';
 import type { Agenda } from '../models/Agenda';
 import type { Materia } from '../models/Materia';
@@ -34,15 +31,9 @@ import {
 } from '../utils/agendaUtils';
 
 // Instanciar services
-const materiaRepository = new FirebaseMateriaRepository();
-const materiaService = new MateriaService(materiaRepository);
+const materiaService = new MateriaService();
 
-const professorRepository = new FirebaseProfessorRepository();
-const professorService = new ProfessorService(professorRepository);
-
-
-const agendaRepository = new FirebaseAgendaRepository();
-const agendaService = new AgendaService(agendaRepository);
+const professorService = new ProfessorService();
 
 const diasSemana = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira'];
 const diasIndexMap = Object.fromEntries(diasSemana.map((d, i) => [d, i]));
@@ -158,23 +149,26 @@ export default function Agenda() {
   }, [filtroBusca, filtroTurma, filtroProfessor, filtroTurno, filtroDia]);
 
   const fetchAgendaPorTurma = async () => {
-    const data = await agendaService.listar();
-
-    const turmaIdsValidos = new Set<string>();
+    // Extrair IDs das turmas (considerando virtualizadas)
+    const turmaIdsValidos: string[] = [];
     turmas.forEach(t => {
       if (t.turmaOriginalId && t.turmaOriginalId) {
-        turmaIdsValidos.add(t.turmaOriginalId);
+        turmaIdsValidos.push(t.turmaOriginalId);
       } else {
-        turmaIdsValidos.add(t.id);
+        turmaIdsValidos.push(t.id);
       }
     });
 
-    const dataFiltrada = data.filter(item => {
-      return turmaIdsValidos.has(item.turmaId);
-    });
+    if (turmaIdsValidos.length === 0) {
+      setAgendaPorTurma({});
+      return;
+    }
+
+    // Buscar apenas agendas das turmas atuais (otimizado)
+    const data = await agendaService.listarPorTurmas([...new Set(turmaIdsValidos)]);
 
     const agrupado: Record<string, Agenda[]> = {};
-    dataFiltrada.forEach(item => {
+    data.forEach(item => {
       const turma = turmas.find(t => {
         if (t.turmaOriginalId && t.turmaOriginalId) {
           return t.turmaOriginalId === item.turmaId;

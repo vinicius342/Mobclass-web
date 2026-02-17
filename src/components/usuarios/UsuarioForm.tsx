@@ -5,7 +5,6 @@ import * as yup from "yup";
 import { Form, Button, Spinner } from "react-bootstrap";
 import { useState, useEffect, useMemo } from "react";
 import { MateriaService } from '../../services/data/MateriaService';
-import { FirebaseMateriaRepository } from '../../repositories/materia/FirebaseMateriaRepository';
 import { Materia } from '../../models/Materia';
 import { Person, Shield, PeopleFill } from "react-bootstrap-icons";
 import { GraduationCap } from "lucide-react";
@@ -90,7 +89,7 @@ export default function UsuarioForm({
   onCancel,
 }: UsuarioFormProps) {
   const [materias, setMaterias] = useState<Materia[]>([]);
-  const materiaService = useMemo(() => new MateriaService(new FirebaseMateriaRepository()), []);
+  const materiaService = useMemo(() => new MateriaService(), []);
   useEffect(() => {
     materiaService.listar().then(setMaterias);
   }, [materiaService]);

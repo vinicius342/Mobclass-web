@@ -1,104 +1,68 @@
 import { turmaService } from '../src/services/data/TurmaService';
 import { Turma } from '../src/models/Turma';
 
-// Mock do repositório FirebaseTurmaRepository usado dentro de TurmaService
-jest.mock('../src/repositories/turma/FirebaseTurmaRepository', () => {
-  const findAllMock = jest.fn<Promise<Turma[]>, []>();
-  const findByIdMock = jest.fn<Promise<Turma | null>, [string]>();
-  const createMock = jest.fn<Promise<string>, [Omit<Turma, 'id' | 'turmaOriginalId'>]>();
-  const updateMock = jest.fn<
-    Promise<void>,
-    [string, Partial<Omit<Turma, 'id' | 'turmaOriginalId'>>]
-  >();
-  const deleteMock = jest.fn<Promise<void>, [string]>();
+describe('TurmaService', () => {
+  const API_URL = 'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
 
-  class FirebaseTurmaRepository {
-    findAll = findAllMock;
-    findById = findByIdMock;
-    create = createMock;
-    update = updateMock;
-    delete = deleteMock;
-  }
-
-  return {
-    __esModule: true,
-    FirebaseTurmaRepository,
-    findAllMock,
-    findByIdMock,
-    createMock,
-    updateMock,
-    deleteMock,
-  };
-});
-
-// Mocka o módulo de firebase para evitar avaliação de import.meta.env
-jest.mock('../src/services/firebase/firebase', () => ({
-  db: {},
-}), { virtual: true });
-
-// Mock mínimo de firebase/firestore para os métodos usados
-jest.mock('firebase/firestore', () => {
-  return {
-    collection: jest.fn((db, path) => ({ db, path })),
-    query: jest.fn((...args) => ({ args })),
-    where: jest.fn((field, op, value) => ({ field, op, value })),
-    getDocs: jest.fn(async () => ({
-      empty: true,
-      docs: [],
-    })),
-    addDoc: jest.fn(async () => ({})),
-  };
-});
-
-const getRepoMocks = () =>
-  jest.requireMock('../src/repositories/turma/FirebaseTurmaRepository') as {
-    findAllMock: jest.Mock;
-    findByIdMock: jest.Mock;
-    createMock: jest.Mock;
-    updateMock: jest.Mock;
-    deleteMock: jest.Mock;
-  };
-
-const makeTurma = (overrides: Partial<Turma> = {}): Turma => ({
-  id: overrides.id ?? '1',
-  nome: overrides.nome ?? '7 A',
-  anoLetivo: overrides.anoLetivo ?? '2024',
-  turno: overrides.turno ?? 'Manhã',
-  isVirtual: overrides.isVirtual,
-  turmaOriginalId: overrides.turmaOriginalId,
-});
-
-describe('turmaService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    global.fetch = jest.fn();
   });
 
-  describe('operações básicas com repositório', () => {
-    it('listarTodas deve delegar para findAll', async () => {
+  const makeTurma = (overrides: Partial<Turma> = {}): Turma => ({
+    id: overrides.id ?? '1',
+    nome: overrides.nome ?? '7 A',
+    anoLetivo: overrides.anoLetivo ?? '2024',
+    turno: overrides.turno ?? 'Manhã',
+    isVirtual: overrides.isVirtual,
+    turmaOriginalId: overrides.turmaOriginalId,
+  });
+
+  const mockFetchSuccess = (data: any) => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => data,
+    });
+  };
+
+  const mockFetchError = (statusText = 'Error') => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      statusText,
+    });
+  };
+
+  describe('operações básicas CRUD', () => {
+    it('listarTodas deve chamar API com domain turma e action listar', async () => {
       const turmas = [makeTurma({ id: '1' }), makeTurma({ id: '2' })];
-      const { findAllMock } = getRepoMocks();
-      findAllMock.mockResolvedValueOnce(turmas);
+      mockFetchSuccess(turmas);
 
       const result = await turmaService.listarTodas();
 
-      expect(findAllMock).toHaveBeenCalled();
+      expect(global.fetch).toHaveBeenCalledWith(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: 'turma', action: 'listar' })
+      });
       expect(result).toEqual(turmas);
     });
 
-    it('buscarPorId deve delegar para findById', async () => {
+    it('buscarPorId deve chamar API com id', async () => {
       const turma = makeTurma({ id: '1' });
-      const { findByIdMock } = getRepoMocks();
-      findByIdMock.mockResolvedValueOnce(turma);
+      mockFetchSuccess(turma);
 
       const result = await turmaService.buscarPorId('1');
 
-      expect(findByIdMock).toHaveBeenCalledWith('1');
+      expect(global.fetch).toHaveBeenCalledWith(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: 'turma', action: 'buscarPorId', id: '1' })
+      });
       expect(result).toEqual(turma);
     });
 
-    it('criar deve validar dados obrigatórios e delegar para create', async () => {
-      const { createMock } = getRepoMocks();
-      createMock.mockResolvedValueOnce('new-id');
+    it('criar deve validar dados obrigatórios e chamar API', async () => {
+      mockFetchSuccess({ id: 'new-id' });
 
       const payload = {
         nome: '7 A',
@@ -107,8 +71,13 @@ describe('turmaService', () => {
       } as Omit<Turma, 'id' | 'turmaOriginalId'>;
 
       const id = await turmaService.criar(payload);
+
+      expect(global.fetch).toHaveBeenCalledWith(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: 'turma', action: 'criar', turma: payload })
+      });
       expect(id).toBe('new-id');
-  expect(createMock).toHaveBeenCalledWith(payload);
     });
 
     it('criar deve lançar erro se dados obrigatórios faltarem', async () => {
@@ -117,22 +86,28 @@ describe('turmaService', () => {
       ).rejects.toThrow('Dados obrigatórios da turma não preenchidos');
     });
 
-    it('atualizar deve delegar para update', async () => {
-      const { updateMock } = getRepoMocks();
-      updateMock.mockResolvedValueOnce(undefined as any);
+    it('atualizar deve chamar API com id e dados', async () => {
+      mockFetchSuccess({});
 
       await turmaService.atualizar('1', { nome: 'Nova' });
 
-  expect(updateMock).toHaveBeenCalledWith('1', { nome: 'Nova' });
+      expect(global.fetch).toHaveBeenCalledWith(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: 'turma', action: 'atualizar', id: '1', turma: { nome: 'Nova' } })
+      });
     });
 
-    it('excluir deve delegar para delete', async () => {
-      const { deleteMock } = getRepoMocks();
-      deleteMock.mockResolvedValueOnce(undefined as any);
+    it('excluir deve chamar API com id', async () => {
+      mockFetchSuccess({});
 
       await turmaService.excluir('1');
 
-  expect(deleteMock).toHaveBeenCalledWith('1');
+      expect(global.fetch).toHaveBeenCalledWith(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: 'turma', action: 'excluir', id: '1' })
+      });
     });
   });
 
@@ -140,10 +115,8 @@ describe('turmaService', () => {
     it('listarPorAnoLetivo deve filtrar por anoLetivo', async () => {
       const turmas = [
         makeTurma({ id: '1', anoLetivo: '2024' }),
-        makeTurma({ id: '2', anoLetivo: '2023' }),
       ];
-      const { findAllMock } = getRepoMocks();
-      findAllMock.mockResolvedValueOnce(turmas);
+      mockFetchSuccess(turmas);
 
       const result = await turmaService.listarPorAnoLetivo('2024');
       expect(result.map(t => t.id)).toEqual(['1']);
@@ -159,8 +132,7 @@ describe('turmaService', () => {
         makeTurma({ id: '4', anoLetivo: '2023', nome: '9 A', isVirtual: true }), // será virtualizada
         makeTurma({ id: '5', anoLetivo: '2023', nome: '10 A', isVirtual: false }), // isVirtual === false => não virtualiza
       ];
-      const { findAllMock } = getRepoMocks();
-      findAllMock.mockResolvedValueOnce(turmas);
+      mockFetchSuccess(turmas);
 
       const result = await turmaService.listarComVirtualizacao('2024');
 
@@ -181,8 +153,7 @@ describe('turmaService', () => {
         // Próximo ano 2025 reais
         makeTurma({ id: '3', anoLetivo: '2025', nome: '7 A', isVirtual: false }),
       ];
-      const { findAllMock } = getRepoMocks();
-      findAllMock.mockResolvedValueOnce(turmas);
+      mockFetchSuccess(turmas);
 
       const result = await turmaService.obterProximoAnoComVirtualizacao('2024');
 
@@ -215,11 +186,7 @@ describe('turmaService', () => {
         makeTurma({ id: '3', nome: '8 A', anoLetivo: '2025' }),
       ];
 
-      const { findAllMock } = getRepoMocks();
-      findAllMock.mockResolvedValueOnce([
-        turmaAtual,
-        ...proximoAnoTurmas,
-      ]);
+      mockFetchSuccess([turmaAtual, ...proximoAnoTurmas]);
 
       const destino = await turmaService.resolverDestinoReprovacao(turmaAtual, '2024');
       expect(destino.id).toBe('2');
@@ -233,11 +200,7 @@ describe('turmaService', () => {
         makeTurma({ id: '3', nome: '8 A', anoLetivo: '2025' }),
       ];
 
-      const { findAllMock } = getRepoMocks();
-      findAllMock.mockResolvedValueOnce([
-        turmaAtual,
-        ...proximoAnoTurmas,
-      ]);
+      mockFetchSuccess([turmaAtual, ...proximoAnoTurmas]);
 
       const destino = await turmaService.resolverDestinoReprovacao(turmaAtual, '2024');
       expect(destino.id).toBe('2');
@@ -247,11 +210,7 @@ describe('turmaService', () => {
       const turmaAtual = makeTurma({ id: '1', nome: '7 A', anoLetivo: '2024' });
       const proximoAnoTurmas: Turma[] = [];
 
-      const { findAllMock } = getRepoMocks();
-      findAllMock.mockResolvedValueOnce([
-        turmaAtual,
-        ...proximoAnoTurmas,
-      ]);
+      mockFetchSuccess([turmaAtual, ...proximoAnoTurmas]);
 
       const destino = await turmaService.resolverDestinoReprovacao(turmaAtual, '2024');
 
@@ -286,11 +245,7 @@ describe('turmaService', () => {
       const turmaAtual = makeTurma({ id: '1', nome: '7 A', anoLetivo: '2024' });
       const turmaDestino = makeTurma({ id: '2', nome: '8 A', anoLetivo: '2025' });
 
-      const { findAllMock } = getRepoMocks();
-      findAllMock.mockResolvedValueOnce([
-        turmaAtual,
-        turmaDestino,
-      ]);
+      mockFetchSuccess([turmaAtual, turmaDestino]);
 
       const destino = await turmaService.resolverDestinoPromocao(turmaAtual, '2024', '2');
 
@@ -301,11 +256,7 @@ describe('turmaService', () => {
       const turmaAtual = makeTurma({ id: '1', nome: '7 A', anoLetivo: '2024' });
       const turmaDestino = makeTurma({ id: '2', nome: '7 B', anoLetivo: '2025' });
 
-      const { findAllMock } = getRepoMocks();
-      findAllMock.mockResolvedValueOnce([
-        turmaAtual,
-        turmaDestino,
-      ]);
+      mockFetchSuccess([turmaAtual, turmaDestino]);
 
       const destino = await turmaService.resolverDestinoPromocao(turmaAtual, '2024', '2');
 
@@ -314,10 +265,8 @@ describe('turmaService', () => {
   });
 
   describe('materialização de turmas', () => {
-    it('materializarTurma deve criar nova turma e atualizar original para isVirtual false', async () => {
-      const { createMock, updateMock } = getRepoMocks();
-      createMock.mockResolvedValueOnce('nova-turma-id');
-      updateMock.mockResolvedValueOnce(undefined as any);
+    it('materializarTurma deve chamar API e retornar ID', async () => {
+      mockFetchSuccess({ id: 'nova-turma-id' });
 
       const turmaVirtual: Turma = {
         id: 'virtual_2025_1',
@@ -329,13 +278,12 @@ describe('turmaService', () => {
 
       const novaId = await turmaService.materializarTurma(turmaVirtual);
 
-      expect(novaId).toBe('nova-turma-id');
-      expect(createMock).toHaveBeenCalledWith({
-        nome: '7 A',
-        anoLetivo: '2025',
-        turno: 'Manhã',
+      expect(global.fetch).toHaveBeenCalledWith(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: 'turma', action: 'materializarTurma', turmaVirtual })
       });
-      expect(updateMock).toHaveBeenCalledWith('1', { isVirtual: false });
+      expect(novaId).toBe('nova-turma-id');
     });
 
     it('materializarTurma deve lançar erro se turma não for virtualizada', async () => {
@@ -353,21 +301,14 @@ describe('turmaService', () => {
 
     it('materializarTurmaVirtualComDados deve retornar ID original se turma não for virtual', async () => {
       const turmaReal: Turma = makeTurma({ id: '1', turmaOriginalId: undefined });
-      const { findByIdMock } = getRepoMocks();
-      findByIdMock.mockResolvedValueOnce(turmaReal);
+      mockFetchSuccess(turmaReal);
 
       const id = await turmaService.materializarTurmaVirtualComDados('1');
       expect(id).toBe('1');
     });
 
-    it('materializarTurmaVirtualComDados deve materializar turma virtual quando não existir real', async () => {
-      const { getDocs } = jest.requireMock('firebase/firestore');
-
-      // getDocs para turmas reais: retorna vazio (nenhuma turma real ainda)
-      (getDocs as jest.Mock).mockResolvedValueOnce({ empty: true, docs: [] });
-      const { createMock, updateMock } = getRepoMocks();
-      createMock.mockResolvedValueOnce('turma-real-id');
-      updateMock.mockResolvedValueOnce(undefined as any);
+    it('materializarTurmaVirtualComDados deve chamar API quando turma for virtual', async () => {
+      mockFetchSuccess({ id: 'turma-real-id' });
 
       const turmaVirtual: Turma = {
         id: 'virtual_2025_1',
@@ -379,9 +320,17 @@ describe('turmaService', () => {
 
       const id = await turmaService.materializarTurmaVirtualComDados(turmaVirtual);
 
+      expect(global.fetch).toHaveBeenCalledWith(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          domain: 'turma', 
+          action: 'materializarTurmaVirtualComDados', 
+          turmaVirtual,
+          excluirAgendasIds: undefined
+        })
+      });
       expect(id).toBe('turma-real-id');
-      expect(createMock).toHaveBeenCalled();
-      expect(updateMock).toHaveBeenCalledWith('1', { isVirtual: false });
     });
   });
 });

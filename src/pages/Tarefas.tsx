@@ -24,15 +24,10 @@ import { ProfessorMateria as Vinculo } from '../models/ProfessorMateria';
 
 // Services
 import { TarefaService } from '../services/data/TarefaService';
-import { FirebaseTarefaRepository } from '../repositories/tarefa/FirebaseTarefaRepository';
-import { FirebaseEntregaRepository } from '../repositories/entrega/FirebaseEntregaRepository';
 import { turmaService } from '../services/data/TurmaService';
 import { MateriaService } from '../services/data/MateriaService';
-import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
-import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 import { AlunoService } from '../services/usuario/AlunoService';
-import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
 
 export default function Tarefas() {
   const { userData } = useAuth()!;
@@ -44,15 +39,12 @@ export default function Tarefas() {
 
   // Service instances
   const tarefaService = useMemo(() => {
-    return new TarefaService(
-      new FirebaseTarefaRepository(),
-      new FirebaseEntregaRepository()
-    );
+    return new TarefaService();
   }, []);
 
-  const materiaService = useMemo(() => new MateriaService(new FirebaseMateriaRepository()), []);
-  const professorMateriaService = useMemo(() => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()), []);
-  const alunoService = useMemo(() => new AlunoService(new FirebaseAlunoRepository()), []);
+  const materiaService = useMemo(() => new MateriaService(), []);
+  const professorMateriaService = useMemo(() => new ProfessorMateriaService(), []);
+  const alunoService = useMemo(() => new AlunoService(), []);
 
   // Função auxiliar para verificar se um link é seguro (async)
   const isSafeLink = async (url: string): Promise<boolean> => {
@@ -176,9 +168,7 @@ export default function Tarefas() {
         }
 
         // Buscar professor pelo email
-        const professorService = new (await import('../services/data/ProfessorService')).ProfessorService(
-          new (await import('../repositories/professor/FirebaseProfessorRepository')).FirebaseProfessorRepository()
-        );
+        const professorService = new (await import('../services/data/ProfessorService')).ProfessorService();
         const allProfessores = await professorService.listar();
         professorAtual = allProfessores.find((p: any) => p.email === userData.email);
 
@@ -203,8 +193,8 @@ export default function Tarefas() {
       }
       setTurmas(turmasFiltradas);
 
-      // Buscar entregas usando service
-      const entregasList = await tarefaService.listarEntregas();
+      // Buscar entregas filtradas por ano letivo
+      const entregasList = await tarefaService.listarEntregasPorAnoLetivo(anoLetivo.toString());
       setEntregas(entregasList);
 
       // Buscar matérias usando service
@@ -213,8 +203,8 @@ export default function Tarefas() {
       const materiasFiltradas = todasMaterias.filter(m => materiaIds.includes(m.id));
       setMaterias(materiasFiltradas);
 
-      // Buscar tarefas usando service
-      const todasTarefas = await tarefaService.listarTarefas();
+      // Buscar tarefas filtradas por ano letivo
+      const todasTarefas = await tarefaService.listarTarefasPorAnoLetivo(anoLetivo.toString());
       const tarefasFiltradas = isAdmin
         ? todasTarefas
         : todasTarefas.filter(tarefa => materiaIds.includes(tarefa.materiaId));

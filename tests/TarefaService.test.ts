@@ -1,8 +1,6 @@
 import { TarefaService, UrlValidationResult } from '../src/services/data/TarefaService';
 import { Tarefa } from '../src/models/Tarefa';
 import { Entrega } from '../src/models/Entrega';
-import { ITarefaRepository } from '../src/repositories/tarefa/ITarefaRepository';
-import { IEntregaRepository } from '../src/repositories/entrega/IEntregaRepository';
 
 jest.mock('jspdf', () => {
   class JsPDFMock {
@@ -35,90 +33,15 @@ jest.mock('xlsx', () => {
   };
 });
 
-class FakeTarefaRepository implements ITarefaRepository {
-  private tarefas: Tarefa[];
-
-  constructor(initial: Tarefa[] = []) {
-    this.tarefas = [...initial];
-  }
-
-  async findAll(): Promise<Tarefa[]> {
-    return this.tarefas;
-  }
-
-  async findById(id: string): Promise<Tarefa | null> {
-    return this.tarefas.find(t => t.id === id) ?? null;
-  }
-
-  async create(tarefa: Omit<Tarefa, 'id'>): Promise<string> {
-    const id = `id-${this.tarefas.length + 1}`;
-    this.tarefas.push({ id, ...tarefa });
-    return id;
-  }
-
-  async update(id: string, tarefa: Partial<Omit<Tarefa, 'id'>>): Promise<void> {
-    this.tarefas = this.tarefas.map(t => (t.id === id ? { ...t, ...tarefa } : t));
-  }
-
-  async delete(id: string): Promise<void> {
-    this.tarefas = this.tarefas.filter(t => t.id !== id);
-  }
-
-  async findByTurmaAndMateria(turmaId: string, materiaId: string): Promise<Tarefa[]> {
-    return this.tarefas.filter(t => t.turmaId === turmaId && t.materiaId === materiaId);
-  }
-
-  async findByTurmas(turmaIds: string[]): Promise<Tarefa[]> {
-    return this.tarefas.filter(t => turmaIds.includes(t.turmaId));
-  }
-}
-
-class FakeEntregaRepository implements IEntregaRepository {
-  private entregas: Entrega[];
-
-  constructor(initial: Entrega[] = []) {
-    this.entregas = [...initial];
-  }
-
-  async findAll(): Promise<Entrega[]> {
-    return this.entregas;
-  }
-
-  async findById(id: string): Promise<Entrega | null> {
-    return this.entregas.find(e => e.id === id) ?? null;
-  }
-
-  async create(entrega: Omit<Entrega, 'id'>): Promise<string> {
-    const id = `id-${this.entregas.length + 1}`;
-    this.entregas.push({ id, ...entrega });
-    return id;
-  }
-
-  async update(id: string, entrega: Partial<Omit<Entrega, 'id'>>): Promise<void> {
-    this.entregas = this.entregas.map(e => (e.id === id ? { ...e, ...entrega } : e));
-  }
-
-  async delete(id: string): Promise<void> {
-    this.entregas = this.entregas.filter(e => e.id !== id);
-  }
-
-  async findByTarefaId(tarefaId: string): Promise<Entrega[]> {
-    return this.entregas.filter(e => e.tarefaId === tarefaId);
-  }
-
-  async findByAlunoAndTarefa(alunoId: string, tarefaId: string): Promise<Entrega | null> {
-    return this.entregas.find(e => e.alunoId === alunoId && e.tarefaId === tarefaId) ?? null;
-  }
-}
-
 const makeTarefa = (overrides: Partial<Tarefa> = {}): Tarefa => ({
   id: overrides.id ?? '1',
   materiaId: overrides.materiaId ?? 'M1',
   titulo: overrides.titulo ?? 'Tarefa 1',
   descricao: overrides.descricao ?? 'Descrição',
   turmaId: overrides.turmaId ?? 'T1',
+  anoLetivo: overrides.anoLetivo ?? '2024',
   dataEntrega: overrides.dataEntrega ?? new Date().toISOString(),
-  professorId: overrides.professorId,
+  professorId: overrides.professorId ?? 'P1',
   excluida: overrides.excluida,
   bloqueado: overrides.bloqueado,
   links: overrides.links,
@@ -136,206 +59,244 @@ const makeEntrega = (overrides: Partial<Entrega> = {}): Entrega => ({
 });
 
 describe('TarefaService', () => {
-  describe('CRUD de tarefas', () => {
-    it('listarTarefas deve delegar para findAll', async () => {
-      const tarefaRepo = new FakeTarefaRepository([
-        makeTarefa({ id: '1' }),
-        makeTarefa({ id: '2' }),
-      ]);
-      const entregaRepo = new FakeEntregaRepository();
-      const service = new TarefaService(tarefaRepo, entregaRepo);
+  beforeEach(() => {
+    global.fetch = jest.fn();
+  });
 
+  describe('CRUD de tarefas (Cloud Function)', () => {
+    it('listarTarefas deve chamar a Cloud Function com action "listar"', async () => {
+      const tarefasMock = [makeTarefa({ id: '1' }), makeTarefa({ id: '2' })];
+
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => tarefasMock,
+      });
+
+      const service = new TarefaService();
       const result = await service.listarTarefas();
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'tarefa', action: 'listar' }),
+        }),
+      );
       expect(result.map(t => t.id)).toEqual(['1', '2']);
     });
 
-    it('listarTarefasPorTurmas deve delegar para findByTurmas', async () => {
-      const tarefaRepo = new FakeTarefaRepository([
-        makeTarefa({ id: '1', turmaId: 'T1' }),
-        makeTarefa({ id: '2', turmaId: 'T2' }),
-      ]);
-      const entregaRepo = new FakeEntregaRepository();
-      const service = new TarefaService(tarefaRepo, entregaRepo);
+    it('listarTarefasPorTurmas deve enviar turmaIds', async () => {
+      const tarefasMock = [makeTarefa({ id: '2', turmaId: 'T2' })];
 
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => tarefasMock,
+      });
+
+      const service = new TarefaService();
       const result = await service.listarTarefasPorTurmas(['T2']);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'tarefa', action: 'listarPorTurmas', turmaIds: ['T2'] }),
+        }),
+      );
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('2');
     });
 
-    it('buscarTarefaPorId deve delegar para findById', async () => {
-      const tarefaRepo = new FakeTarefaRepository([
-        makeTarefa({ id: '1' }),
-        makeTarefa({ id: '2' }),
-      ]);
-      const entregaRepo = new FakeEntregaRepository();
-      const service = new TarefaService(tarefaRepo, entregaRepo);
+    it('buscarTarefaPorId deve enviar id', async () => {
+      const tarefaMock = makeTarefa({ id: '2' });
 
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => tarefaMock,
+      });
+
+      const service = new TarefaService();
       const found = await service.buscarTarefaPorId('2');
-      const notFound = await service.buscarTarefaPorId('3');
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'tarefa', action: 'buscarPorId', id: '2' }),
+        }),
+      );
       expect(found?.id).toBe('2');
-      expect(notFound).toBeNull();
     });
 
-    it('criarTarefa deve delegar para create', async () => {
-      const tarefaRepo = new FakeTarefaRepository();
-      const entregaRepo = new FakeEntregaRepository();
-      const service = new TarefaService(tarefaRepo, entregaRepo);
+    it('criarTarefa deve enviar dados da tarefa', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'id-1' }),
+      });
 
+      const service = new TarefaService();
       const id = await service.criarTarefa({
         materiaId: 'M1',
         titulo: 'Nova tarefa',
         descricao: 'Desc',
         turmaId: 'T1',
+        anoLetivo: '2024',
         dataEntrega: new Date().toISOString(),
         professorId: 'P1',
         links: [],
       });
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
       expect(id).toBe('id-1');
-      const all = await tarefaRepo.findAll();
-      expect(all).toHaveLength(1);
-      expect(all[0]).toMatchObject({ titulo: 'Nova tarefa' });
     });
 
-    it('atualizarTarefa deve delegar para update', async () => {
-      const tarefaRepo = new FakeTarefaRepository([
-        makeTarefa({ id: '1', titulo: 'Antiga' }),
-      ]);
-      const entregaRepo = new FakeEntregaRepository();
-      const service = new TarefaService(tarefaRepo, entregaRepo);
+    it('atualizarTarefa deve enviar id e dados parciais', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({}),
+      });
 
+      const service = new TarefaService();
       await service.atualizarTarefa('1', { titulo: 'Nova' });
-      const updated = await tarefaRepo.findById('1');
 
-      expect(updated?.titulo).toBe('Nova');
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'tarefa', action: 'atualizar', id: '1', tarefa: { titulo: 'Nova' } }),
+        }),
+      );
     });
 
-    it('excluirTarefa deve deletar tarefa e entregas relacionadas', async () => {
-      const tarefaRepo = new FakeTarefaRepository([
-        makeTarefa({ id: '1' }),
-      ]);
-      const entregaRepo = new FakeEntregaRepository([
-        makeEntrega({ id: 'e1', tarefaId: '1' }),
-        makeEntrega({ id: 'e2', tarefaId: '1' }),
-        makeEntrega({ id: 'e3', tarefaId: '2' }),
-      ]);
-      const service = new TarefaService(tarefaRepo, entregaRepo);
+    it('excluirTarefa deve enviar id', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({}),
+      });
 
+      const service = new TarefaService();
       await service.excluirTarefa('1');
 
-      const tarefasRestantes = await tarefaRepo.findAll();
-      const entregasRestantes = await entregaRepo.findAll();
-
-      expect(tarefasRestantes).toHaveLength(0);
-      expect(entregasRestantes.map(e => e.id)).toEqual(['e3']);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'tarefa', action: 'excluir', id: '1' }),
+        }),
+      );
     });
   });
 
-  describe('CRUD de entregas', () => {
-    it('listarEntregas deve delegar para findAll', async () => {
-      const tarefaRepo = new FakeTarefaRepository();
-      const entregaRepo = new FakeEntregaRepository([
-        makeEntrega({ id: 'e1' }),
-        makeEntrega({ id: 'e2' }),
-      ]);
-      const service = new TarefaService(tarefaRepo, entregaRepo);
+  describe('CRUD de entregas (Cloud Function)', () => {
+    it('listarEntregas deve chamar a Cloud Function com action "listarEntregas"', async () => {
+      const entregasMock = [makeEntrega({ id: 'e1' }), makeEntrega({ id: 'e2' })];
 
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => entregasMock,
+      });
+
+      const service = new TarefaService();
       const result = await service.listarEntregas();
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'tarefa', action: 'listarEntregas' }),
+        }),
+      );
       expect(result.map(e => e.id)).toEqual(['e1', 'e2']);
     });
 
-    it('buscarEntregaPorId deve delegar para findById', async () => {
-      const tarefaRepo = new FakeTarefaRepository();
-      const entregaRepo = new FakeEntregaRepository([
-        makeEntrega({ id: 'e1' }),
-        makeEntrega({ id: 'e2' }),
-      ]);
-      const service = new TarefaService(tarefaRepo, entregaRepo);
+    it('buscarEntregaPorId deve enviar id', async () => {
+      const entregaMock = makeEntrega({ id: 'e1' });
 
-      const found = await service.buscarEntregaPorId('e2');
-      const notFound = await service.buscarEntregaPorId('e3');
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => entregaMock,
+      });
 
-      expect(found?.id).toBe('e2');
-      expect(notFound).toBeNull();
-    });
+      const service = new TarefaService();
+      const found = await service.buscarEntregaPorId('e1');
 
-    it('buscarEntregaPorAlunoETarefa deve delegar para findByAlunoAndTarefa', async () => {
-      const tarefaRepo = new FakeTarefaRepository();
-      const entregaRepo = new FakeEntregaRepository([
-        makeEntrega({ id: 'e1', alunoId: 'A1', tarefaId: 'T1' }),
-        makeEntrega({ id: 'e2', alunoId: 'A2', tarefaId: 'T1' }),
-      ]);
-      const service = new TarefaService(tarefaRepo, entregaRepo);
-
-      const found = await service.buscarEntregaPorAlunoETarefa('A1', 'T1');
-      const notFound = await service.buscarEntregaPorAlunoETarefa('A3', 'T1');
-
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'tarefa', action: 'buscarEntregaPorId', id: 'e1' }),
+        }),
+      );
       expect(found?.id).toBe('e1');
-      expect(notFound).toBeNull();
     });
 
-    it('atualizarOuCriarEntrega deve atualizar quando entrega existir e status concluida', async () => {
-      const tarefaRepo = new FakeTarefaRepository();
-      const entregaRepo = new FakeEntregaRepository([
-        makeEntrega({ id: 'e1', alunoId: 'A1', tarefaId: 'T1', status: 'pendente' }),
-      ]);
-      const service = new TarefaService(tarefaRepo, entregaRepo);
+    it('buscarEntregaPorAlunoETarefa deve enviar alunoId e tarefaId', async () => {
+      const entregaMock = makeEntrega({ alunoId: 'A1', tarefaId: 'T1' });
 
-      const retornoId = await service.atualizarOuCriarEntrega('A1', 'T1', 'concluida');
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => entregaMock,
+      });
 
-      expect(retornoId).toBe('e1');
-      const updated = await entregaRepo.findById('e1');
-      expect(updated?.status).toBe('concluida');
-      expect(updated?.dataConclusao).toBeDefined();
+      const service = new TarefaService();
+      const found = await service.buscarEntregaPorAlunoETarefa('A1', 'T1');
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'tarefa', action: 'buscarEntregaPorAlunoETarefa', alunoId: 'A1', tarefaId: 'T1' }),
+        }),
+      );
+      expect(found?.alunoId).toBe('A1');
     });
 
-    it('atualizarOuCriarEntrega deve atualizar e remover dataConclusao quando status nao for concluida', async () => {
-      const tarefaRepo = new FakeTarefaRepository();
-      const entregaRepo = new FakeEntregaRepository([
-        makeEntrega({ id: 'e1', alunoId: 'A1', tarefaId: 'T1', status: 'concluida', dataConclusao: '2024-01-01' }),
-      ]);
-      const service = new TarefaService(tarefaRepo, entregaRepo);
+    it('atualizarOuCriarEntrega deve enviar alunoId, tarefaId e status', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'e-nova' }),
+      });
 
-      const retornoId = await service.atualizarOuCriarEntrega('A1', 'T1', 'pendente');
-
-      expect(retornoId).toBe('e1');
-      const updated = await entregaRepo.findById('e1');
-      expect(updated?.status).toBe('pendente');
-    });
-
-    it('atualizarOuCriarEntrega deve criar nova entrega quando nao existir', async () => {
-      const tarefaRepo = new FakeTarefaRepository();
-      const entregaRepo = new FakeEntregaRepository();
-      const service = new TarefaService(tarefaRepo, entregaRepo);
-
+      const service = new TarefaService();
       const id = await service.atualizarOuCriarEntrega('A1', 'T1', 'concluida');
 
-      expect(id).toBe('id-1');
-      const created = await entregaRepo.findById('id-1');
-      expect(created).not.toBeNull();
-      expect(created?.status).toBe('concluida');
-      expect(created?.dataConclusao).toBeDefined();
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'tarefa', action: 'atualizarOuCriarEntrega', alunoId: 'A1', tarefaId: 'T1', status: 'concluida' }),
+        }),
+      );
+      expect(id).toBe('e-nova');
     });
 
-    it('atualizarObservacoes deve delegar para update', async () => {
-      const tarefaRepo = new FakeTarefaRepository();
-      const entregaRepo = new FakeEntregaRepository([
-        makeEntrega({ id: 'e1', observacoes: 'Antigas' }),
-      ]);
-      const service = new TarefaService(tarefaRepo, entregaRepo);
+    it('atualizarObservacoes deve enviar entregaId e observacoes', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({}),
+      });
 
-      await service.atualizarObservacoes('e1', 'Novas');
-      const updated = await entregaRepo.findById('e1');
-      expect(updated?.observacoes).toBe('Novas');
+      const service = new TarefaService();
+      await service.atualizarObservacoes('e1', 'Observação teste');
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'tarefa', action: 'atualizarObservacoes', entregaId: 'e1', observacoes: 'Observação teste' }),
+        }),
+      );
     });
   });
 
   describe('Validação de URL e links', () => {
     it('validarUrl deve delegar para validateUrlFn', async () => {
-      const tarefaRepo = new FakeTarefaRepository();
-      const entregaRepo = new FakeEntregaRepository();
-      const service = new TarefaService(tarefaRepo, entregaRepo);
+      const service = new TarefaService();
 
       const mockValidate = jest.fn<Promise<UrlValidationResult>, [string]>(async url => ({
         isValid: true,
@@ -350,9 +311,7 @@ describe('TarefaService', () => {
     });
 
     it('processarValidacaoLink deve tratar URL inválida com erro', () => {
-      const tarefaRepo = new FakeTarefaRepository();
-      const entregaRepo = new FakeEntregaRepository();
-      const service = new TarefaService(tarefaRepo, entregaRepo);
+      const service = new TarefaService();
 
       const result = service.processarValidacaoLink({
         isValid: false,
@@ -364,7 +323,7 @@ describe('TarefaService', () => {
     });
 
     it('processarValidacaoLink deve tratar categorias trusted e educational', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const trusted = service.processarValidacaoLink({
         isValid: true,
@@ -382,7 +341,7 @@ describe('TarefaService', () => {
     });
 
     it('processarValidacaoLink deve tratar categoria unknown com allowWithWarning', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const result = service.processarValidacaoLink({
         isValid: true,
@@ -397,7 +356,7 @@ describe('TarefaService', () => {
     });
 
     it('processarValidacaoLink deve adicionar aviso quando score < 80', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const result = service.processarValidacaoLink({
         isValid: true,
@@ -410,7 +369,7 @@ describe('TarefaService', () => {
     });
 
     it('validarESanitizarLinks deve manter apenas links válidos e usar sanitizedUrl', async () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const validateFn = jest.fn<Promise<UrlValidationResult>, [string]>(async url => {
         if (url.includes('bad')) {
@@ -431,7 +390,7 @@ describe('TarefaService', () => {
     });
 
     it('filtrarLinksSegurosDeTarefas deve manter apenas links seguros por tarefa', async () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const isSafeFn = jest.fn<Promise<boolean>, [string]>(async url => !url.includes('bad'));
 
@@ -455,7 +414,7 @@ describe('TarefaService', () => {
 
   describe('Preparação e validação de tarefa', () => {
     it('prepararDadosTarefa deve montar payload com links e possivel bloqueado', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const validatedLinks = [
         { url: 'http://ok.com', titulo: 'Ok' },
@@ -478,7 +437,7 @@ describe('TarefaService', () => {
     });
 
     it('validarFormularioTarefa deve validar campos obrigatórios', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       expect(service.validarFormularioTarefa('', 'desc', 'T1', '2024-01-01').valido).toBe(false);
       expect(service.validarFormularioTarefa('M1', '', 'T1', '2024-01-01').valido).toBe(false);
@@ -494,7 +453,7 @@ describe('TarefaService', () => {
 
   describe('Filtros, ordenação e status', () => {
     it('filtrarTarefas deve filtrar por turma, materia e excluida', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const tarefas: Tarefa[] = [
         makeTarefa({ id: '1', turmaId: 'T1', materiaId: 'M1', excluida: false }),
@@ -508,7 +467,7 @@ describe('TarefaService', () => {
     });
 
     it('filtrarTarefasPorMaterias deve manter apenas materias permitidas', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const tarefas: Tarefa[] = [
         makeTarefa({ id: '1', materiaId: 'M1' }),
@@ -521,7 +480,7 @@ describe('TarefaService', () => {
     });
 
     it('ordenarTarefas deve ordenar por titulo e por data', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const tarefas: Tarefa[] = [
         makeTarefa({ id: '1', titulo: 'B', dataEntrega: '2024-01-02' }),
@@ -537,7 +496,7 @@ describe('TarefaService', () => {
     });
 
     it('calcularStatusTarefa deve considerar dataEntrega em relação a hoje', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const hoje = new Date();
       const ontem = new Date(hoje);
@@ -555,7 +514,7 @@ describe('TarefaService', () => {
     });
 
     it('obterLabelStatus deve retornar label e classe corretos', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       expect(service.obterLabelStatus('concluida')).toEqual({
         label: 'Concluída',
@@ -576,7 +535,7 @@ describe('TarefaService', () => {
 
   describe('Exportação e utilitários', () => {
     it('exportarPDF deve gerar relatório sem erros', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const tarefa = makeTarefa({ id: 'T1', titulo: 'Tarefa' });
       const alunos = [
@@ -594,7 +553,7 @@ describe('TarefaService', () => {
     });
 
     it('exportarExcel deve gerar relatório sem erros', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const tarefa = makeTarefa({ id: 'T1', titulo: 'Tarefa' });
       const alunos = [
@@ -612,7 +571,7 @@ describe('TarefaService', () => {
     });
 
     it('formatarDataBR deve formatar datas no formato brasileiro', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const dataISO = '2024-01-15';
       const formattedISO = service.formatarDataBR(dataISO);
@@ -627,7 +586,7 @@ describe('TarefaService', () => {
     });
 
     it('contarEntregasPorStatus deve contar corretamente por tarefa', () => {
-      const service = new TarefaService(new FakeTarefaRepository(), new FakeEntregaRepository());
+      const service = new TarefaService();
 
       const entregas: Entrega[] = [
         makeEntrega({ tarefaId: 'T1', status: 'concluida' }),

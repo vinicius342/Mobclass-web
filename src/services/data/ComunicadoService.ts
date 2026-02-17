@@ -1,32 +1,102 @@
-import { IComunicadoRepository } from '../../repositories/comunicado/IComunicadoRepository';
 import { Comunicado } from '../../models/Comunicado';
 import { Timestamp } from 'firebase/firestore';
 
-export class ComunicadoService {
-  constructor(private repository: IComunicadoRepository) {}
+const API_URL = 'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
 
+export class ComunicadoService {
   async listar(): Promise<Comunicado[]> {
-    return this.repository.listar();
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'comunicado', action: 'listar' })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao listar comunicados: ${response.statusText}`);
+    }
+
+    return response.json();
   }
 
   async listarPorTurmas(turmaIds: string[]): Promise<Comunicado[]> {
-    return this.repository.listarPorTurmas(turmaIds);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'comunicado', action: 'listarPorTurmas', turmaIds })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao listar comunicados por turmas: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  async listarPorAnoLetivo(anoLetivo: string): Promise<Comunicado[]> {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'comunicado', action: 'listarPorAnoLetivo', anoLetivo })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao listar comunicados por ano letivo: ${response.statusText}`);
+    }
+
+    return response.json();
   }
 
   async buscarPorId(id: string): Promise<Comunicado | null> {
-    return this.repository.buscarPorId(id);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'comunicado', action: 'buscarPorId', id })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao buscar comunicado: ${response.statusText}`);
+    }
+
+    return response.json();
   }
 
   async criar(comunicado: Omit<Comunicado, 'id'>): Promise<string> {
-    return this.repository.criar(comunicado);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'comunicado', action: 'criar', comunicado })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao criar comunicado: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.id;
   }
 
   async atualizar(id: string, comunicado: Partial<Omit<Comunicado, 'id'>>): Promise<void> {
-    return this.repository.atualizar(id, comunicado);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'comunicado', action: 'atualizar', id, comunicado })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao atualizar comunicado: ${response.statusText}`);
+    }
   }
 
   async deletar(id: string): Promise<void> {
-    return this.repository.deletar(id);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'comunicado', action: 'deletar', id })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao deletar comunicado: ${response.statusText}`);
+    }
   }
 
   /**
@@ -215,3 +285,5 @@ export class ComunicadoService {
     return Timestamp.fromDate(date);
   }
 }
+
+export const comunicadoService = new ComunicadoService();

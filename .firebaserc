@@ -1,11 +1,14 @@
 {
-  "projects": { "default": "mobclassapp-prod" },
+  "projects": {
+    "default": "mobclassapp-prod"
+  },
   "targets": {
     "mobclassapp-prod": {
       "hosting": {
-        "prod": ["mobclassapp-prod-web"]
+        "prod": [
+          "mobclassapp-prod-web"
+        ]
       }
     }
   }
 }
-

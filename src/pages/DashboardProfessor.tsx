@@ -12,29 +12,18 @@ import { FaTasks, FaCalendarAlt, FaBullhorn } from 'react-icons/fa';
 
 // Services
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
-import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 import { ProfessorService } from '../services/data/ProfessorService';
-import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
 import { TarefaService } from '../services/data/TarefaService';
-import { FirebaseTarefaRepository } from '../repositories/tarefa/FirebaseTarefaRepository';
-import { FirebaseEntregaRepository } from '../repositories/entrega/FirebaseEntregaRepository';
-import { AgendaService } from '../services/data/AgendaService';
-import { FirebaseAgendaRepository } from '../repositories/agenda/FirebaseAgendaRepository';
-import { ComunicadoService } from '../services/data/ComunicadoService';
-import { FirebaseComunicadoRepository } from '../repositories/comunicado/FirebaseComunicadoRepository';
+import { agendaService } from '../services/data/AgendaService';
+import { comunicadoService } from '../services/data/ComunicadoService';
 import { FrequenciaService } from '../services/data/FrequenciaService';
-import { FirebaseFrequenciaRepository } from '../repositories/frequencia/FirebaseFrequenciaRepository';
-import { NotaService } from '../services/data/NotaService';
-import { FirebaseNotaRepository } from '../repositories/nota/FirebaseNotaRepository';
+import { notaService } from '../services/data/NotaService';
 
 // Instanciar services
-const professorMateriaService = new ProfessorMateriaService(new FirebaseProfessorMateriaRepository());
-const professorService = new ProfessorService(new FirebaseProfessorRepository());
-const tarefaService = new TarefaService(new FirebaseTarefaRepository(), new FirebaseEntregaRepository());
-const agendaService = new AgendaService(new FirebaseAgendaRepository());
-const comunicadoService = new ComunicadoService(new FirebaseComunicadoRepository());
-const frequenciaService = new FrequenciaService(new FirebaseFrequenciaRepository());
-const notaService = new NotaService(new FirebaseNotaRepository());
+const professorMateriaService = new ProfessorMateriaService();
+const professorService = new ProfessorService();
+const tarefaService = new TarefaService();
+const frequenciaService = new FrequenciaService();
 
 const PIE_COLORS = ['#004085', '#007bff', '#66b0ff'];
 
@@ -70,17 +59,17 @@ export default function DashboardProfessor() {
         setLoading(false);
         return;
       }
-      
+
       // Buscar professor pelo email
       const allProfessores = await professorService.listar();
       const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
-      
+
       if (!professorAtual) {
         console.error('Professor não encontrado com email:', userData.email);
         setLoading(false);
         return;
       }
-      
+
       // Buscar vínculos do professor
       const vinculos = await professorMateriaService.listarPorProfessor(professorAtual.id);
       const turmaIds = [...new Set(vinculos.map(v => v.turmaId))];

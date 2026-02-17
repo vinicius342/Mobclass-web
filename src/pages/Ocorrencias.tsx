@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Container, Row, Col, Card, Button, Modal, Form, Badge, Table, Spinner, Dropdown } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { useAnoLetivoAtual } from '../hooks/useAnoLetivoAtual';
@@ -21,19 +21,14 @@ import Paginacao from '../components/common/Paginacao';
 import { Ocorrencia } from '../models/Ocorrencia';
 import { Aluno } from '../models/Aluno';
 import { Turma } from '../models/Turma';
-import { OcorrenciaService } from '../services/data/OcorrenciaService';
-import { FirebaseOcorrenciaRepository } from '../repositories/ocorrencia/FirebaseOcorrenciaRepository';
-import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
+import { ocorrenciaService } from '../services/data/OcorrenciaService';
+import { AlunoService } from '../services/usuario/AlunoService';
 import { turmaService } from '../services/data/TurmaService';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
-import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 
 
-const ocorrenciaRepository = new FirebaseOcorrenciaRepository();
-const ocorrenciaService = new OcorrenciaService(ocorrenciaRepository);
-const alunoRepository = new FirebaseAlunoRepository();
-const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
-const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
+const alunoService = new AlunoService();
+const professorMateriaService = new ProfessorMateriaService();
 
 export default function Ocorrencias() {
   const authContext = useAuth();
@@ -44,7 +39,7 @@ export default function Ocorrencias() {
   const temAcesso = userData?.tipo === 'administradores' || userData?.tipo === 'professores';
 
   const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>([]);
-  const [alunos, setAlunos] = useState<Aluno[]>([]);
+  const [alunos, setAlunos] = useState<Pick<Aluno, 'id' | 'nome' | 'status' | 'turmaId'>[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -80,11 +75,16 @@ export default function Ocorrencias() {
     medidas: ''
   });
 
+  const isLoadingRef = useRef(false);
+
   useEffect(() => {
     carregarDados();
   }, [anoLetivo]);
 
   const carregarDados = async () => {
+    if (isLoadingRef.current) return; // Evitar chamadas duplicadas
+    isLoadingRef.current = true;
+
     try {
       setLoading(true);
       await Promise.all([
@@ -97,25 +97,36 @@ export default function Ocorrencias() {
       toast.error('Erro ao carregar dados');
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
   };
 
   const carregarOcorrencias = async () => {
     try {
-      const dados = await ocorrenciaService.listar();
+      const dados = await ocorrenciaService.listarPorAnoLetivo(anoLetivo.toString());
       setOcorrencias(dados);
     } catch (error) {
-      console.error('Erro ao carregar ocorrências:', error);
+      console.error('❌ Erro ao carregar ocorrências:', error);
       setOcorrencias([]);
     }
   };
 
   const carregarAlunos = async () => {
     try {
-      const dados = await alunoRepository.findAll();
+      // Buscar turmas do ano letivo para filtrar alunos
+      const turmasAnoLetivo = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+      const turmaIds = turmasAnoLetivo.map(t => t.id);
+      
+      if (turmaIds.length === 0) {
+        setAlunos([]);
+        return;
+      }
+      
+      // Buscar apenas alunos das turmas do ano letivo (simplificado: apenas id e nome)
+      const dados = await alunoService.listarPorTurmasSimplificado(turmaIds);
       setAlunos(dados);
     } catch (error) {
-      console.error('Erro ao carregar alunos:', error);
+      console.error('❌ Erro ao carregar alunos:', error);
       setAlunos([]);
     }
   };
@@ -132,9 +143,7 @@ export default function Ocorrencias() {
           return;
         }
         // Buscar professor pelo email
-        const professorService = new (await import('../services/data/ProfessorService')).ProfessorService(
-          new (await import('../repositories/professor/FirebaseProfessorRepository')).FirebaseProfessorRepository()
-        );
+        const professorService = new (await import('../services/data/ProfessorService')).ProfessorService();
         const allProfessores = await professorService.listar();
         const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
         if (!professorAtual) {

@@ -2,9 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Button, Alert, Spinner, Container, Card } from 'react-bootstrap';
 import { UserService } from '../services/usuario/UserService';
-import { FirebaseUserRepository } from '../repositories/user/FirebaseUserRepository';
 
-const userService = new UserService(new FirebaseUserRepository());
+const userService = new UserService();
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');

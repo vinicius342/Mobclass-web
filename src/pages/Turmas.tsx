@@ -14,15 +14,8 @@ import type { Aluno } from '../models/Aluno';
 import type { Nota } from '../models/Nota';
 import type { Materia } from '../models/Materia';
 import type { Professor } from '../models/Professor';
-import { AlunoService } from '../services/usuario/AlunoService';
-import { FirebaseAlunoRepository } from '../repositories/aluno/FirebaseAlunoRepository';
-import { NotaService } from '../services/data/NotaService';
-import { FirebaseNotaRepository } from '../repositories/nota/FirebaseNotaRepository';
-import { FirebaseFrequenciaRepository } from '../repositories/frequencia/FirebaseFrequenciaRepository';
 import { MateriaService } from '../services/data/MateriaService';
-import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 import { ProfessorService } from '../services/data/ProfessorService';
-import { FirebaseProfessorRepository } from '../repositories/professor/FirebaseProfessorRepository';
 import { useAuth } from '../contexts/AuthContext';
 import Paginacao from '../components/common/Paginacao';
 import { Users, BookOpen, Clock } from 'lucide-react';
@@ -37,21 +30,14 @@ import TurmasListMobile from '../components/turmas/TurmasListMobile';
 import TransferenciaModal from '../components/turmas/TransferenciaModal';
 import { ProfessorMateria } from '../models/ProfessorMateria';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
-import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
+import { AlunoService } from '../services/usuario/AlunoService';
+import { notaService } from '../services/data/NotaService';
 
 // Instanciar Services
-const alunoRepository = new FirebaseAlunoRepository();
-const notaRepository = new FirebaseNotaRepository();
-const materiaRepository = new FirebaseMateriaRepository();
-const frequenciaRepository = new FirebaseFrequenciaRepository();
-const professorRepository = new FirebaseProfessorRepository();
-const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
-
-const alunoService = new AlunoService(alunoRepository, notaRepository, frequenciaRepository);
-const notaService = new NotaService(notaRepository, materiaRepository);
-const materiaService = new MateriaService(materiaRepository);
-const professorService = new ProfessorService(professorRepository);
-const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
+const alunoService = new AlunoService();
+const materiaService = new MateriaService();
+const professorService = new ProfessorService();
+const professorMateriaService = new ProfessorMateriaService();
 
 export default function Turmas() {
   const { anoLetivo, carregandoAnos, anosDisponiveis } = useAnoLetivoAtual();
@@ -211,7 +197,7 @@ export default function Turmas() {
       if (isAdmin) {
         const [turmasDoAno, alunosList, todasMaterias, todosProfessores, todosVinculos] = await Promise.all([
           turmaService.listarComVirtualizacao(anoLetivo.toString()),
-          alunoRepository.findAll(),
+          alunoService.listar(),
           materiaService.listar(),
           professorService.listar(),
           professorMateriaService.listar()
@@ -227,7 +213,7 @@ export default function Turmas() {
 
         const [todasTurmas, alunosList, todosProfessores, todasMaterias, todosVinculos] = await Promise.all([
           turmaService.listarComVirtualizacao(anoLetivo.toString()),
-          alunoRepository.findAll(),
+          alunoService.listar(),
           professorService.listar(),
           materiaService.listar(),
           professorMateriaService.listar()
@@ -498,21 +484,20 @@ export default function Turmas() {
 
   // Função para calcular status de todos os alunos da página atual
   const calcularStatusAlunosPaginaAtual = async (alunosVisiveis: Aluno[], anoParaCalculo: number = anoLetivo) => {
-    const novosStatus = new Map<string, string>();
+  const novosStatus = new Map<string, string>();
 
-    // Calcular status em paralelo para melhor performance
-    const promessas = alunosVisiveis.map(async (aluno) => {
-      const status = await alunoService.calcularStatusAluno(aluno, anoParaCalculo);
-      return { alunoId: aluno.id, status };
-    });
+  // Nova implementação: usa operação em lote para reduzir chamadas HTTP
+  const resultados = await alunoService.calcularStatusAlunosEmLote(
+    alunosVisiveis,
+    anoParaCalculo,
+  );
 
-    const resultados = await Promise.all(promessas);
+  alunosVisiveis.forEach((aluno) => {
+    const status = resultados[aluno.id] || 'Em Andamento';
+    novosStatus.set(aluno.id, status);
+  });
 
-    resultados.forEach(({ alunoId, status }) => {
-      novosStatus.set(alunoId, status);
-    });
-
-    setStatusAlunos(novosStatus);
+  setStatusAlunos(novosStatus);
   };
 
   // Função para obter o badge do status
@@ -1176,6 +1161,7 @@ export default function Turmas() {
             historicoAluno={historicoAluno}
             setShowHistorico={setShowHistorico}
             getNotaColorUtil={getNotaColorUtil}
+            notaService={notaService}
           />
         </div>
 

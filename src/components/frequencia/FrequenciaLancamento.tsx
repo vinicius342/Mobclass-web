@@ -9,11 +9,8 @@ import {
 import { CalendarIcon, Check, Info, Save, Undo, User, UserCheck, UserX, X } from "lucide-react";
 import { FaUserCheck, FaUsers, FaUserTimes } from 'react-icons/fa';
 import { FrequenciaService } from '../../services/data/FrequenciaService';
-import { FirebaseFrequenciaRepository } from '../../repositories/frequencia/FirebaseFrequenciaRepository';
-
-import { FirebaseAlunoRepository } from '../../repositories/aluno/FirebaseAlunoRepository';
+import { AlunoService } from '../../services/usuario/AlunoService';
 import { ProfessorMateriaService } from '../../services/data/ProfessorMateriaService';
-import { FirebaseProfessorMateriaRepository } from '../../repositories/professor_materia/FirebaseProfessorMateriaRepository';
 import { Aluno } from '../../models/Aluno';
 import { Turma } from '../../models/Turma';
 import { Materia } from '../../models/Materia';
@@ -52,15 +49,15 @@ export default function FrequenciaLancamento({
 }: FrequenciaLancamentoProps): JSX.Element {
   // Inicializar services
   const frequenciaService = useMemo(
-    () => new FrequenciaService(new FirebaseFrequenciaRepository()),
+    () => new FrequenciaService(),
     []
   );
-  const alunoRepository = useMemo(
-    () => new FirebaseAlunoRepository(),
+  const alunoService = useMemo(
+    () => new AlunoService(),
     []
   );
   const professorMateriaService = useMemo(
-    () => new ProfessorMateriaService(new FirebaseProfessorMateriaRepository()),
+    () => new ProfessorMateriaService(),
     []
   );
 
@@ -106,8 +103,8 @@ export default function FrequenciaLancamento({
       }
       setLoading(true);
       try {
-        // Buscar alunos pela turma (excluindo inativos)
-        const todosAlunos = await alunoRepository.findByTurmaId(turmaId);
+        // Buscar alunos pela turma (excluindo inativos) - usa versão otimizada
+        const todosAlunos = await alunoService.listarPorTurmaSimplificado(turmaId);
         const alunosAtivos = todosAlunos
           .filter((aluno: any) => aluno.status !== 'Inativo')
           .sort((a: any, b: any) => a.nome.localeCompare(b.nome));
@@ -144,7 +141,7 @@ export default function FrequenciaLancamento({
       setLoading(false);
     }
     fetchAlunos();
-  }, [turmaId, materiaId, dataAula, alunoRepository, frequenciaService]);
+  }, [turmaId, materiaId, dataAula, turmas, alunoService, frequenciaService]);
 
   const atualizarAttendance = (novoAttendance: Record<string, boolean | null>) => {
     setHistory(prev => [...prev, attendance]); // salva estado atual no histórico

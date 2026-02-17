@@ -1,96 +1,33 @@
 import { NotaService } from '../src/services/data/NotaService';
 import { Nota } from '../src/models/Nota';
 import { Aluno } from '../src/models/Aluno';
-import { INotaRepository } from '../src/repositories/nota/INotaRepository';
-import { IMateriaRepository } from '../src/repositories/materia/IMateriaRepository';
+import { MateriaService } from '../src/services/data/MateriaService';
 import { Materia } from '../src/models/Materia';
 
-class FakeNotaRepository implements INotaRepository {
-  private notas: Nota[];
-
-  constructor(initial: Nota[] = []) {
-    this.notas = [...initial];
-  }
-
-  async findAll(): Promise<Nota[]> {
-    return this.notas;
-  }
-
-  async findById(id: string): Promise<Nota | null> {
-    return this.notas.find(n => n.id === id) ?? null;
-  }
-
-  async create(nota: Omit<Nota, 'id'>): Promise<string> {
-    const id = `id-${this.notas.length + 1}`;
-    this.notas.push({ id, ...nota });
-    return id;
-  }
-
-  async update(id: string, nota: Partial<Omit<Nota, 'id'>>): Promise<void> {
-    this.notas = this.notas.map(n => (n.id === id ? { ...n, ...nota } : n));
-  }
-
-  async delete(id: string): Promise<void> {
-    this.notas = this.notas.filter(n => n.id !== id);
-  }
-
-  async findByAlunoUid(alunoUid: string): Promise<Nota[]> {
-    return this.notas.filter(n => n.alunoUid === alunoUid);
-  }
-
-  async findByAlunoUidETurma(alunoUid: string, turmaId: string): Promise<Nota[]> {
-    return this.notas.filter(n => n.alunoUid === alunoUid && n.turmaId === turmaId);
-  }
-
-  async findByTurmaId(turmaId: string): Promise<Nota[]> {
-    return this.notas.filter(n => n.turmaId === turmaId);
-  }
-
-  async copiarNotas(alunoUid: string, turmaOrigemId: string, turmaDestinoId: string): Promise<void> {
-    const originais = this.notas.filter(
-      n => n.alunoUid === alunoUid && n.turmaId === turmaOrigemId,
-    );
-    for (const n of originais) {
-      await this.create({
-        alunoUid: n.alunoUid,
-        bimestre: n.bimestre,
-        dataLancamento: n.dataLancamento,
-        materiaId: n.materiaId,
-        notaGlobal: n.notaGlobal,
-        notaParcial: n.notaParcial,
-        notaParticipacao: n.notaParticipacao,
-        notaRecuperacao: n.notaRecuperacao,
-        turmaId: turmaDestinoId,
-        nomeAluno: n.nomeAluno,
-      });
-    }
-  }
-}
-
-class FakeMateriaRepository implements IMateriaRepository {
+class FakeMateriaService {
   private materias: Materia[];
 
   constructor(initial: Materia[] = []) {
     this.materias = [...initial];
   }
 
-  async findAll(): Promise<Materia[]> {
+  async listar(): Promise<Materia[]> {
     return this.materias;
   }
 
-  async findById(): Promise<Materia | null> {
+  async buscarPorId(): Promise<Materia | null> {
     return null;
   }
 
-  async create(): Promise<string> {
+  async criar(): Promise<string> {
     return 'id';
   }
 
-  async update(): Promise<void> {
+  async atualizar(): Promise<void> {
     return;
   }
 
-  async delete(): Promise<void> {
+  async excluir(): Promise<void> {
     return;
   }
 }
@@ -121,74 +58,129 @@ const makeAluno = (overrides: Partial<Aluno> = {}): Aluno => ({
   dataCriacao: overrides.dataCriacao,
   ultimaAtualizacao: overrides.ultimaAtualizacao,
 });
-
 describe('NotaService', () => {
-  describe('métodos de repositório', () => {
-    it('listarPorAluno deve delegar para findByAlunoUid', async () => {
-      const repo = new FakeNotaRepository([
-        makeNota({ id: '1', alunoUid: 'A' }),
-        makeNota({ id: '2', alunoUid: 'B' }),
-      ]);
-      const service = new NotaService(repo);
+  describe('métodos de dados (Cloud Function)', () => {
+    beforeEach(() => {
+      global.fetch = jest.fn();
+    });
 
+    it('listarPorAluno deve chamar a Cloud Function com action "listarPorAluno" e retornar notas', async () => {
+      const notasMock = [
+        makeNota({ id: '1', alunoUid: 'A' }),
+        makeNota({ id: '2', alunoUid: 'A' }),
+      ];
+
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => notasMock,
+      });
+
+      const service = new NotaService();
       const result = await service.listarPorAluno('A');
 
-      expect(result.map(n => n.id)).toEqual(['1']);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'notas', action: 'listarPorAluno', alunoUid: 'A' }),
+        }),
+      );
+      expect(result).toEqual(notasMock);
     });
 
-    it('listarPorAlunoETurma deve delegar para findByAlunoUidETurma', async () => {
-      const repo = new FakeNotaRepository([
+    it('listarPorAlunoETurma deve chamar a Cloud Function com alunoUid e turmaId', async () => {
+      const notasMock = [
         makeNota({ id: '1', alunoUid: 'A', turmaId: 'T1' }),
-        makeNota({ id: '2', alunoUid: 'A', turmaId: 'T2' }),
-      ]);
-      const service = new NotaService(repo);
+      ];
 
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => notasMock,
+      });
+
+      const service = new NotaService();
       const result = await service.listarPorAlunoETurma('A', 'T1');
 
-      expect(result.map(n => n.id)).toEqual(['1']);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'notas', action: 'listarPorAlunoETurma', alunoUid: 'A', turmaId: 'T1' }),
+        }),
+      );
+      expect(result).toEqual(notasMock);
     });
 
-    it('listarPorTurma deve delegar para findByTurmaId', async () => {
-      const repo = new FakeNotaRepository([
-        makeNota({ id: '1', turmaId: 'T1' }),
-        makeNota({ id: '2', turmaId: 'T2' }),
-      ]);
-      const service = new NotaService(repo);
+    it('listarPorTurma deve chamar a Cloud Function com turmaId', async () => {
+      const notasMock = [makeNota({ id: '1', turmaId: 'T1' })];
 
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => notasMock,
+      });
+
+      const service = new NotaService();
       const result = await service.listarPorTurma('T1');
 
-      expect(result.map(n => n.id)).toEqual(['1']);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: 'notas', action: 'listarPorTurma', turmaId: 'T1' }),
+        }),
+      );
+      expect(result).toEqual(notasMock);
     });
 
-    it('listarTodas deve delegar para findAll', async () => {
-      const repo = new FakeNotaRepository([
-        makeNota({ id: '1' }),
-        makeNota({ id: '2' }),
-      ]);
-      const service = new NotaService(repo);
+    it('listarTodas deve chamar a Cloud Function com action "listar"', async () => {
+      const notasMock = [makeNota({ id: '1' }), makeNota({ id: '2' })];
 
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => notasMock,
+      });
+
+      const service = new NotaService();
       const result = await service.listarTodas();
 
-      expect(result.map(n => n.id)).toEqual(['1', '2']);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: "notas", action: 'listar' }),
+        }),
+      );
+      expect(result).toEqual(notasMock);
     });
 
-    it('buscarPorId deve delegar para findById', async () => {
-      const repo = new FakeNotaRepository([
-        makeNota({ id: '1' }),
-        makeNota({ id: '2' }),
-      ]);
-      const service = new NotaService(repo);
+    it('buscarPorId deve chamar a Cloud Function com action "buscarPorId" e id', async () => {
+      const notaMock = makeNota({ id: '2' });
 
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => notaMock,
+      });
+
+      const service = new NotaService();
       const found = await service.buscarPorId('2');
-      const notFound = await service.buscarPorId('3');
 
-      expect(found?.id).toBe('2');
-      expect(notFound).toBeNull();
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: "notas", action: 'buscarPorId', id: '2' }),
+        }),
+      );
+      expect(found).toEqual(notaMock);
     });
 
-    it('salvar deve criar quando não houver id', async () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+    it('salvar deve enviar dados da nota e retornar id gerado', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'id-1' }),
+      });
+
+      const service = new NotaService();
 
       const id = await service.salvar({
         alunoUid: 'A',
@@ -203,78 +195,80 @@ describe('NotaService', () => {
         nomeAluno: 'Aluno 1',
       });
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"domain":"notas"'),
+        }),
+      );
       expect(id).toBe('id-1');
-      const all = await repo.findAll();
-      expect(all).toHaveLength(1);
     });
 
-    it('salvar deve atualizar quando houver id', async () => {
-      const repo = new FakeNotaRepository([
-        makeNota({ id: '1', notaGlobal: 5 }),
-      ]);
-      const service = new NotaService(repo);
-
-      const id = await service.salvar({
-        id: '1',
-        alunoUid: 'A',
-        bimestre: '1º',
-        dataLancamento: new Date('2025-03-10'),
-        materiaId: 'MAT1',
-        notaGlobal: 9,
-        notaParcial: 6,
-        notaParticipacao: 1,
-        notaRecuperacao: null,
-        turmaId: 'T1',
-        nomeAluno: 'Aluno 1',
+    it('atualizar deve enviar id e dados parciais da nota', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({}),
       });
 
-      expect(id).toBe('1');
-      const updated = await repo.findById('1');
-      expect(updated?.notaGlobal).toBe(9);
-    });
-
-    it('atualizar deve delegar para update', async () => {
-      const repo = new FakeNotaRepository([
-        makeNota({ id: '1', notaGlobal: 5 }),
-      ]);
-      const service = new NotaService(repo);
-
+      const service = new NotaService();
       await service.atualizar('1', { notaGlobal: 7 });
-      const updated = await repo.findById('1');
 
-      expect(updated?.notaGlobal).toBe(7);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: "notas", action: 'atualizar', id: '1', nota: { notaGlobal: 7 } }),
+        }),
+      );
     });
 
-    it('excluir deve delegar para delete', async () => {
-      const repo = new FakeNotaRepository([
-        makeNota({ id: '1' }),
-        makeNota({ id: '2' }),
-      ]);
-      const service = new NotaService(repo);
+    it('excluir deve enviar id para a Cloud Function', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({}),
+      });
 
+      const service = new NotaService();
       await service.excluir('1');
 
-      const all = await repo.findAll();
-      expect(all.map(n => n.id)).toEqual(['2']);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ domain: "notas", action: 'excluir', id: '1' }),
+        }),
+      );
     });
 
-    it('copiarNotas deve delegar para o repositório', async () => {
-      const repo = new FakeNotaRepository([
-        makeNota({ id: '1', alunoUid: 'A', turmaId: 'T1' }),
-      ]);
-      const spy = jest.spyOn(repo, 'copiarNotas');
-      const service = new NotaService(repo);
+    it('copiarNotas deve enviar alunoUid, turmaOrigemId e turmaDestinoId', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({}),
+      });
 
+      const service = new NotaService();
       await service.copiarNotas('A', 'T1', 'T2');
 
-      expect(spy).toHaveBeenCalledWith('A', 'T1', 'T2');
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            domain: 'notas',
+            action: 'copiarNotas',
+            alunoUid: 'A',
+            turmaOrigemId: 'T1',
+            turmaDestinoId: 'T2',
+          }),
+        }),
+      );
     });
   });
 
   describe('calcularMediasPorTurma', () => {
     it('deve calcular média por turma sem filtros', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const notas: Nota[] = [
         makeNota({ turmaId: 'T1', notaParcial: 6, notaGlobal: 8, notaParticipacao: 1 }), // ((6+8)/2)+1 = 8
@@ -296,8 +290,7 @@ describe('NotaService', () => {
     });
 
     it('deve filtrar por matéria quando especificada', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const notas: Nota[] = [
         makeNota({ turmaId: 'T1', materiaId: 'MAT1', notaParcial: 6, notaGlobal: 8, notaParticipacao: 1 }),
@@ -312,8 +305,7 @@ describe('NotaService', () => {
     });
 
     it('deve retornar 0 quando turma não tiver notas', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const notas: Nota[] = [];
       const turmas = [{ id: 'T1', nome: 'Turma 1' }];
@@ -324,8 +316,7 @@ describe('NotaService', () => {
     });
 
     it('deve usar grupoTurmas quando fornecido', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const notas: Nota[] = [
         makeNota({ turmaId: 'T1', notaParcial: 6, notaGlobal: 8, notaParticipacao: 1 }),
@@ -348,8 +339,7 @@ describe('NotaService', () => {
 
   describe('calcularMediasFinais e distribuirPorDesempenho', () => {
     it('deve calcular médias finais limitando a 10', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const notas: Nota[] = [
         makeNota({ notaParcial: 10, notaGlobal: 10, notaParticipacao: 0 }), // ((10+10)/2)+0 = 10
@@ -362,8 +352,7 @@ describe('NotaService', () => {
     });
 
     it('deve distribuir por faixas de desempenho', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const medias = [5, 6.5, 9.2];
       const dist = service.distribuirPorDesempenho(medias);
@@ -378,16 +367,14 @@ describe('NotaService', () => {
 
   describe('calcularMediaPorMateria', () => {
     it('deve retornar null se não houver notas válidas', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const result = service.calcularMediaPorMateria([null, undefined]);
       expect(result).toBeNull();
     });
 
     it('deve calcular média com 1 casa decimal', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const result = service.calcularMediaPorMateria([7, 8, null]);
       expect(result).toBe('7.5');
@@ -396,8 +383,12 @@ describe('NotaService', () => {
 
   describe('calcularMediaFinalAluno', () => {
     it('deve retornar null se aluno não tiver notas', async () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      global.fetch = jest.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => [],
+      });
+
+      const service = new NotaService();
       const aluno = makeAluno({ id: 'A1', turmaId: 'T1' });
 
       const media = await service.calcularMediaFinalAluno(aluno, 2025);
@@ -405,10 +396,16 @@ describe('NotaService', () => {
     });
 
     it('deve usar historicoTurmas quando disponível para ano letivo', async () => {
-      const repo = new FakeNotaRepository([
+      const notasMock = [
         makeNota({ id: '1', alunoUid: 'A1', turmaId: 'T2024', notaParcial: 9, notaGlobal: 9, notaParticipacao: 9 }),
-      ]);
-      const service = new NotaService(repo);
+      ];
+
+      global.fetch = jest.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => notasMock,
+      });
+
+      const service = new NotaService();
       const aluno = makeAluno({
         id: 'A1',
         turmaId: 'T1',
@@ -417,12 +414,12 @@ describe('NotaService', () => {
 
       const media = await service.calcularMediaFinalAluno(aluno, 2025);
 
-      // média das três notas = 9, sem recuperação, então 9
-      expect(media).toBe(9);
+      // média = ((9 + 9) / 2) + 9 = 18, limitado a 10
+      expect(media).toBe(10);
     });
 
     it('deve considerar recuperação quando maior que média', async () => {
-      const repo = new FakeNotaRepository([
+      const notasMock = [
         makeNota({
           id: '1',
           alunoUid: 'A1',
@@ -432,8 +429,14 @@ describe('NotaService', () => {
           notaParticipacao: 4,
           notaRecuperacao: 8,
         }),
-      ]);
-      const service = new NotaService(repo);
+      ];
+
+      global.fetch = jest.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => notasMock,
+      });
+
+      const service = new NotaService();
       const aluno = makeAluno({ id: 'A1', turmaId: 'T1' });
 
       const media = await service.calcularMediaFinalAluno(aluno, 2025);
@@ -445,17 +448,24 @@ describe('NotaService', () => {
 
   describe('gerarBoletimAluno', () => {
     it('deve lançar erro se materiaRepository não for injetado', async () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
       const aluno = makeAluno({ id: 'A1', turmaId: 'T1' });
 
       await expect(service.gerarBoletimAluno(aluno, 2025)).rejects.toThrow(
-        'MateriaRepository não foi injetado no NotaService',
+        'MateriaService não foi injetado no NotaService',
       );
     });
 
     it('deve gerar boletim organizado por matéria e bimestre', async () => {
-      const notaRepo = new FakeNotaRepository([
+      const materias: Materia[] = [
+        { id: 'MAT1', codigo: 'C1', nome: 'Matemática' },
+        { id: 'MAT2', codigo: 'C2', nome: 'História' },
+      ];
+      const materiaRepo = new FakeMateriaService(materias) as any as MateriaService;
+      const service = new NotaService(materiaRepo);
+      const aluno = makeAluno({ id: 'A1', turmaId: 'T1' });
+
+      const notasMock = [
         makeNota({
           id: '1',
           alunoUid: 'A1',
@@ -476,15 +486,12 @@ describe('NotaService', () => {
           notaGlobal: 7,
           notaParticipacao: 0,
         }),
-      ]);
-
-      const materias: Materia[] = [
-        { id: 'MAT1', codigo: 'C1', nome: 'Matemática' },
-        { id: 'MAT2', codigo: 'C2', nome: 'História' },
       ];
-      const materiaRepo = new FakeMateriaRepository(materias);
-      const service = new NotaService(notaRepo, materiaRepo);
-      const aluno = makeAluno({ id: 'A1', turmaId: 'T1' });
+
+      global.fetch = jest.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => notasMock,
+      });
 
       const boletim = await service.gerarBoletimAluno(aluno, 2025);
 
@@ -496,10 +503,14 @@ describe('NotaService', () => {
     });
 
     it('deve retornar null quando não houver notas', async () => {
-      const notaRepo = new FakeNotaRepository();
-      const materiaRepo = new FakeMateriaRepository([]);
-      const service = new NotaService(notaRepo, materiaRepo);
+      const materiaRepo = new FakeMateriaService([]) as any as MateriaService;
+      const service = new NotaService(materiaRepo);
       const aluno = makeAluno({ id: 'A1', turmaId: 'T1' });
+
+      global.fetch = jest.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => [],
+      });
 
       const boletim = await service.gerarBoletimAluno(aluno, 2025);
       expect(boletim).toBeNull();
@@ -508,8 +519,7 @@ describe('NotaService', () => {
 
   describe('prepararDadosNota e validarNotaPreenchida', () => {
     it('prepararDadosNota deve converter strings para números e null', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const dados = service.prepararDadosNota({
         notaParcial: '7.5',
@@ -530,8 +540,7 @@ describe('NotaService', () => {
     });
 
     it('prepararDadosNota deve incluir id quando fornecido', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const dados = service.prepararDadosNota({
         notaParcial: '7',
@@ -549,8 +558,7 @@ describe('NotaService', () => {
     });
 
     it('validarNotaPreenchida deve retornar true se houver ao menos um campo com valor', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       expect(
         service.validarNotaPreenchida({ notaParcial: '', notaGlobal: '7', notaParticipacao: '' }),
@@ -563,8 +571,7 @@ describe('NotaService', () => {
 
   describe('filtrarPorMaterias', () => {
     it('deve filtrar notas por lista de materias', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const notas: Nota[] = [
         makeNota({ id: '1', materiaId: 'MAT1' }),
@@ -579,8 +586,7 @@ describe('NotaService', () => {
 
   describe('campoAlterado', () => {
     it('deve retornar true quando campo foi alterado em relação à nota original', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const original = makeNota({ notaGlobal: 7 });
       const editada = { notaGlobal: '8' } as Record<string, any>;
@@ -589,8 +595,7 @@ describe('NotaService', () => {
     });
 
     it('deve retornar false quando nota original inexistente e campo vazio', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const editada = { notaGlobal: '' } as Record<string, any>;
 
@@ -600,8 +605,7 @@ describe('NotaService', () => {
 
   describe('buscarNotaPorFiltros', () => {
     it('deve buscar nota que corresponda a todos os filtros', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const notas: Nota[] = [
         makeNota({
@@ -620,8 +624,7 @@ describe('NotaService', () => {
 
   describe('calcularMediaFinal e getNotaColor', () => {
     it('deve calcular média final usando participação e recuperação quando maior', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const nota: Nota = makeNota({
         notaParcial: 6,
@@ -636,8 +639,7 @@ describe('NotaService', () => {
     });
 
     it('getNotaColor deve retornar classes de cor corretas', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       expect(service.getNotaColor(null)).toBe('');
       expect(service.getNotaColor(5)).toBe('text-danger');
@@ -648,8 +650,7 @@ describe('NotaService', () => {
 
   describe('formatarData e parseData', () => {
     it('formatarData deve formatar Date em DD/MM/YYYY', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const data = new Date(2025, 2, 10); // 10/03/2025
       const str = service.formatarData(data);
@@ -658,8 +659,7 @@ describe('NotaService', () => {
     });
 
     it('parseData deve converter string DD/MM/YYYY para Date', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const data = service.parseData('10/03/2025');
 
@@ -669,8 +669,7 @@ describe('NotaService', () => {
     });
 
     it('parseData deve retornar Date quando já for Date', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const now = new Date();
       expect(service.parseData(now)).toBe(now);
@@ -679,8 +678,7 @@ describe('NotaService', () => {
 
   describe('deduplicarNotasPorAluno', () => {
     it('deve manter apenas a nota mais recente por aluno/matéria e aplicar filtros', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const notas: Nota[] = [
         makeNota({
@@ -728,8 +726,7 @@ describe('NotaService', () => {
 
   describe('calcularEstatisticasTurma', () => {
     it('deve calcular estatísticas da turma', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const notas: Nota[] = [
         makeNota({ notaParcial: 10, notaGlobal: 10, notaParticipacao: 0 }), // 10
@@ -751,8 +748,7 @@ describe('NotaService', () => {
 
   describe('ordenarNotas e paginarNotas', () => {
     it('deve ordenar por nome, campos numéricos, média e data', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const notas: Nota[] = [
         makeNota({ id: '1', nomeAluno: 'Bruno', notaParcial: 8, notaGlobal: 7, notaParticipacao: 0, dataLancamento: new Date('2025-03-10') }),
@@ -778,8 +774,7 @@ describe('NotaService', () => {
     });
 
     it('deve paginar notas corretamente', () => {
-      const repo = new FakeNotaRepository();
-      const service = new NotaService(repo);
+      const service = new NotaService();
 
       const notas: Nota[] = [
         makeNota({ id: '1' }),

@@ -1,26 +1,56 @@
-import { IAdministradorRepository } from '../../repositories/administrador/IAdministradorRepository';
 import { Administrador } from '../../models/Administrador';
 
+const API_URL = 'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
+
 export class AdministradorService {
-  constructor(private administradorRepository: IAdministradorRepository) {}
+  constructor() {}
 
   async listar(): Promise<Administrador[]> {
-    return this.administradorRepository.findAll();
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'administrador', action: 'listar' }),
+    });
+    if (!response.ok) throw new Error('Erro ao listar administradores');
+    return response.json();
   }
 
   async buscarPorId(id: string): Promise<Administrador | null> {
-    return this.administradorRepository.findById(id);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'administrador', action: 'buscarPorId', id }),
+    });
+    if (!response.ok) throw new Error('Erro ao buscar administrador');
+    return response.json();
   }
 
   async criar(administrador: Omit<Administrador, 'id'>): Promise<string> {
-    return this.administradorRepository.create(administrador);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'administrador', action: 'criar', administrador }),
+    });
+    if (!response.ok) throw new Error('Erro ao criar administrador');
+    return response.json();
   }
 
   async atualizar(id: string, administrador: Partial<Omit<Administrador, 'id'>>): Promise<void> {
-    return this.administradorRepository.update(id, administrador);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'administrador', action: 'atualizar', id, administrador }),
+    });
+    if (!response.ok) throw new Error('Erro ao atualizar administrador');
   }
 
   async excluir(id: string): Promise<void> {
-    return this.administradorRepository.delete(id);
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'administrador', action: 'excluir', id }),
+    });
+    if (!response.ok) throw new Error('Erro ao excluir administrador');
   }
 }
+

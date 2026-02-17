@@ -1,7 +1,24 @@
-import { INotaRepository } from '../../repositories/nota/INotaRepository';
 import { Nota } from '../../models/Nota';
 import { Aluno } from '../../models/Aluno';
-import { IMateriaRepository } from '../../repositories/materia/IMateriaRepository';
+import { Materia } from '../../models/Materia';
+import { MateriaService } from './MateriaService';
+
+// URL da Cloud Function unificada mobclassApi
+const MOBCLASS_API_URL =
+  'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
+
+type NotaFunctionAction =
+  | 'listar'
+  | 'buscarPorId'
+  | 'listarPorAluno'
+  | 'listarPorAlunoETurma'
+  | 'listarPorTurma'
+  | 'listarPorTurmas'
+  | 'mediasPorTurma'
+  | 'salvar'
+  | 'atualizar'
+  | 'excluir'
+  | 'copiarNotas';
 
 export interface BoletimAluno {
   materias: string[];
@@ -9,51 +26,136 @@ export interface BoletimAluno {
   notas: Record<string, Record<string, { mediaFinal: number | null }>>;
 }
 
+export interface MediaPorTurmaResponse {
+  turmaId: string;
+  media: number;
+}
+
 export class NotaService {
   constructor(
-    private notaRepository: INotaRepository,
-    private materiaRepository?: IMateriaRepository
+    private materiaService?: MateriaService
   ) { }
 
+  private async postNotaFunction<T = any>(
+    action: NotaFunctionAction,
+    payload: any,
+    defaultErrorMessage: string,
+  ): Promise<T> {
+    const response = await fetch(MOBCLASS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'notas', action, ...payload }),
+    });
+
+    let result: any = null;
+    try {
+      result = await response.json();
+    } catch {
+      result = null;
+    }
+
+    if (!response.ok) {
+      throw new Error((result && result.message) || defaultErrorMessage);
+    }
+
+    return result as T;
+  }
+
   async listarPorAluno(alunoUid: string): Promise<Nota[]> {
-    return this.notaRepository.findByAlunoUid(alunoUid);
+    return this.postNotaFunction<Nota[]>(
+      'listarPorAluno',
+      { alunoUid },
+      'Erro ao listar notas do aluno',
+    );
   }
 
   async listarPorAlunoETurma(alunoUid: string, turmaId: string): Promise<Nota[]> {
-    return this.notaRepository.findByAlunoUidETurma(alunoUid, turmaId);
+    return this.postNotaFunction<Nota[]>(
+      'listarPorAlunoETurma',
+      { alunoUid, turmaId },
+      'Erro ao listar notas do aluno na turma',
+    );
   }
 
   async listarPorTurma(turmaId: string): Promise<Nota[]> {
-    return this.notaRepository.findByTurmaId(turmaId);
+    return this.postNotaFunction<Nota[]>(
+      'listarPorTurma',
+      { turmaId },
+      'Erro ao listar notas da turma',
+    );
+  }
+
+  async listarPorTurmas(turmaIds: string[], materiaId?: string): Promise<Nota[]> {
+    return this.postNotaFunction<Nota[]>(
+      'listarPorTurmas',
+      { turmaIds, materiaId },
+      'Erro ao listar notas das turmas',
+    );
+  }
+
+  async listarMediasPorTurma(
+    turmaIds: string[],
+    materiaId?: string,
+  ): Promise<MediaPorTurmaResponse[]> {
+    return this.postNotaFunction<MediaPorTurmaResponse[]>(
+      'mediasPorTurma',
+      { turmaIds, materiaId },
+      'Erro ao calcular médias por turma',
+    );
   }
 
   async listarTodas(): Promise<Nota[]> {
-    return this.notaRepository.findAll();
+    return this.postNotaFunction<Nota[]>(
+      'listar',
+      {},
+      'Erro ao listar todas as notas',
+    );
   }
 
   async buscarPorId(id: string): Promise<Nota | null> {
-    return this.notaRepository.findById(id);
+    return this.postNotaFunction<Nota | null>(
+      'buscarPorId',
+      { id },
+      'Erro ao buscar nota',
+    );
   }
 
   async salvar(nota: Omit<Nota, 'id'> & { id?: string }): Promise<string> {
-    if (nota.id) {
-      await this.notaRepository.update(nota.id, nota);
-      return nota.id;
-    } else {
-      return await this.notaRepository.create(nota);
-    }
+    const { id, ...notaSemId } = nota as any;
+
+    const result = await this.postNotaFunction<{ id: string }>(
+      'salvar',
+      { id, nota: notaSemId },
+      'Erro ao salvar nota',
+    );
+
+    return result.id;
   }
 
   async atualizar(id: string, nota: Partial<Omit<Nota, 'id'>>): Promise<void> {
-    return this.notaRepository.update(id, nota);
+    const { id: _ignored, ...notaSemId } = nota as any;
+
+    await this.postNotaFunction(
+      'atualizar',
+      { id, nota: notaSemId },
+      'Erro ao atualizar nota',
+    );
   }
 
   async excluir(id: string): Promise<void> {
-    return this.notaRepository.delete(id);
+    await this.postNotaFunction(
+      'excluir',
+      { id },
+      'Erro ao excluir nota',
+    );
   }
 
   async copiarNotas(alunoUid: string, turmaOrigemId: string, turmaDestinoId: string): Promise<void> {
-    await this.notaRepository.copiarNotas(alunoUid, turmaOrigemId, turmaDestinoId);
+    await this.postNotaFunction(
+      'copiarNotas',
+      { alunoUid, turmaOrigemId, turmaDestinoId },
+      'Erro ao copiar notas',
+    );
   }
 
   calcularMediasPorTurma(
@@ -167,37 +269,11 @@ export class NotaService {
     notas.forEach(nota => {
       const materiaId = nota.materiaId;
 
-      // Verificar se a nota tem dados válidos antes de calcular
-      const temTresNotas =
-        typeof nota.notaParcial === 'number' &&
-        typeof nota.notaGlobal === 'number' &&
-        typeof nota.notaParticipacao === 'number';
+      // Usar o mesmo método calcularMediaFinal para consistência
+      const mediaFinal = this.calcularMediaFinal(nota);
 
-      const temRecuperacao = typeof nota.notaRecuperacao === 'number';
-
-      // Só calcular média se tiver notas válidas
-      if (temTresNotas || temRecuperacao) {
-        // Calcular média final da nota
-        let mediaFinal: number;
-        
-        // Calcula a média das três notas
-        if (temTresNotas) {
-          mediaFinal = (nota.notaParcial! + nota.notaGlobal! + nota.notaParticipacao!) / 3;
-          
-          // Se tiver recuperação, usa o maior valor entre média e recuperação
-          if (temRecuperacao) {
-            mediaFinal = Math.max(mediaFinal, nota.notaRecuperacao!);
-          }
-        } else {
-          // Se só tem recuperação, usa ela
-          mediaFinal = nota.notaRecuperacao!;
-        }
-
-        if (!notasPorMateria[materiaId]) notasPorMateria[materiaId] = [];
-        if (!isNaN(mediaFinal)) {
-          notasPorMateria[materiaId].push(mediaFinal);
-        }
-      }
+      if (!notasPorMateria[materiaId]) notasPorMateria[materiaId] = [];
+      notasPorMateria[materiaId].push(mediaFinal);
     });
 
     // Calcular média final de cada matéria (média dos bimestres)
@@ -222,8 +298,8 @@ export class NotaService {
    * @returns Objeto com dados do boletim formatado ou null se não houver notas
    */
   async gerarBoletimAluno(aluno: Aluno, anoLetivo: number): Promise<BoletimAluno | null> {
-    if (!this.materiaRepository) {
-      throw new Error('MateriaRepository não foi injetado no NotaService');
+    if (!this.materiaService) {
+      throw new Error('MateriaService não foi injetado no NotaService');
     }
 
     try {
@@ -238,9 +314,9 @@ export class NotaService {
       }
 
       // Buscar todas as matérias
-      const todasMaterias = await this.materiaRepository.findAll();
+      const todasMaterias = await this.materiaService.listar();
       const materiasMap = new Map<string, string>();
-      todasMaterias.forEach(materia => {
+      todasMaterias.forEach((materia: Materia) => {
         materiasMap.set(materia.id, materia.nome);
       });
 
@@ -251,17 +327,12 @@ export class NotaService {
       notas.forEach(nota => {
         const nomeMateria = materiasMap.get(nota.materiaId) || nota.materiaId;
         materiasEncontradas.add(nomeMateria);
-
         if (!notasPorMateriaBimestre[nota.bimestre]) {
           notasPorMateriaBimestre[nota.bimestre] = {};
         }
 
-        // Calcular média final usando a mesma lógica do calcularMediaFinal
-        const parcial = typeof nota.notaParcial === 'number' ? nota.notaParcial : 0;
-        const global = typeof nota.notaGlobal === 'number' ? nota.notaGlobal : 0;
-        const participacao = typeof nota.notaParticipacao === 'number' ? nota.notaParticipacao : 0;
-        const media = ((parcial + global) / 2) + participacao;
-        const mediaFinal = Math.min(parseFloat(media.toFixed(1)), 10);
+        // Usar o mesmo método calcularMediaFinal para consistência
+        const mediaFinal = this.calcularMediaFinal(nota);
 
         notasPorMateriaBimestre[nota.bimestre][nomeMateria] = {
           mediaFinal: mediaFinal
@@ -390,7 +461,9 @@ export class NotaService {
       media = Math.max(media, recuperacao);
     }
     
-    return Math.min(parseFloat(media.toFixed(1)), 10);
+    let mediaFinal = Math.min(parseFloat(media.toFixed(1)), 10)
+    
+    return mediaFinal;
   }
 
   /**
@@ -406,12 +479,17 @@ export class NotaService {
   /**
    * Formata data para string no formato DD/MM/YYYY
    */
-  formatarData(data: Date | string): string {
-    if (typeof data === 'string') return data;
-    const dia = String(data.getDate()).padStart(2, '0');
-    const mes = String(data.getMonth() + 1).padStart(2, '0');
-    const ano = data.getFullYear();
-    return `${dia}/${mes}/${ano}`;
+  formatarData(data: string | Date | null | undefined): string {
+    if (!data) return '-';
+    const d = typeof data === 'string' ? new Date(data) : data;
+    if (!(d instanceof Date) || isNaN(d.getTime())) return '-';
+    return d.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      // hour: '2-digit',
+      // minute: '2-digit'
+    });
   }
 
   /**
@@ -537,3 +615,5 @@ export class NotaService {
     return notas.slice(inicio, inicio + itensPorPagina);
   }
 }
+
+export const notaService = new NotaService();

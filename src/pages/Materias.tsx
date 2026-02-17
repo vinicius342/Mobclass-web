@@ -10,10 +10,8 @@ import { PlusCircle, PencilFill, TrashFill } from 'react-bootstrap-icons';
 import { Notebook } from 'lucide-react';
 import { Materia } from '../models/Materia';
 import { MateriaService } from '../services/data/MateriaService';
-import { FirebaseMateriaRepository } from '../repositories/materia/FirebaseMateriaRepository';
 
-const materiaRepository = new FirebaseMateriaRepository();
-const materiaService = new MateriaService(materiaRepository);
+const materiaService = new MateriaService();
 
 export default function Materias(): JSX.Element {
   const [materias, setMaterias] = useState<Materia[]>([]);
@@ -174,7 +172,7 @@ export default function Materias(): JSX.Element {
                   Gestão de Matérias
                 </h1>
               </div>
-              <Button variant="primary" onClick={() => openModal()} className="d-none d-md-flex">
+              <Button variant="primary" onClick={() => openModal()} className="d-none d-md-flex align-items-center">
                 <PlusCircle className="me-2" />
                 Nova Matéria
               </Button>

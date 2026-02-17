@@ -1,7 +1,6 @@
 import { JSX, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { UserService } from '../services/usuario/UserService';
-import { FirebaseUserRepository } from '../repositories/user/FirebaseUserRepository';
 import logo from '../assets/logo.png';
 import {
   Container,
@@ -14,7 +13,7 @@ import {
   Col
 } from 'react-bootstrap';
 
-const userService = new UserService(new FirebaseUserRepository());
+const userService = new UserService();
 
 export default function Register(): JSX.Element {
   const [email, setEmail] = useState('');

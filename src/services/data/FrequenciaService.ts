@@ -1,31 +1,150 @@
-import { IFrequenciaRepository } from '../../repositories/frequencia/IFrequenciaRepository';
 import { Frequencia } from '../../models/Frequencia';
 
+// URL da Cloud Function unificada mobclassApi
+const MOBCLASS_API_URL =
+  'https://mobclassapi-3ohr3pb77q-uc.a.run.app';
+
+type FrequenciaFunctionAction =
+  | 'listar'
+  | 'buscarPorId'
+  | 'listarPorAluno'
+  | 'listarPorAlunoETurma'
+  | 'listarPorTurma'
+  | 'listarPorTurmaMateria'
+  | 'buscarPorPeriodo'
+  | 'buscarPorPeriodoComFiltros'
+  | 'buscarPorAlunoIdEPeriodo'
+  | 'salvarFrequencias'
+  | 'copiarFrequencias'
+  | 'calcularTaxasDashboard';
+
 export class FrequenciaService {
-  constructor(private frequenciaRepository: IFrequenciaRepository) {}
+  constructor() {}
+
+  private async postFrequenciaFunction<T = any>(
+    action: FrequenciaFunctionAction,
+    payload: any,
+    defaultErrorMessage: string,
+  ): Promise<T> {
+    const response = await fetch(MOBCLASS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'frequencia', action, ...payload }),
+    });
+
+    let result: any = null;
+    try {
+      result = await response.json();
+    } catch {
+      result = null;
+    }
+
+    if (!response.ok) {
+      throw new Error((result && result.message) || defaultErrorMessage);
+    }
+
+    return result as T;
+  }
 
   async listar(): Promise<Frequencia[]> {
-    return this.frequenciaRepository.findAll();
+    return this.postFrequenciaFunction<Frequencia[]>(
+      'listar',
+      {},
+      'Erro ao listar frequências',
+    );
   }
 
   async listarPorAluno(alunoId: string): Promise<Frequencia[]> {
-    return this.frequenciaRepository.findByAlunoId(alunoId);
+    return this.postFrequenciaFunction<Frequencia[]>(
+      'listarPorAluno',
+      { alunoId },
+      'Erro ao listar frequências do aluno',
+    );
   }
 
   async listarPorAlunoETurma(alunoId: string, turmaId: string): Promise<Frequencia[]> {
-    return this.frequenciaRepository.findByAlunoIdETurma(alunoId, turmaId);
+    return this.postFrequenciaFunction<Frequencia[]>(
+      'listarPorAlunoETurma',
+      { alunoId, turmaId },
+      'Erro ao listar frequências do aluno na turma',
+    );
   }
 
   async listarPorTurma(turmaId: string): Promise<Frequencia[]> {
-    return this.frequenciaRepository.findByTurmaId(turmaId);
+    return this.postFrequenciaFunction<Frequencia[]>(
+      'listarPorTurma',
+      { turmaId },
+      'Erro ao listar frequências da turma',
+    );
   }
 
   async buscarPorPeriodo(dataInicio: string, dataFim: string): Promise<Frequencia[]> {
-    return this.frequenciaRepository.findByPeriodo(dataInicio, dataFim);
+    return this.postFrequenciaFunction<Frequencia[]>(
+      'buscarPorPeriodo',
+      { dataInicio, dataFim },
+      'Erro ao buscar frequências por período',
+    );
+  }
+
+  // Método otimizado para relatórios com filtros opcionais
+  async buscarPorPeriodoComFiltros(
+    dataInicio: string,
+    dataFim: string,
+    turmaId?: string,
+    materiaId?: string
+  ): Promise<Frequencia[]> {
+    return this.postFrequenciaFunction<Frequencia[]>(
+      'buscarPorPeriodoComFiltros',
+      { dataInicio, dataFim, turmaId, materiaId },
+      'Erro ao buscar frequências por período',
+    );
   }
 
   async copiarFrequencias(alunoId: string, turmaOrigemId: string, turmaDestinoId: string): Promise<void> {
-    await this.frequenciaRepository.copiarFrequencias(alunoId, turmaOrigemId, turmaDestinoId);
+    await this.postFrequenciaFunction(
+      'copiarFrequencias',
+      { alunoId, turmaOrigemId, turmaDestinoId },
+      'Erro ao copiar frequências',
+    );
+  }
+
+  async buscarPorAlunoIdEPeriodo(alunoId: string, dataInicio: string, dataFim: string): Promise<Frequencia[]> {
+    return this.postFrequenciaFunction<Frequencia[]>(
+      'buscarPorAlunoIdEPeriodo',
+      { alunoId, dataInicio, dataFim },
+      'Erro ao buscar frequências do aluno por período',
+    );
+  }
+
+  async salvarFrequencias(frequencias: Omit<Frequencia, 'id'>[]): Promise<void> {
+    await this.postFrequenciaFunction(
+      'salvarFrequencias',
+      { frequencias },
+      'Erro ao salvar frequências',
+    );
+  }
+
+  /**
+   * Calcula taxas de frequência por turma de forma otimizada no backend.
+   * Ideal para Dashboard - retorna apenas dados agregados.
+   */
+  async calcularTaxasDashboard(
+    turmaIds: string[],
+    filtros?: {
+      materiaId?: string;
+      periodo?: {
+        tipo: 'hoje' | 'mes' | 'personalizado';
+        data?: string;
+        mes?: string;
+        ano?: number;
+      };
+    }
+  ): Promise<{ turmaId: string; presencas: number; faltas: number; taxa: number }[]> {
+    return this.postFrequenciaFunction<{ turmaId: string; presencas: number; faltas: number; taxa: number }[]>(
+      'calcularTaxasDashboard',
+      { turmaIds, filtros },
+      'Erro ao calcular taxas de frequência',
+    );
   }
 
   async calcularPercentualPresenca(alunoId: string, turmaId: string): Promise<number> {
@@ -128,11 +247,10 @@ export class FrequenciaService {
   }
 
   async listarPorTurmaMateria(turmaId: string, materiaId: string, data: string): Promise<Frequencia[]> {
-    const frequencias = await this.frequenciaRepository.findAll();
-    return frequencias.filter(f => 
-      f.turmaId === turmaId && 
-      f.materiaId === materiaId && 
-      f.data === data
+    return this.postFrequenciaFunction<Frequencia[]>(
+      'listarPorTurmaMateria',
+      { turmaId, materiaId, data },
+      'Erro ao listar frequências por turma/matéria',
     );
   }
 
@@ -191,19 +309,6 @@ export class FrequenciaService {
         
         return baseData;
       });
-  }
-
-  async salvarFrequencias(frequencias: Omit<Frequencia, 'id'>[]): Promise<void> {
-    for (const freq of frequencias) {
-      const existentes = await this.listarPorTurmaMateria(freq.turmaId, freq.materiaId, freq.data);
-      const existente = existentes.find(f => f.alunoId === freq.alunoId);
-      
-      if (existente) {
-        await this.frequenciaRepository.update(existente.id, freq);
-      } else {
-        await this.frequenciaRepository.create(freq);
-      }
-    }
   }
 
   calcularEstatisticas(frequencias: Array<{ presenca: boolean | null }>): {
@@ -352,10 +457,6 @@ export class FrequenciaService {
           return 0;
       }
     });
-  }
-
-  async buscarPorAlunoIdEPeriodo(alunoId: string, dataInicio: string, dataFim: string): Promise<Frequencia[]> {
-    return this.frequenciaRepository.findByAlunoIdEPeriodo(alunoId, dataInicio, dataFim);
   }
 
   calcularHistoricoPorBimestre(

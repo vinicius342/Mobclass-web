@@ -1,126 +1,111 @@
 import { UserService, UsuariosService, AbaUsuarios, ContextoUsuarios, UsuarioBaseLista } from '../src/services/usuario/UserService';
-import { IUserRepository } from '../src/repositories/user/IUserRepository';
 
-class FakeUserRepository implements IUserRepository {
-  public updatedStatus: Array<{ uid: string; status: 'Ativo' | 'Inativo' }> = [];
-  public updatedDisabled: Array<{ uid: string; disabled: boolean }> = [];
-  public updatedFirstAcesso: Array<{ uid: string; firstAcesso: boolean }> = [];
-  private usersByEmail: Record<string, { id: string; email: string }> = {};
-  public existingUids = new Set<string>();
-
-  updateStatus(uid: string, status: 'Ativo' | 'Inativo'): Promise<void> {
-    this.updatedStatus.push({ uid, status });
-    this.existingUids.add(uid);
-    return Promise.resolve();
-  }
-
-  updateDisabled(uid: string, disabled: boolean): Promise<void> {
-    this.updatedDisabled.push({ uid, disabled });
-    this.existingUids.add(uid);
-    return Promise.resolve();
-  }
-
-  updateFirstAcesso(uid: string, firstAcesso: boolean): Promise<void> {
-    this.updatedFirstAcesso.push({ uid, firstAcesso });
-    this.existingUids.add(uid);
-    return Promise.resolve();
-  }
-
-  async findByEmailCaseInsensitive(email: string): Promise<{ id: string; email: string } | null> {
-    const key = email.toLowerCase().trim();
-    return this.usersByEmail[key] ?? null;
-  }
-
-  async exists(uid: string): Promise<boolean> {
-    return this.existingUids.has(uid);
-  }
-
-  addUserByEmail(id: string, email: string) {
-    this.usersByEmail[email.toLowerCase().trim()] = { id, email };
-  }
-}
-
-// Mock global fetch para métodos que chamam a Cloud Function gerenciaUsuario
-const mockFetch = jest.fn();
-
-beforeAll(() => {
-  // @ts-ignore sobrescrevendo fetch global para teste
-  global.fetch = mockFetch;
-});
-
+// Mock global fetch
 beforeEach(() => {
-  mockFetch.mockReset();
+  global.fetch = jest.fn();
 });
 
-describe('UserService (regras com repositório users)', () => {
-  it('atualizarStatus deve atualizar status e disabled corretamente', async () => {
-    const repo = new FakeUserRepository();
-    const service = new UserService(repo);
+describe('UserService (operações com backend)', () => {
+  it('atualizarStatus deve chamar updateStatus e updateDisabled', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })  // updateStatus
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) }); // updateDisabled
 
+    const service = new UserService();
     await service.atualizarStatus('uid-1', 'Ativo');
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch).toHaveBeenNthCalledWith(1, expect.any(String), expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ domain: 'user', action: 'updateStatus', uid: 'uid-1', status: 'Ativo' }),
+    }));
+    expect(global.fetch).toHaveBeenNthCalledWith(2, expect.any(String), expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ domain: 'user', action: 'updateDisabled', uid: 'uid-1', disabled: false }),
+    }));
+  });
+
+  it('atualizarStatus com Inativo deve chamar updateDisabled com true', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+    const service = new UserService();
     await service.atualizarStatus('uid-2', 'Inativo');
 
-    expect(repo.updatedStatus).toEqual([
-      { uid: 'uid-1', status: 'Ativo' },
-      { uid: 'uid-2', status: 'Inativo' },
-    ]);
-
-    expect(repo.updatedDisabled).toEqual([
-      { uid: 'uid-1', disabled: false },
-      { uid: 'uid-2', disabled: true },
-    ]);
+    expect(global.fetch).toHaveBeenNthCalledWith(2, expect.any(String), expect.objectContaining({
+      body: JSON.stringify({ domain: 'user', action: 'updateDisabled', uid: 'uid-2', disabled: true }),
+    }));
   });
 
-  it('atualizarStatusEmLote deve delegar para atualizarStatus para cada usuário', async () => {
-    const repo = new FakeUserRepository();
-    const service = new UserService(repo);
+  it('atualizarStatusEmLote deve chamar atualizarStatus para cada usuário', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({ ok: true, json: async () => ({}) });
 
-    const usuarios = [
-      { uid: 'u1', status: 'Ativo' as const },
-      { uid: 'u2', status: 'Inativo' as const },
-    ];
+    const service = new UserService();
+    await service.atualizarStatusEmLote([
+      { uid: 'u1', status: 'Ativo' },
+      { uid: 'u2', status: 'Inativo' },
+    ]);
 
-    await service.atualizarStatusEmLote(usuarios);
-
-    expect(repo.updatedStatus).toHaveLength(2);
-    expect(repo.updatedDisabled).toHaveLength(2);
-    expect(repo.updatedStatus.map(u => u.uid)).toEqual(['u1', 'u2']);
+    expect(global.fetch).toHaveBeenCalledTimes(4); // 2 usuários * 2 chamadas cada
   });
 
-  it('buscarPorEmailCaseInsensitive deve delegar para o repositório', async () => {
-    const repo = new FakeUserRepository();
-    const service = new UserService(repo);
+  it('buscarPorEmailCaseInsensitive deve retornar usuário encontrado', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: 'id-1', email: 'teste@example.com' }),
+    });
 
-    repo.addUserByEmail('id-1', 'teste@example.com');
-
+    const service = new UserService();
     const found = await service.buscarPorEmailCaseInsensitive('TESTE@example.com');
+
+    expect(global.fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ domain: 'user', action: 'findByEmailCaseInsensitive', email: 'TESTE@example.com' }),
+    }));
     expect(found).toEqual({ id: 'id-1', email: 'teste@example.com' });
   });
 
-  it('atualizarStatusSeExistir não deve chamar atualizarStatus quando usuário não existe', async () => {
-    const repo = new FakeUserRepository();
-    const service = new UserService(repo);
+  it('atualizarStatusSeExistir não deve atualizar quando usuário não existe', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ exists: false }),
+    });
 
+    const service = new UserService();
     await service.atualizarStatusSeExistir('nao-existe', 'Ativo');
-    expect(repo.updatedStatus).toHaveLength(0);
 
-    // Marca como existente e tenta novamente
-    repo.existingUids.add('existe');
-    await service.atualizarStatusSeExistir('existe', 'Inativo');
-
-    expect(repo.updatedStatus).toHaveLength(1);
-    expect(repo.updatedStatus[0]).toEqual({ uid: 'existe', status: 'Inativo' });
+    expect(global.fetch).toHaveBeenCalledTimes(1); // Apenas exists
+    expect(global.fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      body: JSON.stringify({ domain: 'user', action: 'exists', uid: 'nao-existe' }),
+    }));
   });
 
-  it('marcarPrimeiroAcessoConcluido deve atualizar firstAcesso para false', async () => {
-    const repo = new FakeUserRepository();
-    const service = new UserService(repo);
+  it('atualizarStatusSeExistir deve atualizar quando usuário existe', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ exists: true }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
 
+    const service = new UserService();
+    await service.atualizarStatusSeExistir('existe', 'Inativo');
+
+    expect(global.fetch).toHaveBeenCalledTimes(3); // exists + updateStatus + updateDisabled
+  });
+
+  it('marcarPrimeiroAcessoConcluido deve chamar updateFirstAcesso', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({}),
+    });
+
+    const service = new UserService();
     await service.marcarPrimeiroAcessoConcluido('uid-123');
 
-    expect(repo.updatedFirstAcesso).toEqual([
-      { uid: 'uid-123', firstAcesso: false },
-    ]);
+    expect(global.fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ domain: 'user', action: 'updateFirstAcesso', uid: 'uid-123', firstAcesso: false }),
+    }));
   });
 });
 
@@ -136,25 +121,23 @@ describe('UserService (integração com gerenciaUsuario via fetch)', () => {
   });
 
   it('excluirUsuario deve chamar endpoint correto e não lançar erro em sucesso', async () => {
-    const repo = new FakeUserRepository();
-    const service = new UserService(repo);
+    const service = new UserService();
 
-    mockFetch.mockResolvedValueOnce(buildOkResponse({ success: true }));
+    (global.fetch as jest.Mock).mockResolvedValueOnce(buildOkResponse({ success: true }));
 
     await expect(service.excluirUsuario('uid-1', 'professores')).resolves.toBeUndefined();
 
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url, options] = mockFetch.mock.calls[0];
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url, options] = (global.fetch as jest.Mock).mock.calls[0];
     expect(String(url)).toContain('/excluir-usuario');
     expect((options as any).method).toBe('POST');
     expect(JSON.parse((options as any).body)).toEqual({ uid: 'uid-1', tipoUsuario: 'professores' });
   });
 
   it('criarApenasAuth deve propagar mensagem de erro vinda da API', async () => {
-    const repo = new FakeUserRepository();
-    const service = new UserService(repo);
+    const service = new UserService();
 
-    mockFetch.mockResolvedValueOnce(buildErrorResponse('email já utilizado'));
+    (global.fetch as jest.Mock).mockResolvedValueOnce(buildErrorResponse('email já utilizado'));
 
     await expect(
       service.criarApenasAuth({ uid: 'u1', nome: 'Nome', email: 'a@b.com', tipoUsuario: 'professores' })
@@ -162,24 +145,22 @@ describe('UserService (integração com gerenciaUsuario via fetch)', () => {
   });
 
   it('removerAuth deve lançar erro padrão quando API não retorna mensagem', async () => {
-    const repo = new FakeUserRepository();
-    const service = new UserService(repo);
+    const service = new UserService();
 
-    mockFetch.mockResolvedValueOnce(buildErrorResponse());
+    (global.fetch as jest.Mock).mockResolvedValueOnce(buildErrorResponse());
 
     await expect(service.removerAuth('uid-xyz')).rejects.toThrow('Erro ao remover conta de autenticação');
   });
 
   it('atualizarEmailUsuario deve enviar payload completo ao endpoint', async () => {
-    const repo = new FakeUserRepository();
-    const service = new UserService(repo);
+    const service = new UserService();
 
-    mockFetch.mockResolvedValueOnce(buildOkResponse({}));
+    (global.fetch as jest.Mock).mockResolvedValueOnce(buildOkResponse({}));
 
     await service.atualizarEmailUsuario({ uid: 'u1', novoEmail: 'novo@exemplo.com', tipoUsuario: 'alunos' });
 
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url, options] = mockFetch.mock.calls[0];
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url, options] = (global.fetch as jest.Mock).mock.calls[0];
     expect(String(url)).toContain('/atualizar-email-usuario');
     expect(JSON.parse((options as any).body)).toEqual({
       uid: 'u1',
@@ -189,11 +170,10 @@ describe('UserService (integração com gerenciaUsuario via fetch)', () => {
   });
 
   it('criarUsuario deve retornar o payload retornado pela API', async () => {
-    const repo = new FakeUserRepository();
-    const service = new UserService(repo);
+    const service = new UserService();
 
     const apiResponse = { id: 'user-1', status: 'ok' };
-    mockFetch.mockResolvedValueOnce(buildOkResponse(apiResponse));
+    (global.fetch as jest.Mock).mockResolvedValueOnce(buildOkResponse(apiResponse));
 
     const result = await service.criarUsuario({
       nome: 'Teste',
@@ -212,15 +192,14 @@ describe('UserService (integração com gerenciaUsuario via fetch)', () => {
   });
 
   it('enviarEmailEsqueceuSenha deve chamar endpoint correto', async () => {
-    const repo = new FakeUserRepository();
-    const service = new UserService(repo);
+    const service = new UserService();
 
-    mockFetch.mockResolvedValueOnce(buildOkResponse({}));
+    (global.fetch as jest.Mock).mockResolvedValueOnce(buildOkResponse({}));
 
     await service.enviarEmailEsqueceuSenha('email@example.com');
 
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url, options] = mockFetch.mock.calls[0];
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url, options] = (global.fetch as jest.Mock).mock.calls[0];
     expect(String(url)).toContain('/esqueceu-senha');
     expect(JSON.parse((options as any).body)).toEqual({ email: 'email@example.com' });
   });

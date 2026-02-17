@@ -1,5 +1,5 @@
 // src/components/notas/NotasVisualizacao.tsx
-import { JSX, useState, useMemo } from 'react';
+import { JSX, useState } from 'react';
 import { Row, Col, Card, FormControl, Dropdown, Button, Modal, Table } from 'react-bootstrap';
 import { BarChart, Award, Activity, TrendingDown, ArrowDownUp, Download } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -15,9 +15,7 @@ import { Turma } from '../../models/Turma';
 import { Aluno } from '../../models/Aluno';
 import { Materia } from '../../models/Materia';
 import { Nota } from '../../models/Nota';
-import { NotaService } from '../../services/data/NotaService';
-import { FirebaseNotaRepository } from '../../repositories/nota/FirebaseNotaRepository';
-import { FirebaseMateriaRepository } from '../../repositories/materia/FirebaseMateriaRepository';
+import { notaService } from '../../services/data/NotaService';
 
 interface NotasVisualizacaoProps {
   filtroTurma: string;
@@ -50,12 +48,6 @@ export default function NotasVisualizacao({
   const [historicoAluno, setHistoricoAluno] = useState<{ nome: string, notas: Nota[] } | null>(null);
   const [ordenacao, setOrdenacao] = useState<'nome' | 'parcial' | 'global' | 'participacao' | 'recuperacao' | 'media' | 'data'>('nome');
   const [buscaLocal, setBuscaLocal] = useState('');
-
-  // Inicializar NotaService
-  const notaService = useMemo(
-    () => new NotaService(new FirebaseNotaRepository(), new FirebaseMateriaRepository()),
-    []
-  );
 
   // Filtrar notas por alunos ativos e deduplicar
   const notasFiltradas = notas.filter(n => {
@@ -99,7 +91,7 @@ export default function NotasVisualizacao({
     const doc = new jsPDF();
     doc.text(`Relatório de Notas - ${turmaNome} - ${materiaNome} - ${filtroBimestre} Bimestre`, 14, 15);
 
-    const dadosParaTabela = resultadosFiltrados.map(nota => {
+    const dadosParaTabela = resultadosFiltrados.map((nota: Nota) => {
       const mediaFinal = notaService.calcularMediaFinal(nota);
       return [
         nota.nomeAluno || 'Desconhecido',
@@ -137,7 +129,7 @@ export default function NotasVisualizacao({
     const turmaNome = turmas.find(t => t.id === filtroTurma)?.nome || 'Desconhecida';
     const materiaNome = materias.find(m => m.id === filtroMateria)?.nome || 'Desconhecida';
 
-    const dadosParaExcel = resultadosFiltrados.map(nota => {
+    const dadosParaExcel = resultadosFiltrados.map((nota: Nota) => {
       const mediaFinal = notaService.calcularMediaFinal(nota);
       return {
         'Aluno': nota.nomeAluno || 'Desconhecido',
@@ -307,16 +299,16 @@ export default function NotasVisualizacao({
                 <ReBarChart
                   data={
                     resultadosFiltrados
-                      .filter(nota => {
+                      .filter((nota: Nota) => {
                         const aluno = alunos.find(a => a.id === nota.alunoUid);
                         const alunoAtivo = aluno && (aluno as any).status !== 'Inativo';
                         return alunoAtivo && nota.turmaId === filtroTurma;
                       })
-                      .map(nota => ({
+                      .map((nota: Nota) => ({
                         nome: nota.nomeAluno,
                         media: notaService.calcularMediaFinal(nota)
                       }))
-                      .sort((a, b) => b.media - a.media)
+                      .sort((a: any, b: any) => b.media - a.media)
                       .slice(0, 5)
                   }
                 >
@@ -416,7 +408,7 @@ export default function NotasVisualizacao({
                 <div>Nenhum aluno encontrado com os filtros aplicados.</div>
               </div>
             ) : (
-              ordenarDados(resultadosFiltrados).map(nota => {
+              ordenarDados(resultadosFiltrados).map((nota: Nota) => {
               const mediaFinal = notaService.calcularMediaFinal(nota);
               return (
                 <div
@@ -481,7 +473,7 @@ export default function NotasVisualizacao({
               <div>Nenhum aluno encontrado com os filtros aplicados.</div>
             </div>
           ) : (
-            ordenarDados(resultadosFiltrados).map(nota => {
+            ordenarDados(resultadosFiltrados).map((nota: Nota) => {
             const mediaFinal = notaService.calcularMediaFinal(nota);
             return (
               <div key={nota.id} className="notas-resultado-card">

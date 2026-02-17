@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import React from 'react';
 import AppLayout from '../components/layout/AppLayout';
 import {
@@ -13,20 +13,14 @@ import Paginacao from '../components/common/Paginacao';
 import { Megaphone, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { turmaService } from '../services/data/TurmaService';
 import { ProfessorMateriaService } from '../services/data/ProfessorMateriaService';
-import { ComunicadoService } from '../services/data/ComunicadoService';
-import { FirebaseProfessorMateriaRepository } from '../repositories/professor_materia/FirebaseProfessorMateriaRepository';
-import { FirebaseComunicadoRepository } from '../repositories/comunicado/FirebaseComunicadoRepository';
+import { comunicadoService } from '../services/data/ComunicadoService';
 import type { Turma } from '../models/Turma';
 import type { ProfessorMateria } from '../models/ProfessorMateria';
 import type { Comunicado } from '../models/Comunicado';
 import { truncateText } from '../utils/textUtils';
 
 // Instanciar services
-const professorMateriaRepository = new FirebaseProfessorMateriaRepository();
-const professorMateriaService = new ProfessorMateriaService(professorMateriaRepository);
-
-const comunicadoRepository = new FirebaseComunicadoRepository();
-const comunicadoService = new ComunicadoService(comunicadoRepository);
+const professorMateriaService = new ProfessorMateriaService();
 
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -101,61 +95,70 @@ export default function Comunicados() {
   const [expandedTurmas, setExpandedTurmas] = useState<Set<string>>(new Set());
   const itensPorPagina = 6;
   const maxCaracteres = 150;
+  const isFetchingRef = useRef(false);
 
   useEffect(() => {
     fetchData();
+  }, [userData, anoLetivo]);
+
+  useEffect(() => {
     if (showModal) {
       setTimeout(() => {
         document.getElementById('input-assunto')?.focus();
       }, 100);
     }
-  }, [showModal, userData, anoLetivo]);
+  }, [showModal]);
 
   const fetchData = async () => {
-    let listaTurmas: Turma[] = [];
+    if (isFetchingRef.current) return; // Evitar chamadas duplicadas
+    isFetchingRef.current = true;
 
-    if (isAdmin) {
-      listaTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
-    } else {
-      if (!userData?.email) {
-        setTurmas([]);
-        setComunicados([]);
-        return;
+    try {
+      let listaTurmas: Turma[] = [];
+
+      if (isAdmin) {
+        listaTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+      } else {
+        if (!userData?.email) {
+          setTurmas([]);
+          setComunicados([]);
+          return;
+        }
+
+        // Buscar professor pelo email
+        const professorService = new (await import('../services/data/ProfessorService')).ProfessorService();
+        const allProfessores = await professorService.listar();
+        const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
+
+        if (!professorAtual) {
+          console.error('Professor não encontrado com email:', userData.email);
+          setTurmas([]);
+          setComunicados([]);
+          return;
+        }
+
+        const vincList = await professorMateriaService.listarPorProfessor(professorAtual.id);
+
+        const turmaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.turmaId))];
+        const todasTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
+        listaTurmas = todasTurmas.filter((t: Turma) => turmaIds.includes(t.id));
       }
-      
-      // Buscar professor pelo email
-      const professorService = new (await import('../services/data/ProfessorService')).ProfessorService(
-        new (await import('../repositories/professor/FirebaseProfessorRepository')).FirebaseProfessorRepository()
-      );
-      const allProfessores = await professorService.listar();
-      const professorAtual = allProfessores.find((p: any) => p.email === userData.email);
-      
-      if (!professorAtual) {
-        console.error('Professor não encontrado com email:', userData.email);
-        setTurmas([]);
-        setComunicados([]);
-        return;
+
+      setTurmas(listaTurmas.sort((a, b) => a.nome.localeCompare(b.nome)));
+
+      let comunicadosList: Comunicado[];
+      if (isAdmin) {
+        comunicadosList = await comunicadoService.listarPorAnoLetivo(anoLetivo.toString());
+      } else {
+        const turmaIds = listaTurmas.map(t => t.id);
+        comunicadosList = turmaIds.length > 0
+          ? await comunicadoService.listarPorTurmas(turmaIds)
+          : [];
       }
-      
-      const vincList = await professorMateriaService.listarPorProfessor(professorAtual.id);
-
-      const turmaIds = [...new Set(vincList.map((v: ProfessorMateria) => v.turmaId))];
-      const todasTurmas = await turmaService.listarPorAnoLetivo(anoLetivo.toString());
-      listaTurmas = todasTurmas.filter((t: Turma) => turmaIds.includes(t.id));
+      setComunicados(comunicadosList);
+    } finally {
+      isFetchingRef.current = false;
     }
-
-    setTurmas(listaTurmas.sort((a, b) => a.nome.localeCompare(b.nome)));
-
-    let comunicadosList: Comunicado[];
-    if (isAdmin) {
-      comunicadosList = await comunicadoService.listar();
-    } else {
-      const turmaIds = listaTurmas.map(t => t.id);
-      comunicadosList = turmaIds.length > 0 
-        ? await comunicadoService.listarPorTurmas(turmaIds)
-        : [];
-    }
-    setComunicados(comunicadosList);
   };
 
   const handleSalvar = async () => {
@@ -227,27 +230,27 @@ export default function Comunicados() {
     setEditandoId(comunicado.id);
     setAssunto(comunicado.assunto);
     setMensagem(comunicado.mensagem);
-    
+
     // Se o comunicado está agrupado (tem turmasIds), buscar todos os IDs originais
     if (comunicado.turmasIds && Array.isArray(comunicado.turmasIds) && comunicado.turmasIds.length > 0) {
       setTurmasSelecionadas(comunicado.turmasIds);
-      
+
       // Buscar os IDs originais de todos os comunicados do grupo
       const idsOriginais = comunicados
-        .filter(c => 
-          c.assunto === comunicado.assunto && 
-          c.mensagem === comunicado.mensagem && 
+        .filter(c =>
+          c.assunto === comunicado.assunto &&
+          c.mensagem === comunicado.mensagem &&
           c.status === comunicado.status &&
           comunicado.turmasIds.includes(c.turmaId)
         )
         .map(c => c.id);
-      
+
       setEditandoIds(idsOriginais);
     } else {
       setTurmasSelecionadas([comunicado.turmaId]);
       setEditandoIds([comunicado.id]);
     }
-    
+
     setStatus(comunicado.status);
 
     // Definir data de agendamento se existir
@@ -261,13 +264,13 @@ export default function Comunicados() {
   const handleExcluir = async (comunicado: any) => {
     // Determinar quantos comunicados serão excluídos
     let idsParaExcluir: string[] = [];
-    
+
     if (comunicado.turmasIds && Array.isArray(comunicado.turmasIds) && comunicado.turmasIds.length > 0) {
       // Comunicado agrupado - buscar todos os IDs originais
       idsParaExcluir = comunicados
-        .filter(c => 
-          c.assunto === comunicado.assunto && 
-          c.mensagem === comunicado.mensagem && 
+        .filter(c =>
+          c.assunto === comunicado.assunto &&
+          c.mensagem === comunicado.mensagem &&
           c.status === comunicado.status &&
           comunicado.turmasIds.includes(c.turmaId)
         )
@@ -277,20 +280,20 @@ export default function Comunicados() {
       idsParaExcluir = [comunicado.id];
     }
 
-    const mensagemConfirmacao = idsParaExcluir.length > 1 
+    const mensagemConfirmacao = idsParaExcluir.length > 1
       ? `Excluir este comunicado de ${idsParaExcluir.length} turmas?`
       : 'Excluir este comunicado?';
 
     if (!window.confirm(mensagemConfirmacao)) return;
-    
+
     try {
       // Excluir todos os comunicados do grupo
       await Promise.all(idsParaExcluir.map(id => comunicadoService.deletar(id)));
-      
-      setToast({ 
-        show: true, 
-        message: `${idsParaExcluir.length} comunicado(s) excluído(s).`, 
-        variant: 'success' 
+
+      setToast({
+        show: true,
+        message: `${idsParaExcluir.length} comunicado(s) excluído(s).`,
+        variant: 'success'
       });
       fetchData();
     } catch (err) {
@@ -431,7 +434,7 @@ export default function Comunicados() {
     // Criar chave única baseada APENAS no conteúdo (sem timestamp de criação)
     const dataAgendamentoKey = comunicado.dataAgendamento ? comunicado.dataAgendamento.toMillis() : 'sem-agendamento';
     const chave = `${comunicado.assunto}|${comunicado.mensagem}|${comunicado.status}|${dataAgendamentoKey}`;
-    
+
     if (!acc[chave]) {
       acc[chave] = {
         ...comunicado,
@@ -445,7 +448,7 @@ export default function Comunicados() {
         acc[chave].turmasNomes.push(comunicado.turmaNome || turmas.find(t => t.id === comunicado.turmaId)?.nome || '-');
       }
     }
-    
+
     return acc;
   }, {} as Record<string, any>);
 
@@ -677,7 +680,23 @@ export default function Comunicados() {
                         hour: '2-digit',
                         minute: '2-digit'
                       })}`
-                      : `Criado em: ${c.data?.toDate().toLocaleDateString('pt-BR')}`
+                      : (() => {
+                          try {
+                            if (c.data && typeof c.data.toDate === 'function') {
+                              return `Criado em: ${c.data.toDate().toLocaleDateString('pt-BR')}`;
+                            } else if (c.data && c.data._seconds) {
+                              // Firestore Timestamp serializado com _seconds e _nanoseconds
+                              const dataObj = new Date(c.data._seconds * 1000);
+                              return `Criado em: ${dataObj.toLocaleDateString('pt-BR')}`;
+                            } else if (c.data) {
+                              const dataObj = typeof c.data === 'string' ? new Date(c.data) : new Date(c.data);
+                              return `Criado em: ${dataObj.toLocaleDateString('pt-BR')}`;
+                            }
+                            return 'Data não disponível';
+                          } catch (error) {
+                            return 'Data inválida';
+                          }
+                        })()
                     }
                   </small>
                 </div>
